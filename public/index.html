@@ -10,11 +10,15 @@
   <h1>Video Call</h1>
   <video id="localVideo" autoplay muted></video>
   <video id="remoteVideo" autoplay></video>
+  
+  <label for="targetIdSelect">Select Target User:</label>
   <select id="targetIdSelect">
     <option value="">Select a user</option>
   </select>
+
   <button id="startCall">Start Call</button>
   <button id="endCall">End Call</button>
+
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
 </body>
