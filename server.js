@@ -16,15 +16,18 @@ io.on("connection", (socket) => {
 
   // Relay offer/answer between peers
   socket.on("offer", (data) => {
+    console.log("Received offer from", socket.id, "to", data.target);
     socket.to(data.target).emit("offer", { sender: socket.id, offer: data.offer });
   });
 
   socket.on("answer", (data) => {
+    console.log("Received answer from", socket.id, "to", data.target);
     socket.to(data.target).emit("answer", { sender: socket.id, answer: data.answer });
   });
 
   // Relay ICE candidates
   socket.on("ice-candidate", (data) => {
+    console.log("Received ICE candidate from", socket.id, "to", data.target);
     socket.to(data.target).emit("ice-candidate", { sender: socket.id, candidate: data.candidate });
   });
 
@@ -35,6 +38,7 @@ io.on("connection", (socket) => {
 });
 
 // Start the server
-server.listen(3000, () => {
-  console.log("Server is running on http://localhost:3000");
+const port = process.env.PORT || 3000; // For deployment on Render, use environment variable for port
+server.listen(port, () => {
+  console.log(`Server is running on http://localhost:${port}`);
 });
