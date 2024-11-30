@@ -2,32 +2,32 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 
-// Initialize Express app and HTTP server
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Serve static files from the "public" folder
+// Serve static files (like index.html, app.js, style.css) from the "public" folder
 app.use(express.static("public"));
 
-// Handle WebSocket connections
+// When a client connects to the server via WebSocket
 io.on("connection", (socket) => {
   console.log("A user connected:", socket.id);
 
-  // Relay offer/answer between peers
+  // Listen for "offer" event from client and forward it to the target peer
   socket.on("offer", (data) => {
-    console.log("Received offer from", socket.id, "to", data.target);
+    console.log("Offer received from:", socket.id);
     socket.to(data.target).emit("offer", { sender: socket.id, offer: data.offer });
   });
 
+  // Listen for "answer" event from client and forward it to the target peer
   socket.on("answer", (data) => {
-    console.log("Received answer from", socket.id, "to", data.target);
+    console.log("Answer received from:", socket.id);
     socket.to(data.target).emit("answer", { sender: socket.id, answer: data.answer });
   });
 
-  // Relay ICE candidates
+  // Listen for "ice-candidate" event from client and forward it to the target peer
   socket.on("ice-candidate", (data) => {
-    console.log("Received ICE candidate from", socket.id, "to", data.target);
+    console.log("ICE candidate received from:", socket.id);
     socket.to(data.target).emit("ice-candidate", { sender: socket.id, candidate: data.candidate });
   });
 
@@ -38,7 +38,7 @@ io.on("connection", (socket) => {
 });
 
 // Start the server
-const port = process.env.PORT || 3000; // For deployment on Render, use environment variable for port
-server.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
+const PORT = process.env.PORT || 3000; // Use environment port or default to 3000
+server.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
 });
