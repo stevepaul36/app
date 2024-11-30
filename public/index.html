@@ -8,21 +8,18 @@
 </head>
 <body>
   <h1>Video Call</h1>
-
-  <!-- Add an input for the target ID -->
-  <input type="text" id="targetId" placeholder="Enter target user ID">
-
   <video id="localVideo" autoplay muted></video>
   <video id="remoteVideo" autoplay></video>
   
+  <label for="targetIdSelect">Select Target User:</label>
+  <select id="targetIdSelect">
+    <option value="">Select a user</option>
+  </select>
+
   <button id="startCall">Start Call</button>
   <button id="endCall">End Call</button>
 
-  <!-- Include socket.io.js -->
-  <script src="/socket.io/socket.io.js"></script> <!-- Make sure this is here -->
+  <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
-
-  <!-- Optional: Vercel live feedback script -->
-  <script async data-explicit-opt-in="true" data-cookie-opt-in="true" src="https://vercel.live/next-live/feedback/feedback.js"></script>
 </body>
 </html>
