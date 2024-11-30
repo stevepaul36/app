@@ -1,4 +1,4 @@
-const socket = io(window.location.origin); // Use the current server URL dynamically
+const socket = io(window.location.origin); // Ensure you're connecting to the right URL
 let localStream;
 let remoteStream;
 let peerConnection;
@@ -13,10 +13,10 @@ const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
 const startCallButton = document.getElementById("startCall");
 const endCallButton = document.getElementById("endCall");
-const targetIdInput = document.getElementById("targetId"); // New input element for targetId
+const targetIdInput = document.getElementById("targetId");
 
 startCallButton.onclick = async () => {
-  const targetId = targetIdInput.value; // Get the target user ID from the input field
+  const targetId = targetIdInput.value;
   if (!targetId) {
     alert("Please enter a valid target ID!");
     return;
