@@ -1,4 +1,5 @@
-const socket = io("http://localhost:3000"); // Replace with your backend URL
+const socket = io("https://app-qezv.onrender.com");
+
 let localStream;
 let remoteStream;
 let peerConnection;
@@ -11,40 +12,25 @@ const config = {
 
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
+const targetIdInput = document.getElementById("targetId");
 const startCallButton = document.getElementById("startCall");
 const endCallButton = document.getElementById("endCall");
-const targetSelect = document.getElementById("targetIdSelect");
-
-let targetId = null;
-
-// When the list of users updates, populate the dropdown with options
-socket.on("update-users", (users) => {
-  targetSelect.innerHTML = "<option value=''>Select a user</option>"; // Reset options
-  users.forEach(user => {
-    const option = document.createElement("option");
-    option.value = user.id;
-    option.textContent = user.id;
-    targetSelect.appendChild(option);
-  });
-});
-
-// Update targetId when the user selects a peer
-targetSelect.onchange = (e) => {
-  targetId = e.target.value;
-};
 
 startCallButton.onclick = async () => {
+  const targetId = targetIdInput.value.trim();
   if (!targetId) {
-    alert("Please select a target user to call.");
+    alert("Please enter the Target ID");
     return;
   }
 
+  // Get user media
   localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
   localVideo.srcObject = localStream;
 
+  // Create peer connection
   peerConnection = new RTCPeerConnection(config);
 
-  // Add local stream to peer connection
+  // Add local tracks to the peer connection
   localStream.getTracks().forEach((track) => peerConnection.addTrack(track, localStream));
 
   // Handle remote stream
@@ -60,7 +46,7 @@ startCallButton.onclick = async () => {
     }
   };
 
-  // Create offer and send to signaling server
+  // Create and send an offer
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
 
@@ -68,9 +54,12 @@ startCallButton.onclick = async () => {
 };
 
 socket.on("offer", async (data) => {
+  const { sender, offer } = data;
+
+  // Create peer connection
   peerConnection = new RTCPeerConnection(config);
 
-  // Add local stream to peer connection
+  // Add local tracks to the peer connection
   localStream.getTracks().forEach((track) => peerConnection.addTrack(track, localStream));
 
   // Handle remote stream
@@ -82,16 +71,16 @@ socket.on("offer", async (data) => {
   // Handle ICE candidates
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
-      socket.emit("ice-candidate", { target: data.sender, candidate: event.candidate });
+      socket.emit("ice-candidate", { target: sender, candidate: event.candidate });
     }
   };
 
   // Set remote offer and create answer
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+  await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
   const answer = await peerConnection.createAnswer();
   await peerConnection.setLocalDescription(answer);
 
-  socket.emit("answer", { target: data.sender, answer });
+  socket.emit("answer", { target: sender, answer });
 });
 
 socket.on("answer", async (data) => {
@@ -103,7 +92,7 @@ socket.on("ice-candidate", (data) => {
 });
 
 endCallButton.onclick = () => {
-  peerConnection.close();
-  localStream.getTracks().forEach((track) => track.stop());
+  if (peerConnection) peerConnection.close();
+  if (localStream) localStream.getTracks().forEach((track) => track.stop());
   remoteVideo.srcObject = null;
 };
