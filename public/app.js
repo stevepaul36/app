@@ -1,4 +1,4 @@
-const socket = io(window.location.origin); // Ensure you're connecting to the right URL
+const socket = io();
 let localStream;
 let remoteStream;
 let peerConnection;
@@ -13,15 +13,11 @@ const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
 const startCallButton = document.getElementById("startCall");
 const endCallButton = document.getElementById("endCall");
-const targetIdInput = document.getElementById("targetId");
+
+// Hardcoded targetId for testing (replace with dynamic user selection later)
+let targetId = "some-peer-socket-id"; // Replace with the actual peer's socket ID
 
 startCallButton.onclick = async () => {
-  const targetId = targetIdInput.value;
-  if (!targetId) {
-    alert("Please enter a valid target ID!");
-    return;
-  }
-
   localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
   localVideo.srcObject = localStream;
 
