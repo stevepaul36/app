@@ -1,4 +1,4 @@
-const socket = io("http://localhost:3000");
+const socket = io("http://localhost:3000"); // Replace with your backend URL
 let localStream;
 let remoteStream;
 let peerConnection;
