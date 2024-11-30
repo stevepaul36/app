@@ -13,11 +13,32 @@ const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
 const startCallButton = document.getElementById("startCall");
 const endCallButton = document.getElementById("endCall");
+const targetSelect = document.getElementById("targetIdSelect");
 
-// Hardcoded targetId for testing (replace with dynamic user selection later)
-let targetId = "some-peer-socket-id"; // Replace with the actual peer's socket ID
+let targetId = null;
+
+// When the list of users updates, populate the dropdown with options
+socket.on("update-users", (users) => {
+  targetSelect.innerHTML = "<option value=''>Select a user</option>"; // Reset options
+  users.forEach(user => {
+    const option = document.createElement("option");
+    option.value = user.id;
+    option.textContent = user.id;
+    targetSelect.appendChild(option);
+  });
+});
+
+// Update targetId when the user selects a peer
+targetSelect.onchange = (e) => {
+  targetId = e.target.value;
+};
 
 startCallButton.onclick = async () => {
+  if (!targetId) {
+    alert("Please select a target user to call.");
+    return;
+  }
+
   localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
   localVideo.srcObject = localStream;
 
