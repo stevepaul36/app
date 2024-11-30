@@ -1,4 +1,4 @@
-const socket = io();
+const socket = io("http://localhost:3000");
 let localStream;
 let remoteStream;
 let peerConnection;
