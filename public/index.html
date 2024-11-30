@@ -3,20 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebRTC Video Call</title>
-  <link rel="stylesheet" href="style.css">
+  <title>Video Call App</title>
+  <style>
+    /* Add your CSS styles here */
+    video {
+      width: 300px;
+      height: 200px;
+      margin: 10px;
+    }
+  </style>
 </head>
 <body>
-  <h1>Video Call Application</h1>
+  <h1>Video Call</h1>
   <video id="localVideo" autoplay muted></video>
   <video id="remoteVideo" autoplay></video>
-  <div id="userInfo">
-    <label for="targetId">Target ID: </label>
-    <input type="text" id="targetId" placeholder="Enter target user ID">
-  </div>
   <button id="startCall">Start Call</button>
   <button id="endCall">End Call</button>
-  <script src="https://app-qezv.onrender.com/socket.io/socket.io.js"></script>
+
+  <!-- Include Socket.io client -->
+  <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
