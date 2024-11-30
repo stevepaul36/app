@@ -2,43 +2,55 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 
+// Initialize Express app and HTTP server
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Serve static files (like index.html, app.js, style.css) from the "public" folder
+// Serve static files from the "public" folder
 app.use(express.static("public"));
 
-// When a client connects to the server via WebSocket
+// Store connected users
+const users = {};
+
 io.on("connection", (socket) => {
   console.log("A user connected:", socket.id);
 
-  // Listen for "offer" event from client and forward it to the target peer
+  // Add the connected user to the users object
+  users[socket.id] = { id: socket.id };
+  console.log("Current users:", users);
+
+  // Send the updated user list to all clients
+  io.emit("update-users", Object.values(users));
+
+  // Handle signaling messages
   socket.on("offer", (data) => {
-    console.log("Offer received from:", socket.id);
+    console.log(`Offer from ${socket.id} to ${data.target}`);
     socket.to(data.target).emit("offer", { sender: socket.id, offer: data.offer });
   });
 
-  // Listen for "answer" event from client and forward it to the target peer
   socket.on("answer", (data) => {
-    console.log("Answer received from:", socket.id);
+    console.log(`Answer from ${socket.id} to ${data.target}`);
     socket.to(data.target).emit("answer", { sender: socket.id, answer: data.answer });
   });
 
-  // Listen for "ice-candidate" event from client and forward it to the target peer
   socket.on("ice-candidate", (data) => {
-    console.log("ICE candidate received from:", socket.id);
+    console.log(`ICE candidate from ${socket.id} to ${data.target}`);
     socket.to(data.target).emit("ice-candidate", { sender: socket.id, candidate: data.candidate });
   });
 
-  // Handle disconnection
+  // Handle user disconnection
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
+    delete users[socket.id];
+    console.log("Updated users:", users);
+
+    // Notify all clients about the updated user list
+    io.emit("update-users", Object.values(users));
   });
 });
 
 // Start the server
-const PORT = process.env.PORT || 3000; // Use environment port or default to 3000
-server.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+server.listen(3000, () => {
+  console.log("Server is running on http://localhost:3000");
 });
