@@ -1,93 +1,54 @@
-const socket = io("https://app-qezv.onrender.com");  // Replace with your backend URL
-let localStream;
-let remoteStream;
-let peerConnection;
-
-const config = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" }, // Public STUN server
-  ],
-};
-
-const localVideo = document.getElementById("localVideo");
-const remoteVideo = document.getElementById("remoteVideo");
-const startCallButton = document.getElementById("startCall");
-const endCallButton = document.getElementById("endCall");
-
-// Dynamically set the targetId
-let targetId; // To be set dynamically when connecting to a peer (add logic here)
-
-// Start call button event
-startCallButton.onclick = async () => {
-  localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  localVideo.srcObject = localStream;
-
-  peerConnection = new RTCPeerConnection(config);
-
-  // Add local stream to peer connection
-  localStream.getTracks().forEach((track) => peerConnection.addTrack(track, localStream));
-
-  // Handle remote stream
-  peerConnection.ontrack = (event) => {
-    remoteStream = event.streams[0];
-    remoteVideo.srcObject = remoteStream;
-  };
-
-  // Handle ICE candidates
-  peerConnection.onicecandidate = (event) => {
-    if (event.candidate) {
-      socket.emit("ice-candidate", { target: targetId, candidate: event.candidate });
-    }
-  };
-
-  // Create offer and send to signaling server
-  const offer = await peerConnection.createOffer();
-  await peerConnection.setLocalDescription(offer);
-
-  socket.emit("offer", { target: targetId, offer });
-};
-
-// Listen for incoming offer
-socket.on("offer", async (data) => {
-  peerConnection = new RTCPeerConnection(config);
-
-  // Add local stream to peer connection
-  localStream.getTracks().forEach((track) => peerConnection.addTrack(track, localStream));
-
-  // Handle remote stream
-  peerConnection.ontrack = (event) => {
-    remoteStream = event.streams[0];
-    remoteVideo.srcObject = remoteStream;
-  };
-
-  // Handle ICE candidates
-  peerConnection.onicecandidate = (event) => {
-    if (event.candidate) {
-      socket.emit("ice-candidate", { target: data.sender, candidate: event.candidate });
-    }
-  };
-
-  // Set remote offer and create answer
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-  const answer = await peerConnection.createAnswer();
-  await peerConnection.setLocalDescription(answer);
-
-  socket.emit("answer", { target: data.sender, answer });
-});
-
-// Listen for incoming answer
-socket.on("answer", async (data) => {
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-});
-
-// Handle ICE candidate
-socket.on("ice-candidate", (data) => {
-  peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-});
-
-// End call button event
-endCallButton.onclick = () => {
-  peerConnection.close();
-  localStream.getTracks().forEach((track) => track.stop());
-  remoteVideo.srcObject = null;
-};
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
+const $=id=>document.getElementById(id),S={token:localStorage.getItem('willowvale_token')||'',coins:35,nature:0,tool:'explore',sensitivity:1,reduced:false,restored:0,harvest:0,fish:0};let socket=null,target=null;
+const canvas=$('world'),scene=new THREE.Scene();scene.background=new THREE.Color('#b8d9b2');scene.fog=new THREE.Fog('#b8d9b2',35,95);
+const camera=new THREE.PerspectiveCamera(48,innerWidth/innerHeight,.1,180);const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'low-power'});renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.5));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.outputColorSpace=THREE.SRGBColorSpace;
+scene.add(new THREE.HemisphereLight('#e9f7ff','#7b9864',2));const sun=new THREE.DirectionalLight('#fff2d1',2.5);sun.position.set(-12,22,12);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);scene.add(sun);
+const M=c=>new THREE.MeshStandardMaterial({color:c,roughness:.88}),m={grass:M('#8fbd78'),path:M('#e8d9b5'),wood:M('#956544'),cream:M('#fff0d4'),coral:M('#e98d72'),blue:M('#8bb9c0'),roof:M('#bf6f57'),leaf:M('#5e9860'),leaf2:M('#8fbd73'),water:M('#73c3d1'),stone:M('#b5b5a0'),soil:M('#956e4b'),gold:M('#e9bc58'),dark:M('#374940')},G={box:new THREE.BoxGeometry(1,1,1),sphere:new THREE.SphereGeometry(1,12,9),cyl:new THREE.CylinderGeometry(1,1,1,12),cone:new THREE.ConeGeometry(1,1,1,8)};
+const world=new THREE.Group();scene.add(world);const targets=[];
+function mesh(p,g,mat,x,y,z,sx=1,sy=1,sz=1){const o=new THREE.Mesh(g,mat);o.position.set(x,y,z);o.scale.set(sx,sy,sz);o.castShadow=true;o.receiveShadow=true;p.add(o);return o}
+function box(p,x,y,z,sx,sy,sz,mat){return mesh(p,G.box,mat,x,y,z,sx,sy,sz)}
+function target(o,type){o.userData.action=type;targets.push(o);return o}
+function tree(x,z,s=1){let g=new THREE.Group();g.position.set(x,0,z);world.add(g);mesh(g,G.cyl,m.wood,0,.65*s,0,.18*s,1.3*s,.18*s);mesh(g,G.sphere,m.leaf,0,1.55*s,0,.85*s,.95*s,.8*s);mesh(g,G.sphere,m.leaf2,-.3*s,1.75*s,.1,.48*s,.48*s,.5*s)}
+function house(x,z,wall=m.cream){let g=new THREE.Group();g.position.set(x,0,z);world.add(g);box(g,0,.8,0,2.8,1.6,2.3,wall);let r=mesh(g,G.cone,m.roof,0,1.95,0,1.65,.95,1.55);r.rotation.y=Math.PI/4;box(g,0,.42,1.17,.48,.84,.08,m.wood);box(g,-.82,.98,1.18,.5,.5,.07,m.blue);box(g,.82,.98,1.18,.5,.5,.07,m.blue);box(g,0,.08,0,3.1,.16,2.6,m.cream);return g}
+function animal(x,z,fur,kind){let g=new THREE.Group();g.position.set(x,0,z);world.add(g);mesh(g,G.sphere,M(fur),0,.62,0,.43,.48,.37);mesh(g,G.sphere,m.cream,0,.48,.32,.23,.17,.08);mesh(g,G.sphere,m.dark,-.12,.76,.31,.04,.05,.03);mesh(g,G.sphere,m.dark,.12,.76,.31,.04,.05,.03);if(kind==='bunny'){mesh(g,G.sphere,M(fur),-.18,1.1,0,.11,.35,.1);mesh(g,G.sphere,M(fur),.18,1.1,0,.11,.35,.1)}else{mesh(g,G.sphere,M(fur),-.32,.96,0,.18,.16,.18);mesh(g,G.sphere,M(fur),.32,.96,0,.18,.16,.18)}g.userData.kind=kind;targets.push(g);return g}
+box(world,0,-.2,0,60,.4,60,m.grass);box(world,0,.015,1,3.2,.05,34,m.path);box(world,0,.02,0,31,.06,3.2,m.path);box(world,-10,.025,-7,17,.06,2.3,m.path);box(world,10,.025,8,18,.06,2.4,m.path);
+for(let i=-25;i<=25;i+=5){tree(i,-18,.8);tree(i,18,.85);if(i%10===0){tree(-25,i,.8);tree(25,i,.8)}}
+house(-6,-5);house(6,-6,m.coral);house(-12,3,m.blue);house(11,5);
+const hearth=new THREE.Group();hearth.position.set(0,0,-1);world.add(hearth);mesh(hearth,G.cyl,m.stone,0,.18,0,1.6,.3,1.6);mesh(hearth,G.cyl,m.gold,0,.36,0,.95,.12,.95);const flame=mesh(hearth,G.cone,m.coral,0,.8,0,.35,.8,.35);target(hearth,'hearth');
+const bridge=new THREE.Group();bridge.position.set(0,0,10);world.add(bridge);box(bridge,0,.25,0,7,.3,2,m.wood);for(let x=-3;x<=3;x+=1.5)box(bridge,x,.55,0,.12,.5,2,m.cream);target(bridge,'bridge');
+const pond=mesh(world,G.cyl,m.water,9,-.03,-12,4.3,.12,3.2);pond.rotation.y=.25;target(pond,'pond');
+const market=new THREE.Group();market.position.set(12,0,-2);world.add(market);box(market,0,.7,0,3.1,1.4,2,m.cream);box(market,0,1.5,0,3.7,.22,2.6,m.coral);box(market,0,.5,1.04,2.7,.9,.12,m.wood);target(market,'market');
+const plots=[];for(let i=0;i<4;i++){let p=new THREE.Group();p.position.set(-12+i*2.5,0,-12);world.add(p);box(p,0,.04,0,2.1,.12,2.2,m.soil);for(let j=0;j<3;j++)box(p,-.65+j*.65,.11,0,.045,.04,1.7,m.wood);p.userData.planted=false;plots.push(p);target(p,'farm')}
+const wild=[];for(let i=0;i<6;i++){let p=new THREE.Group();p.position.set(-17+(i%3)*3,0,7+Math.floor(i/3)*3);world.add(p);box(p,0,.035,0,2.3,.07,2.3,M('#8a8b68'));for(let j=0;j<4;j++)mesh(p,G.cone,M('#a2a17a'),(j%2)*.7-.35,.2,Math.floor(j/2)*.7-.35,.18,.45,.18);p.userData.restored=false;wild.push(p);target(p,'restore')}
+const tractor=new THREE.Group();tractor.position.set(-10,0,11);world.add(tractor);box(tractor,0,.6,0,1.8,.65,1.1,m.coral);box(tractor,.18,1.1,-.1,.8,.55,.8,m.blue);box(tractor,.8,.35,.05,.5,.5,.5,m.gold);for(const x of [-.62,.65])for(const z of [-.45,.45])mesh(tractor,G.cyl,m.dark,x,.26,z,.25,.15,.25).rotation.z=Math.PI/2;target(tractor,'tractor');
+const neighbours=[animal(-4,-1,'#d5b38a','bunny'),animal(5,-3,'#e2a26d','fox'),animal(1,7,'#a9b7ce','bear'),animal(-9,5,'#c4b4dc','bunny')];
+const player=new THREE.Group();player.position.set(0,0,4);world.add(player);mesh(player,G.sphere,M('#e9a47c'),0,.6,0,.34,.43,.3);mesh(player,G.sphere,m.cream,0,.5,.25,.17,.14,.07);mesh(player,G.sphere,m.dark,-.1,.7,.25,.035,.045,.03);mesh(player,G.sphere,m.dark,.1,.7,.25,.035,.045,.03);
+function toast(t){let el=$('toast');el.textContent=t;el.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('show'),2500)}
+function stats(){$('coins').textContent=S.coins;$('nature').textContent=S.nature;$('quest-title').textContent=S.restored?'A town full of life!':'Bring the meadow back';$('quest-desc').textContent=S.restored?'Wonderful work. Keep creating.':'Restore a patch of wild land.'}
+function tool(t){S.tool=t;document.querySelectorAll('.tool').forEach(b=>b.classList.toggle('active',b.dataset.tool===t));const hints={explore:'Tap a neighbour or landmark to discover something',build:'Tap Build, then Interact to place a cottage · 10 coins',farm:'Tap a plot to plant, then harvest later',fish:'Tap Willow Pond to cast your line',market:'Visit the stall to sell your harvest and fish',friends:'Tap an animal neighbour to say hello'};$('interaction-hint').textContent=hints[t];$('interact-button').style.display=t==='explore'?'none':'block';if(innerWidth<760)$('movement').style.display='flex'}
+async function api(path,body){let r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json',...(S.token?{Authorization:'Bearer '+S.token}:{})},body:JSON.stringify(body)});let d=await r.json().catch(()=>({error:'Server error'}));if(!r.ok)throw Error(d.error||'Request failed');return d}
+async function auth(type){let username=$('username').value.trim(),password=$('password').value;if(!/^[a-zA-Z0-9_]{3,20}$/.test(username))return toast('Nickname: 3–20 letters, numbers or underscores.');if(password.length<8)return toast('Password must be at least 8 characters.');try{let d=await api('/api/auth/'+type,{username,password});S.token=d.token;localStorage.setItem('willowvale_token',S.token);S.coins=d.world.coins;S.nature=d.world.nature;stats();$('welcome-panel').classList.add('dismissed');connect();toast('Welcome to Willowvale!')}catch(e){toast(e.message)}}
+$('signup-button').onclick=()=>auth('register');$('login-button').onclick=()=>auth('login');$('welcome-close').onclick=()=>$('welcome-panel').classList.add('dismissed');
+function connect(){if(socket)socket.disconnect();socket=io({auth:{token:S.token}});socket.on('connect',()=>{ $('online-status').textContent='Town connected';socket.emit('town:join',{townId:'willowvale'})});socket.on('connect_error',e=>{$('online-status').textContent=e.message});socket.on('town:presence',d=>{$('online-status').textContent=d.count+' in town'});socket.on('town:state',d=>{if(d.world){S.coins=d.world.coins;S.nature=d.world.nature;stats()}});socket.on('town:action',d=>{if(d.message)toast(d.message);if(d.town)$('online-status').textContent='Shared town live'});socket.on('town:error',d=>toast(d.message))}
+document.querySelectorAll('.tool').forEach(b=>b.onclick=()=>tool(b.dataset.tool));$('settings-button').onclick=()=>$('settings-panel').classList.toggle('hidden');$('settings-close').onclick=()=>$('settings-panel').classList.add('hidden');$('save-settings').onclick=()=>{S.sensitivity=Number($('sensitivity').value);S.reduced=$('reduced-motion').checked;$('settings-panel').classList.add('hidden');toast('Settings saved on this device')};$('logout-button').onclick=()=>{S.token='';localStorage.removeItem('willowvale_token');if(socket)socket.disconnect();$('welcome-panel').classList.remove('dismissed');$('settings-panel').classList.add('hidden');$('online-status').textContent='Guest mode'};
+function emit(action,extra={}){if(!S.token){toast('Log in to save progress and join the shared town.');$('welcome-panel').classList.remove('dismissed');return}if(socket?.connected)socket.emit('town:action',{townId:'willowvale',action,...extra})}
+function act(type){if(type==='restore'){let p=target;if(!p||p.userData.restored)return toast('Choose an unrestored wild patch.');p.userData.restored=true;p.clear();box(p,0,.035,0,2.3,.07,2.3,m.leaf);for(let i=0;i<5;i++)mesh(p,G.sphere,M(i%2?'#f3cf7e':'#ef9b91'),(Math.random()-.5)*1.7,.24,(Math.random()-.5)*1.7,.09,.18,.09);S.nature++;S.coins+=3;S.restored++;stats();toast('Meadow restored! +3 coins');emit('restore',{patchId:wild.indexOf(p)});return}
+if(type==='farm'){let p=target;if(!p)return toast('Choose a garden plot.');if(!p.userData.planted){p.userData.planted=true;for(let i=0;i<4;i++)mesh(p,G.cone,M('#6b9c4f'),(Math.random()-.5)*1.2,.3,(Math.random()-.5)*1.3,.12,.35,.12);S.coins=Math.max(0,S.coins-1);toast('Seeds planted! Harvest will be ready soon.');setTimeout(()=>{p.userData.ripe=true;toast('Your crop is ready! Tap the plot to harvest.')},12000);emit('plant',{plotId:plots.indexOf(p)});}else if(p.userData.ripe){p.userData.planted=false;p.userData.ripe=false;p.clear();box(p,0,.04,0,2.1,.12,2.2,m.soil);for(let j=0;j<3;j++)box(p,-.65+j*.65,.11,0,.045,.04,1.7,m.wood);S.coins+=5;S.harvest++;toast('Harvest collected! +5 coins');emit('harvest',{plotId:plots.indexOf(p)})}else toast('Crops are growing.');stats();return}
+if(type==='pond'){if(S.tool!=='fish')return tool('fish'),toast('Tap the pond again to fish.');S.fish++;toast('Caught a silver fish! Sell it at the market.');emit('fish');return}
+if(type==='market'){if(S.tool!=='market')return toast('Select Market, then tap the stall.');let amount=S.harvest*5+S.fish*4;if(!amount)return toast('Grow crops or catch fish first.');S.coins+=amount;S.harvest=0;S.fish=0;stats();toast('Goods sold! +'+amount+' coins');emit('sell',{amount});return}
+if(type==='build'){if(S.coins<10)return toast('Need 10 coins. Sell crops or fish first.');S.coins-=10;house(player.position.x+2,player.position.z-2);stats();toast('A new cosy cottage is ready!');emit('build',{x:Math.round(player.position.x+2),z:Math.round(player.position.z-2)});return}
+if(type==='hearth'){S.nature++;stats();toast('The Town Hearth warms the town.');emit('visit-hearth');return}
+if(type==='bridge'){toast('Willow Bridge connects the meadow and gardens.');emit('visit-bridge');return}
+if(type==='tractor'){tool('explore');toast('Tractor selected. Move with the arrows!');return}
+if(type==='friend'){toast('Your neighbour smiles: “Let’s make this town bloom!”');S.nature++;stats();emit('greet');return}}
+const ray=new THREE.Raycaster(),pointer=new THREE.Vector2();
+function select(x,y){pointer.x=x/innerWidth*2-1;pointer.y=-(y/innerHeight)*2+1;ray.setFromCamera(pointer,camera);let hit=ray.intersectObjects(targets,true)[0];if(!hit)return;let o=hit.object;while(o.parent&&o!==world&&!o.userData.action&&!o.userData.kind)o=o.parent;if(o.userData.kind){target=o;act('friend');return}if(!o.userData.action)return;target=o;let type=o.userData.action;if(S.tool==='build')return act('build');if(S.tool==='farm'&&type!=='farm')return toast('Tap a garden plot.');if(S.tool==='fish'&&type!=='pond')return toast('Tap Willow Pond.');if(S.tool==='market'&&type!=='market')return toast('Tap the market stall.');if(S.tool==='friends')return act('friend');act(type)}
+let down=null;canvas.addEventListener('pointerdown',e=>down={x:e.clientX,y:e.clientY});canvas.addEventListener('pointerup',e=>{if(down&&Math.hypot(e.clientX-down.x,e.clientY-down.y)<9)select(e.clientX,e.clientY);down=null});
+function move(d){let step=.85*S.sensitivity,v={forward:[0,-step],back:[0,step],left:[-step,0],right:[step,0]}[d];if(!v)return;player.position.x=THREE.MathUtils.clamp(player.position.x+v[0],-23,23);player.position.z=THREE.MathUtils.clamp(player.position.z+v[1],-23,23);if(S.tool==='tractor')tractor.position.set(player.position.x,0,player.position.z)}
+document.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('pointerdown',e=>{e.preventDefault();move(b.dataset.move)}));window.addEventListener('keydown',e=>{let k={ArrowUp:'forward',w:'forward',ArrowDown:'back',s:'back',ArrowLeft:'left',a:'left',ArrowRight:'right',d:'right'}[e.key];if(k)move(k)});
+$('interact-button').onclick=()=>{if(S.tool==='build')act('build');else if(S.tool==='farm'){target=plots[0];act('farm')}else if(S.tool==='fish'){target=pond;act('pond')}else if(S.tool==='market'){target=market;act('market')}else if(S.tool==='friends')act('friend')};
+$('quest-action').onclick=()=>{tool('explore');target=wild.find(p=>!p.userData.restored);if(target){camera.position.set(target.position.x+9,11,target.position.z+11);camera.lookAt(target.position);toast('Tap a grey patch to restore nature.')}else toast('Every patch restored!')};
+async function load(){if(!S.token){$('online-status').textContent='Guest mode';return}try{let r=await fetch('/api/me',{headers:{Authorization:'Bearer '+S.token}});if(!r.ok)throw Error();let d=await r.json();S.coins=d.world.coins;S.nature=d.world.nature;stats();$('welcome-panel').classList.add('dismissed');connect()}catch{S.token='';localStorage.removeItem('willowvale_token')}}
+let clock=new THREE.Clock();function animate(){requestAnimationFrame(animate);let t=clock.getElapsedTime(),night=Math.max(0,Math.sin(t*.025-.5)*.25);scene.background.setRGB(.72-night*.3,.85-night*.3,.70+night*.1);scene.fog.color.copy(scene.background);sun.intensity=2.5-night*3;hearth.rotation.y=t*.25;flame.scale.y=.8+Math.sin(t*5)*.09;pond.material.color.setHSL(.52,.42,.61+Math.sin(t)*.02);neighbours.forEach((n,i)=>{n.position.y=Math.sin(t*2+i)*.035;n.rotation.y=Math.sin(t*.4+i)*.14});let p=player.position;if(!S.reduced){camera.position.lerp(new THREE.Vector3(p.x+11,p.y+12,p.z+14),.06);camera.lookAt(p.x,p.y+.5,p.z)}renderer.render(scene,camera)}
+window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.5))});
+tool('explore');stats();$('movement').style.display=innerWidth<760?'flex':'none';load();animate();
