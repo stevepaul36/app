@@ -1,63 +1,42 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-const cors = require("cors");  // Import CORS package
-
-// Initialize the express app and create the HTTP server
-const app = express();
-const server = http.createServer(app);
-
-// Create a new instance of Socket.IO, passing in the server
-const io = new Server(server);
-
-// CORS configuration to allow frontend from Vercel
-const corsOptions = {
-  origin: "https://app-azure-chi-15.vercel.app",  // Replace with your frontend URL on Vercel
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type"],
-};
-
-// Use the CORS middleware to handle cross-origin requests
-app.use(cors(corsOptions));
-
-// Serve static files from the "public" folder (if needed for front-end assets like images or stylesheets)
-app.use(express.static("public"));
-
-// WebSocket connection handler using socket.io
-io.on("connection", (socket) => {
-  console.log("A user connected:", socket.id);
-
-  // Relay the offer message between peers
-  socket.on("offer", (data) => {
-    console.log("Offer received from", socket.id);
-    // Send the offer to the target peer
-    socket.to(data.target).emit("offer", { sender: socket.id, offer: data.offer });
-  });
-
-  // Relay the answer message between peers
-  socket.on("answer", (data) => {
-    console.log("Answer received from", socket.id);
-    // Send the answer to the target peer
-    socket.to(data.target).emit("answer", { sender: socket.id, answer: data.answer });
-  });
-
-  // Relay the ICE candidates between peers
-  socket.on("ice-candidate", (data) => {
-    console.log("ICE candidate received from", socket.id);
-    // Send the ICE candidate to the target peer
-    socket.to(data.target).emit("ice-candidate", { sender: socket.id, candidate: data.candidate });
-  });
-
-  // Handle user disconnection
-  socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
-  });
+'use strict';
+const express=require('express'),http=require('http'),crypto=require('crypto'),cors=require('cors'),helmet=require('helmet'),bcrypt=require('bcryptjs'),jwt=require('jsonwebtoken'),{rateLimit}=require('express-rate-limit'),{Pool}=require('pg'),{Server}=require('socket.io');
+const app=express(),server=http.createServer(app),production=process.env.NODE_ENV==='production';
+if(production&&(!process.env.JWT_SECRET||process.env.JWT_SECRET.length<32))throw Error('Set JWT_SECRET to at least 32 random characters.');
+const secret=process.env.JWT_SECRET||crypto.randomBytes(48).toString('hex');
+const pool=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_URL.includes('localhost')?false:{rejectUnauthorized:false},max:10,connectionTimeoutMillis:5000}):null;
+const users=new Map(),worlds=new Map(),allowed=(process.env.ALLOWED_ORIGINS||'').split(',').map(s=>s.trim()).filter(Boolean);
+const corsOptions={origin:(origin,cb)=>!origin||!allowed.length||allowed.includes(origin)||origin.startsWith('capacitor://')||origin.startsWith('http://localhost')?cb(null,true):cb(Error('Origin not allowed')),methods:['GET','POST'],allowedHeaders:['Content-Type','Authorization']};
+app.disable('x-powered-by');app.use(helmet({contentSecurityPolicy:false,crossOriginEmbedderPolicy:false}));app.use(cors(corsOptions));app.use(express.json({limit:'24kb'}));app.use(express.static('public',{maxAge:production?'1h':0}));app.use('/api/auth',rateLimit({windowMs:900000,limit:20,standardHeaders:true,legacyHeaders:false}));
+const io=new Server(server,{cors:corsOptions,maxHttpBufferSize:100000,pingInterval:25000,pingTimeout:20000});
+async function initDb(){if(!pool){console.warn('DATABASE_URL missing: accounts are temporary in-memory only.');return}await pool.query("CREATE TABLE IF NOT EXISTS players(id UUID PRIMARY KEY,username VARCHAR(20) NOT NULL UNIQUE,password_hash TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()); CREATE TABLE IF NOT EXISTS player_worlds(player_id UUID PRIMARY KEY REFERENCES players(id) ON DELETE CASCADE,coins INTEGER NOT NULL DEFAULT 35 CHECK(coins>=0),nature INTEGER NOT NULL DEFAULT 0 CHECK(nature>=0),restored JSONB NOT NULL DEFAULT '[]'::jsonb,inventory JSONB NOT NULL DEFAULT '{\"seeds\":3,\"crops\":0,\"fish\":0}'::jsonb,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()); CREATE TABLE IF NOT EXISTS town_events(id BIGSERIAL PRIMARY KEY,player_id UUID REFERENCES players(id) ON DELETE SET NULL,town_id VARCHAR(64) NOT NULL,event_type VARCHAR(40) NOT NULL,payload JSONB NOT NULL DEFAULT '{}'::jsonb,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()); CREATE INDEX IF NOT EXISTS town_events_town_created_idx ON town_events(town_id,created_at DESC)")}
+const tokenFor=u=>jwt.sign({sub:u.id,username:u.username},secret,{expiresIn:'14d',issuer:'willowvale'});
+function claims(req){let h=req.headers.authorization||'';if(!h.startsWith('Bearer '))return null;try{return jwt.verify(h.slice(7),secret,{issuer:'willowvale'})}catch{return null}}
+async function getUser(id){if(pool){let r=await pool.query('SELECT id,username,password_hash FROM players WHERE id=$1',[id]);return r.rows[0]||null}return [...users.values()].find(u=>u.id===id)||null}
+async function getWorld(id){if(pool){let r=await pool.query('SELECT coins,nature,restored,inventory FROM player_worlds WHERE player_id=$1',[id]);return r.rows[0]||{coins:35,nature:0,restored:[],inventory:{seeds:3,crops:0,fish:0}}}return worlds.get(id)||{coins:35,nature:0,restored:[],inventory:{seeds:3,crops:0,fish:0}}}
+async function saveWorld(id,w){if(pool)await pool.query('INSERT INTO player_worlds(player_id,coins,nature,restored,inventory,updated_at) VALUES($1,$2,$3,$4,$5,NOW()) ON CONFLICT(player_id) DO UPDATE SET coins=EXCLUDED.coins,nature=EXCLUDED.nature,restored=EXCLUDED.restored,inventory=EXCLUDED.inventory,updated_at=NOW()',[id,w.coins,w.nature,JSON.stringify(w.restored),JSON.stringify(w.inventory)]);else worlds.set(id,w)}
+async function createUser(username,password){let id=crypto.randomUUID(),hash=await bcrypt.hash(password,12),u={id,username,password_hash:hash};if(pool){let r=await pool.query('INSERT INTO players(id,username,password_hash) VALUES($1,$2,$3) RETURNING id,username,password_hash',[id,username,hash]);u=r.rows[0]}else{if([...users.values()].some(x=>x.username.toLowerCase()===username.toLowerCase()))throw Object.assign(Error('That nickname is already taken.'),{status:409});users.set(username.toLowerCase(),u)}await saveWorld(id,{coins:35,nature:0,restored:[],inventory:{seeds:3,crops:0,fish:0}});return u}
+app.get('/healthz',async(_q,res)=>{if(!pool)return res.json({ok:true,service:'willowvale-api',database:'not-configured',mode:'ephemeral'});try{await pool.query('SELECT 1');res.json({ok:true,service:'willowvale-api',database:'connected',mode:'persistent'})}catch{res.status(503).json({ok:false,database:'unavailable'})}});
+app.get('/api/me',async(req,res,next)=>{try{let c=claims(req);if(!c)return res.status(401).json({error:'Please sign in again.'});let u=await getUser(c.sub);if(!u)return res.status(401).json({error:'Account not found.'});res.json({user:{id:u.id,username:u.username},world:await getWorld(u.id)})}catch(e){next(e)}});
+app.post('/api/auth/register',async(req,res,next)=>{try{let username=String(req.body.username||'').trim(),password=String(req.body.password||'');if(!/^[a-zA-Z0-9_]{3,20}$/.test(username))return res.status(400).json({error:'Nickname must be 3–20 letters, numbers or underscores.'});if(password.length<8||password.length>128)return res.status(400).json({error:'Password must be 8–128 characters.'});if(pool){let ex=await pool.query('SELECT 1 FROM players WHERE lower(username)=lower($1)',[username]);if(ex.rowCount)return res.status(409).json({error:'That nickname is already taken.'})}let u=await createUser(username,password);res.status(201).json({token:tokenFor(u),user:{id:u.id,username:u.username},world:await getWorld(u.id)})}catch(e){if(e.code==='23505')return res.status(409).json({error:'That nickname is already taken.'});if(e.status)return res.status(e.status).json({error:e.message});next(e)}});
+app.post('/api/auth/login',async(req,res,next)=>{try{let username=String(req.body.username||'').trim(),password=String(req.body.password||''),u;if(pool){let r=await pool.query('SELECT id,username,password_hash FROM players WHERE lower(username)=lower($1)',[username]);u=r.rows[0]}else u=[...users.values()].find(x=>x.username.toLowerCase()===username.toLowerCase());if(!u||!(await bcrypt.compare(password,u.password_hash)))return res.status(401).json({error:'Nickname or password is incorrect.'});res.json({token:tokenFor(u),user:{id:u.id,username:u.username},world:await getWorld(u.id)})}catch(e){next(e)}});
+const presence=new Map(),towns=new Map();
+const defaultTown=()=>({coins:35,nature:0,restored:[],buildings:[],updatedAt:Date.now()});
+function town(id){if(!towns.has(id))towns.set(id,defaultTown());return towns.get(id)}
+async function logEvent(uid,tid,type,payload){if(pool)await pool.query('INSERT INTO town_events(player_id,town_id,event_type,payload) VALUES($1,$2,$3,$4)',[uid,tid,type,JSON.stringify(payload||{})])}
+io.use(async(s,next)=>{try{let token=s.handshake.auth&&s.handshake.auth.token;if(!token)return next(Error('Sign in to join the shared town.'));let c=jwt.verify(token,secret,{issuer:'willowvale'}),u=await getUser(c.sub);if(!u)return next(Error('Account not found.'));s.data.user={id:u.id,username:u.username};next()}catch{next(Error('Sign in to join the shared town.'))}});
+io.on('connection',s=>{
+s.on('town:join',async p=>{let tid=String(p&&p.townId||'willowvale').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,64)||'willowvale';s.data.townId=tid;s.join(tid);if(!presence.has(tid))presence.set(tid,new Set());presence.get(tid).add(s.id);s.emit('town:state',{world:await getWorld(s.data.user.id),town:town(tid)});io.to(tid).emit('town:presence',{count:presence.get(tid).size})});
+s.on('town:action',async p=>{try{let action=String(p&&p.action||''),tid=s.data.townId||'willowvale',allowedActions=['restore','plant','harvest','fish','sell','build','greet','visit-hearth','visit-bridge'];if(!allowedActions.includes(action))return s.emit('town:error',{message:'That activity is not available.'});let w=await getWorld(s.data.user.id),t=town(tid),message={restore:'A neighbour restored a patch of nature!',plant:'Someone planted a garden!',harvest:'Fresh crops were harvested!',fish:'Someone caught a fish!',sell:'Goods arrived at the market!',build:'A new cottage was added to town!',greet:'Neighbours are making friends!','visit-hearth':'The Town Hearth is glowing!','visit-bridge':'A neighbour crossed Willow Bridge!'}[action];
+if(action==='restore'){let id=String(p.patchId??'0').slice(0,12);if(!w.restored.includes(id)){w.restored.push(id);w.nature=Math.min(999999,w.nature+1);w.coins=Math.min(999999,w.coins+3)}}
+if(action==='plant'&&w.inventory.seeds>0){w.inventory.seeds--;w.inventory.crops++}
+if(action==='harvest'){w.coins=Math.min(999999,w.coins+5);w.inventory.crops=Math.max(0,w.inventory.crops-1)}
+if(action==='fish')w.inventory.fish=Math.min(999,w.inventory.fish+1);
+if(action==='sell'){let amount=Math.max(0,Math.min(1000,Number(p.amount)||0));w.coins=Math.min(999999,w.coins+amount);w.inventory.crops=0;w.inventory.fish=0}
+if(action==='build'){if(w.coins<10)return s.emit('town:error',{message:'You need 10 coins to build.'});w.coins-=10;t.buildings.push({id:crypto.randomUUID(),x:Math.max(-24,Math.min(24,Number(p.x)||0)),z:Math.max(-24,Math.min(24,Number(p.z)||0)),type:'cottage',owner:s.data.user.username})}
+w.updatedAt=Date.now();t.updatedAt=Date.now();await saveWorld(s.data.user.id,w);await logEvent(s.data.user.id,tid,action,{username:s.data.user.username});io.to(tid).emit('town:action',{user:s.data.user.username,action,message,town:{coins:t.coins,nature:t.nature,restored:t.restored,buildings:t.buildings,updatedAt:t.updatedAt}});s.emit('town:state',{world:w,town:t})
+}catch(e){console.error('town action failed',e.message);s.emit('town:error',{message:'Could not save that action. Try again.'})}});
+s.on('disconnect',()=>{let tid=s.data.townId,set=presence.get(tid);if(set){set.delete(s.id);io.to(tid).emit('town:presence',{count:set.size});if(!set.size)presence.delete(tid)}})
 });
-
-// Define the server's port
-const PORT = process.env.PORT || 3000;
-
-// Start the server
-server.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+app.use((e,_q,res,_n)=>{console.error(e.message);if(!res.headersSent)res.status(e.message==='Origin not allowed'?403:500).json({error:e.message==='Origin not allowed'?'Origin not allowed.':'Something went wrong. Please try again.'})});
+const port=Number(process.env.PORT)||3000;initDb().then(()=>server.listen(port,'0.0.0.0',()=>console.log('Willowvale listening on '+port))).catch(e=>{console.error('Startup failed',e);process.exit(1)});
+process.on('SIGTERM',async()=>{server.close();if(pool)await pool.end();process.exit(0)});
