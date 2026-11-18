@@ -1,27 +1,10 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Video Call App</title>
-  <style>
-    /* Add your CSS styles here */
-    video {
-      width: 300px;
-      height: 200px;
-      margin: 10px;
-    }
-  </style>
-</head>
-<body>
-  <h1>Video Call</h1>
-  <video id="localVideo" autoplay muted></video>
-  <video id="remoteVideo" autoplay></video>
-  <button id="startCall">Start Call</button>
-  <button id="endCall">End Call</button>
-
-  <!-- Include Socket.io client -->
-  <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
-  <script src="app.js"></script>
-</body>
-</html>
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="theme-color" content="#173b32"><meta name="description" content="Restore a little animal town, build habitats, grow crops and meet neighbours in Willowvale."><title>Willowvale: Animal Town</title><link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/style.css"></head>
+<body><main id="game-shell"><canvas id="world" aria-label="3D Willowvale town"></canvas>
+<header class="hud"><div class="brand"><span class="brand-mark">✿</span><div><strong>Willowvale</strong><small>ANIMAL TOWN</small></div></div><div class="stats"><span>✦ <b id="coins">35</b></span><span>🌱 <b id="nature">0</b></span><button id="settings-button" class="icon-button" aria-label="Settings">⚙</button></div></header>
+<section class="welcome panel" id="welcome-panel"><button class="close-button" id="welcome-close" aria-label="Close">×</button><span class="eyebrow">A LITTLE TOWN, A LOT OF HEART</span><h1>Make room for<br><em>wonder.</em></h1><p>Restore the meadow, create cosy habitats and help your animal neighbours thrive.</p><div class="auth-fields"><input id="username" autocomplete="username" maxlength="20" placeholder="Town name / username"><input id="password" autocomplete="current-password" type="password" minlength="8" placeholder="Password (8+ characters)"></div><div class="button-row"><button class="primary" id="signup-button">Create account</button><button class="secondary" id="login-button">Log in</button></div><p class="fine-print">Use a nickname; never use your real name or another service's password.</p></section>
+<section class="quest-card panel" id="quest-card"><div class="quest-icon">🪴</div><div class="quest-copy"><span class="eyebrow">TODAY'S LITTLE QUEST</span><strong id="quest-title">Bring the meadow back</strong><small id="quest-desc">Restore a patch of wild land.</small></div><button id="quest-action" class="round-action" aria-label="Do quest">＋</button></section>
+<div class="toast" id="toast" role="status" aria-live="polite"></div><nav class="tool-dock" aria-label="Town activities"><button class="tool active" data-tool="explore"><span>⌂</span><small>Explore</small></button><button class="tool" data-tool="build"><span>⌂</span><small>Build</small></button><button class="tool" data-tool="farm"><span>♧</span><small>Farm</small></button><button class="tool" data-tool="fish"><span>♧</span><small>Fish</small></button><button class="tool" data-tool="market"><span>◇</span><small>Market</small></button><button class="tool" data-tool="friends"><span>♡</span><small>Neighbours</small></button></nav>
+<div class="movement" id="movement" aria-label="Movement controls"><button data-move="forward">▲</button><div><button data-move="left">◀</button><button data-move="back">▼</button><button data-move="right">▶</button></div></div><button id="interact-button" class="interact-button">Interact</button>
+<aside class="settings panel hidden" id="settings-panel"><button class="close-button" id="settings-close">×</button><span class="eyebrow">YOUR TOWN</span><h2>Settings</h2><label>Camera sensitivity <input id="sensitivity" type="range" min=".5" max="2" step=".1" value="1"></label><label class="toggle-label"><input id="sound-toggle" type="checkbox" checked> Sound effects</label><label class="toggle-label"><input id="reduced-motion" type="checkbox"> Reduce camera movement</label><button id="save-settings" class="primary full">Save settings</button><button id="logout-button" class="secondary full">Log out</button><p class="fine-print">Be kind. Never share personal details in town chat. Multiplayer is a prototype and younger players should be supervised.</p></aside>
+<div class="online-pill"><span class="pulse"></span><span id="online-status">Connecting…</span></div><div class="interaction-hint" id="interaction-hint">Choose an activity below to begin</div></main><script src="/socket.io/socket.io.js"></script><script type="module" src="/app.js"></script></body></html>
