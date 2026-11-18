@@ -1,5 +1,6 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
-const API_BASE=location.protocol==='capacitor:'?(localStorage.getItem('willowvale_server')||'https://willowvale-animal-town.onrender.com'):'';\nconst $=id=>document.getElementById(id),S={token:localStorage.getItem('willowvale_token')||'',coins:35,nature:0,tool:'explore',sensitivity:1,reduced:false,restored:0,harvest:0,fish:0};let socket=null,target=null;
+const API_BASE=location.protocol==='capacitor:'?(localStorage.getItem('willowvale_server')||'https://willowvale-animal-town.onrender.com'):'';
+const $=id=>document.getElementById(id),S={token:localStorage.getItem('willowvale_token')||'',coins:35,nature:0,tool:'explore',sensitivity:1,reduced:false,restored:0,harvest:0,fish:0};let socket=null,target=null;
 const canvas=$('world'),scene=new THREE.Scene();scene.background=new THREE.Color('#b8d9b2');scene.fog=new THREE.Fog('#b8d9b2',35,95);
 const camera=new THREE.PerspectiveCamera(48,innerWidth/innerHeight,.1,180);const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'low-power'});renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.5));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.outputColorSpace=THREE.SRGBColorSpace;
 scene.add(new THREE.HemisphereLight('#e9f7ff','#7b9864',2));const sun=new THREE.DirectionalLight('#fff2d1',2.5);sun.position.set(-12,22,12);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);scene.add(sun);
