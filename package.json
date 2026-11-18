@@ -1,12 +1,29 @@
 {
-  "name": "video-call-app",
-  "version": "1.0.0",
+  "name": "willowvale-animal-town",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mobile-first 3D animal-town life simulation with shared online towns.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "check": "node --check server.js && node --check public/app.js"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
-    "express": "^4.17.1",
-    "socket.io": "^4.5.1"
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/core": "^7.4.3",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.3"
   }
 }
