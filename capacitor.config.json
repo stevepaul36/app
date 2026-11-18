@@ -1,0 +1,7 @@
+{
+  "appId": "com.willowvale.animaltown",
+  "appName": "Willowvale: Animal Town",
+  "webDir": "public",
+  "server": { "androidScheme": "https", "cleartext": false },
+  "android": { "allowMixedContent": false }
+}
