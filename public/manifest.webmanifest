@@ -1,0 +1,11 @@
+{
+  "name": "Willowvale: Animal Town",
+  "short_name": "Willowvale",
+  "description": "Restore nature and build a cosy animal town together.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#d6e8c8",
+  "theme_color": "#173b32",
+  "orientation": "landscape",
+  "icons": []
+}
