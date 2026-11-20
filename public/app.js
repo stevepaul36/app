@@ -13,6 +13,7 @@ const IS_NATIVE = location.protocol === 'capacitor:' || !!(window.Capacitor && t
 const API_BASE = IS_NATIVE ? (safeGet('willowvale_server') || 'https://willowvale-animal-town.onrender.com') : '';
 const $ = id => document.getElementById(id);
 function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function safeSet(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch { /* storage blocked */ } }
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage blocked */ } },
@@ -69,7 +70,8 @@ const skillLv = k => S.progress.skills[k]?.lv || 0;
 if (S.profile && !S.profile.look) S.profile.look = A.normLook(S.profile.outfit ?? 0);
 const cleanName = v => String(v || '').replace(/[^\p{L} '-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 14);
 SND.setPrefs({ music: S.settings.music, sfx: S.settings.sfx });
-const saveProgress = () => { if (!S.token) S.progress.coins = S.coins; store.set('willowvale_progress_v2', S.progress); };
+let RESETTING = false;
+const saveProgress = () => { if (RESETTING) return; if (!S.token) S.progress.coins = S.coins; store.set('willowvale_progress_v2', S.progress); };
 const saveSettings = () => store.set('willowvale_settings_v2', S.settings);
 
 // ---------- world ----------
@@ -439,7 +441,7 @@ function toWorld(sx, sy) {
 function setZoom(z, ax = W / 2, ay = H / 2) {
   cam.manual = true;
   const before = toWorld(ax, ay);
-  cam.zoom = Math.max(0.3, Math.min(1.5, z));
+  cam.zoom = Math.max(ADMIN.on ? 0.12 : 0.3, Math.min(1.5, z));
   const after = toWorld(ax, ay);
   const pb = A.P(...before), pa = A.P(...after);
   cam.x += pb[0] - pa[0]; cam.y += pb[1] - pa[1];
@@ -1799,8 +1801,87 @@ function showSettings() {
   el.querySelector('#resume-button').onclick = closeSheet;
   el.querySelector('#pause-profile').onclick = () => showProfile();
   el.querySelector('.tips').insertAdjacentHTML('beforeend', '<li><b>Controls</b> Stick to move, hand button to talk or go inside, shoe to run, camera to centre and zoom.</li><li><b>Keyboard</b> WASD to move, Shift or R to run, E or Space to interact, C for camera, P to pause.</li>');
+  const adm = h(`<button class="btn btn-ghost btn-wide" id="admin-open">${ADMIN.on ? '🛠️ Admin panel' : '🔐 Admin sign-in (grown-ups)'}</button>`);
+  adm.onclick = () => (ADMIN.on ? showAdmin() : showAdminLogin());
+  el.append(adm);
   openSheet('pause', 'Paused', 'Willowvale', el, { tab: 'explore' });
 }
+
+// ---------- admin mode (for the game's owner: test every town and feature) ----------
+// The key is checked by the server (ADMIN_KEY), so it never lives in the app.
+const ADMIN = { on: false, token: safeGet('willowvale_admin') || '' };
+if (ADMIN.token) fetch(API_BASE + '/api/admin/check', { headers: { Authorization: 'Bearer ' + ADMIN.token } }).then(r => r.json()).then(d => { ADMIN.on = !!d.ok; if (!d.ok) { ADMIN.token = ''; safeSet('willowvale_admin', ''); } document.body.classList.toggle('is-admin', ADMIN.on); }).catch(() => {});
+function showAdminLogin() {
+  const el = h(`<form class="admin-login"><p class="lead">For the game’s owner. Enter the admin key to open every town and tool.</p>
+    <label class="field"><span>Admin key</span><input id="admin-key" type="password" autocomplete="off" required></label>
+    <p class="hint-text" id="admin-msg"></p><button class="btn btn-primary btn-wide" type="submit">Open admin panel</button></form>`);
+  el.onsubmit = async e => {
+    e.preventDefault();
+    $('admin-msg').textContent = 'Checking…';
+    try {
+      const res = await fetch(API_BASE + '/api/admin/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: el.querySelector('#admin-key').value }) });
+      const d = await res.json();
+      if (!res.ok) { $('admin-msg').textContent = d.error || 'That did not work.'; return; }
+      ADMIN.on = true; ADMIN.token = d.token; safeSet('willowvale_admin', d.token); document.body.classList.add('is-admin');
+      SND.sfx('unlock'); showAdmin();
+    } catch { $('admin-msg').textContent = 'Could not reach the server. Check your connection.'; }
+  };
+  openSheet('admin-login', 'Grown-ups only', 'Admin sign-in', el, { tab: 'explore' });
+}
+function adminDo(label, fn) { fn(); saveProgress(); toast('Admin: ' + label); }
+function showAdmin() {
+  if (!ADMIN.on) { showAdminLogin(); return; }
+  const st = statsView();
+  const towns = CITY_LIST.map(c => `<button class="admin-town ${c.id === C.id ? 'here' : ''}" data-town="${c.id}" style="--town:${c.color}"><span>${c.icon}</span><b>${esc(c.name)}</b><small>${c.id === C.id ? 'Here' : cityOpen(c.id) ? 'Open' : 'Locked'}</small></button>`).join('');
+  const people = [...cityNpcs].map(n => `<li><b>${esc(n.name)}</b><span>${esc(n.doing || '')}</span><button class="btn btn-ghost btn-small" data-meet="${esc(n.name)}">Go to</button></li>`).join('');
+  const el = h(`<div class="admin">
+    <div class="notice"><b>Admin mode is on</b><span>Changes only affect this device’s game. Day ${dayOf(S.progress.clock)}, ${clockText(S.progress.clock)} · ✦ ${S.coins} · ${st.cities} of 7 towns visited</span></div>
+    <h4 class="group-title">Jump to any town (free)</h4><div class="admin-towns">${towns}</div>
+    <h4 class="group-title">Unlock</h4>
+    <div class="admin-grid">
+      <button class="btn btn-sun" data-a="coins">+1,000 coins</button>
+      <button class="btn btn-sun" data-a="towns">Open all towns</button>
+      <button class="btn btn-sun" data-a="emojis">All emojis</button>
+      <button class="btn btn-sun" data-a="skills">Max skills</button>
+      <button class="btn btn-sun" data-a="careers">Top of every career</button>
+      <button class="btn btn-sun" data-a="friends">Best friends with everyone here</button>
+      <button class="btn btn-sun" data-a="needs">Fill all needs</button>
+      <button class="btn btn-sun" data-a="items">10 of every item</button>
+    </div>
+    <h4 class="group-title">Time</h4>
+    <div class="admin-grid">${[['Morning', 7], ['Noon', 12], ['Evening', 18], ['Night', 22]].map(([l, hr]) => `<button class="btn btn-ghost" data-hour="${hr}">${l}</button>`).join('')}<button class="btn btn-ghost" data-a="day">Next day</button><button class="btn btn-ghost" data-a="weekday">Next weekday 9 AM</button></div>
+    <h4 class="group-title">Look around</h4>
+    <div class="admin-grid"><button class="btn btn-ghost" data-a="overview">Whole-town view</button><button class="btn btn-ghost" data-a="centre">Back to me</button><button class="btn btn-ghost" data-a="labels">${S.settings.labels ? 'Hide' : 'Show'} name tags</button><button class="btn btn-ghost" data-a="freewill">Free will ${S.settings.freewill ? 'off' : 'on'}</button></div>
+    <h4 class="group-title">Neighbours in ${esc(C.meta.name)} right now</h4>
+    <ul class="log admin-people">${people}</ul>
+    <h4 class="group-title">Danger zone</h4>
+    <div class="admin-grid"><button class="btn btn-ghost" data-a="reset">Reset all progress</button><button class="btn btn-ghost" data-a="exit">Sign out of admin</button></div>
+  </div>`);
+  const A2 = {
+    coins: () => adminDo('+1,000 coins', () => setCoins(S.coins + 1000, true)),
+    towns: () => adminDo('every town is open', () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }),
+    emojis: () => adminDo('every emoji unlocked', () => { for (const a of ACHIEVEMENTS) if (!S.progress.achievements.includes(a.id)) S.progress.achievements.push(a.id); for (const id of Object.keys(CITY_PACKS)) if (!S.progress.packs.includes(id)) S.progress.packs.push(id); }),
+    skills: () => adminDo('skills at level 10', () => { for (const sk of SKILLS) S.progress.skills[sk.k] = { lv: SKILL_MAX, xp: 0 }; }),
+    careers: () => adminDo('top of every career', () => { for (const id of Object.keys(CAREERS)) S.progress.jobs[id] = { level: CAREERS[id].ladder.length - 1, good: 0 }; }),
+    friends: () => adminDo(`best friends in ${C.meta.name}`, () => { for (const n of cityNpcs) { const f = friendship(n.name); f.hearts = 5; if (!f.mem || !f.mem.length) addMemory(n.name, 'We became best friends!', f); S.progress.friends[n.name] = f; } }),
+    needs: () => adminDo('all needs full', () => { for (const nd of NEEDS) S.progress.needs[nd.k] = 100; }),
+    items: () => adminDo('10 of every item', () => { for (const k of Object.keys(ITEMS)) S.progress.inventory[k] = (S.progress.inventory[k] || 0) + 10; }),
+    day: () => adminDo('next day', () => { S.progress.clock = (Math.floor(S.progress.clock / 1440) + 1) * 1440 + 7 * 60; }),
+    weekday: () => adminDo('next weekday, 9 AM', () => { let d = Math.floor(S.progress.clock / 1440) + 1; while ((d + 1) % 7 === 6 || (d + 1) % 7 === 0) d++; S.progress.clock = d * 1440 + 9 * 60; }),
+    overview: () => { closeSheet(); cam.free = true; $('cam-button').classList.add('free'); const c2 = A.P(22, 22, 0); cam.x = c2[0]; cam.y = c2[1]; cam.zoom = mobile() ? 0.14 : 0.24; cam.manual = true; toast('Drag to look around. Tap the camera button to come back.'); },
+    centre: () => { closeSheet(); cam.free = false; cam.manual = false; cam.zoom = mobile() ? 0.56 : 0.72; $('cam-button').classList.remove('free'); },
+    labels: () => { S.settings.labels = !S.settings.labels; saveSettings(); showAdmin(); },
+    freewill: () => { S.settings.freewill = !S.settings.freewill; saveSettings(); showAdmin(); },
+    reset: e => { const b = e.currentTarget; if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'Tap again to erase everything'; return; } RESETTING = true; try { for (const k of ['willowvale_progress_v2', 'willowvale_progress_v1', 'willowvale_player_v2']) localStorage.removeItem(k); } catch { /* ignore */ } location.reload(); },
+    exit: () => { ADMIN.on = false; ADMIN.token = ''; safeSet('willowvale_admin', ''); document.body.classList.remove('is-admin'); closeSheet(); toast('Signed out of admin mode.'); },
+  };
+  el.querySelectorAll('[data-a]').forEach(b => b.onclick = e => { A2[b.dataset.a](e); if (!['overview', 'centre', 'labels', 'freewill', 'reset', 'exit'].includes(b.dataset.a) && S.sheet === 'admin') showAdmin(); });
+  el.querySelectorAll('[data-hour]').forEach(b => b.onclick = () => { adminDo(b.textContent.toLowerCase(), () => { const day = Math.floor(S.progress.clock / 1440); S.progress.clock = day * 1440 + (+b.dataset.hour) * 60; }); showAdmin(); });
+  el.querySelectorAll('[data-town]').forEach(b => b.onclick = () => { const id = b.dataset.town; if (id === C.id) return; S.progress.unlocked[id] = 1; const keep = S.coins; travelTo(id); setCoins(keep); });
+  el.querySelectorAll('[data-meet]').forEach(b => b.onclick = () => { const n = cityNpcs.find(x => x.name === b.dataset.meet); if (!n) return; closeSheet(); if (world.interior) { leaveHome(); setTimeout(() => setScene('city', n.x + 1, n.y + 1), 700); } else setScene('city', n.x + 1, n.y + 1); });
+  openSheet('admin', 'Admin', 'Admin panel', el, { tab: 'explore' });
+}
+if (/[?&]admin\b/.test(location.search)) setTimeout(() => { $('onboarding').classList.contains('hidden') ? (ADMIN.on ? showAdmin() : showAdminLogin()) : null; }, 1500);
 
 // ---------- network ----------
 async function request(path, method = 'GET', body) {
