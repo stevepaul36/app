@@ -50,7 +50,7 @@ export function box(ctx, x0, y0, z0, w, d, h, color, opts = {}) {
   return { j: faceJ(x0, y0, z0, w, d, h), i: faceI(x0, y0, z0, w, d, h) };
 }
 
-function gableRoof(ctx, x0, y0, z, w, d, rh, color, axis = 'i', o = 0.14, wall = '#F6EBD9') {
+export function gableRoof(ctx, x0, y0, z, w, d, rh, color, axis = 'i', o = 0.14, wall = '#F6EBD9') {
   const st = edge(color);
   const stripe = (a, b, c2, d2, n) => {
     ctx.save(); ctx.globalAlpha = 0.18;
@@ -79,7 +79,7 @@ function gableRoof(ctx, x0, y0, z, w, d, rh, color, axis = 'i', o = 0.14, wall =
   }
 }
 
-function hipRoof(ctx, x0, y0, z, w, d, rh, color, o = 0.14) {
+export function hipRoof(ctx, x0, y0, z, w, d, rh, color, o = 0.14) {
   const st = edge(color);
   const a = [x0 - o, y0 - o, z - 5], b = [x0 + w + o, y0 - o, z - 5], c = [x0 + w + o, y0 + d + o, z - 5], dd = [x0 - o, y0 + d + o, z - 5];
   const inset = Math.min(w, d) * 0.5;
@@ -119,7 +119,7 @@ export function windowOn(ctx, f, u, v, ww, wh, opt = {}) {
   }
 }
 
-function doorOn(ctx, f, u, dw = 0.16, dh = 0.62, color = '#9B6A47') {
+export function doorOn(ctx, f, u, dw = 0.16, dh = 0.62, color = '#9B6A47') {
   rectOn(ctx, f, u - dw / 2 - 0.025, 0, u + dw / 2 + 0.025, dh + 0.05, '#FFFFFF', '#00000022');
   rectOn(ctx, f, u - dw / 2, 0, u + dw / 2, dh, color, edge(color));
   rectOn(ctx, f, u - dw / 2 + 0.03, dh * 0.55, u + dw / 2 - 0.03, dh * 0.88, '#9FD8F2', null, .01);
@@ -131,7 +131,7 @@ function doorOn(ctx, f, u, dw = 0.16, dh = 0.62, color = '#9B6A47') {
   poly(ctx, [s0, s1, [s1[0] + out[0], s1[1] + out[1], 0], [s0[0] + out[0], s0[1] + out[1], 0]], '#E9DCC6', '#00000022', 1);
 }
 
-function awningOn(ctx, f, u0, u1, v, colors) {
+export function awningOn(ctx, f, u0, u1, v, colors) {
   const n = 7, depth = 0.22, drop = 16;
   for (let k = 0; k < n; k++) {
     const a = u0 + (u1 - u0) * k / n, b = u0 + (u1 - u0) * (k + 1) / n;
@@ -145,7 +145,7 @@ function awningOn(ctx, f, u0, u1, v, colors) {
   poly(ctx, [fp(f, u0, v), fp(f, u1, v)], null, '#00000030', 1.2);
 }
 
-function signOn(ctx, f, u, v, icon, color, label) {
+export function signOn(ctx, f, u, v, icon, color, label) {
   const [cx, cy] = P(...fp(f, u, v, 0.03));
   ctx.save();
   if (label) {
@@ -207,7 +207,7 @@ export class Sprite {
     return this._mask.m[(y >> 2) * this._mask.mw + (x >> 2)] === 1;
   }
 }
-function bounds(w, d, top) {
+export function bounds(w, d, top) {
   const pts = [P(0, 0, 0), P(w, 0, 0), P(0, d, 0), P(w, d, 0), P(0, 0, top), P(w, 0, top), P(0, d, top), P(w, d, top)];
   return [Math.min(...pts.map(p => p[0])) - 40, Math.min(...pts.map(p => p[1])) - 30, Math.max(...pts.map(p => p[0])) + 40, Math.max(...pts.map(p => p[1])) + 30];
 }
@@ -231,7 +231,7 @@ const APT_LOOKS = [
 function doorFace(o, faces) { return o.door === 'i' ? faces.i : faces.j; }
 function otherFace(o, faces) { return o.door === 'i' ? faces.j : faces.i; }
 
-function drawHouse(ctx, o) {
+export function drawHouse(ctx, o) {
   const look = HOUSE_LOOKS[(o.look || 0) % HOUSE_LOOKS.length];
   const w = o.w, d = o.d, x0 = 0.2, y0 = 0.2, ww = w - 0.4, dd = d - 0.4, h = 70;
   // little garden plot with a picket fence
@@ -269,7 +269,7 @@ function fence(ctx, o) {
   else { run([0.05, d - 0.05], [w / 2 - 0.25, d - 0.05]); run([w / 2 + 0.25, d - 0.05], [w - 0.05, d - 0.05]); }
 }
 
-function drawApartment(ctx, o) {
+export function drawApartment(ctx, o) {
   const look = APT_LOOKS[(o.look || 0) % APT_LOOKS.length];
   const floors = 4 + (o.look % 2), FH = 40, x0 = 0.12, y0 = 0.12, w = o.w - 0.24, d = o.d - 0.24, h = floors * FH;
   const faces = box(ctx, x0, y0, 0, w, d, h, look.wall);
@@ -328,8 +328,8 @@ const VENUE_STYLE = {
   clinic: { wall: '#F4FFF7', roof: '#3FA86A', floors: 2, roofType: 'flat', cross: true },
 };
 
-function drawVenue(ctx, o) {
-  const s = VENUE_STYLE[o.id] || VENUE_STYLE.cafe;
+export function drawVenue(ctx, o) {
+  const s = o.vstyle || VENUE_STYLE[o.id] || VENUE_STYLE.cafe;
   const FH = 44, x0 = 0.12, y0 = 0.12, w = o.w - 0.24, d = o.d - 0.24, h = s.floors * FH;
   poly(ctx, [[0, 0, 0], [o.w, 0, 0], [o.w, o.d, 0], [0, o.d, 0]], '#EFE3CC', '#C9B79566');
   if (s.roofType === 'canopy') return drawStation(ctx, o, s);
@@ -367,7 +367,7 @@ function drawVenue(ctx, o) {
   else if (s.roofType === 'hip') { hipRoof(ctx, x0, y0, h, w, d, 40, s.roof, 0.12); const [cx, cy] = P(x0 + w / 2, y0 + d / 2, h + 40); ctx.fillStyle = '#FFC83D'; ctx.beginPath(); ctx.arc(cx, cy - 4, 6, 0, 7); ctx.fill(); }
   else { box(ctx, x0 - 0.04, y0 - 0.04, h, w + 0.08, d + 0.08, 8, s.roof); box(ctx, x0 + 0.3, y0 + 0.3, h + 8, 0.6, 0.5, 14, '#C7D3DE'); }
   const signV = s.roofType === 'flat' ? (h - 14) / h : (h - 10) / h;
-  signOn(ctx, df, 0.5, o.id === 'theatre' ? 0.86 : signV, o.icon, s.roof === '#FFFFFF' ? '#3FA86A' : s.roof, o.type);
+  signOn(ctx, df, 0.5, o.id === 'theatre' ? 0.86 : signV, o.icon, s.roof === '#FFFFFF' ? '#3FA86A' : s.roof, o.sign || o.type);
 }
 
 function drawStation(ctx, o, s) {
@@ -390,7 +390,7 @@ function drawStation(ctx, o, s) {
   signOn(ctx, faceJ(x0, y0, 60, w, d, 40), 0.5, 0.75, o.icon, s.roof, 'Tram');
 }
 
-function drawShop(ctx, o) {
+export function drawShop(ctx, o) {
   const x0 = 0.15, y0 = 0.15, w = o.w - 0.3, d = o.d - 0.3, h = 82;
   const wall = o.label === 'Cottage' ? '#FFF1D6' : lighten(o.color, 0.78);
   const faces = box(ctx, x0, y0, 0, w, d, h, wall, { top: false });
@@ -568,8 +568,8 @@ export function drawWindmillBlades(ctx, sx, sy, zoom, t) {
 }
 
 // ---------- nature & street furniture ----------
-function blob(ctx, x, y, r, c) { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = c; ctx.fill(); }
-function canopy(ctx, blobs, base, r) {
+export function blob(ctx, x, y, r, c) { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = c; ctx.fill(); }
+export function canopy(ctx, blobs, base, r) {
   const outline = darken(base, 0.4);
   for (const [x, y, s] of blobs) blob(ctx, x, y, s + 2.2, outline);
   for (const [x, y, s] of blobs) blob(ctx, x, y, s, darken(base, 0.12));

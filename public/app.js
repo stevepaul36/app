@@ -4,8 +4,10 @@ import * as A from './js/art.js';
 import * as F from './js/furniture.js';
 import { buildHome, O as HOME_O } from './js/home.js';
 import * as SND from './js/audio.js';
-import { STARTER, ACHIEVEMENTS, SIGNATURE, replyTo, unlockedSet } from './js/emoji.js';
-import { NEEDS, freshNeeds, mood, moodLabel, moodColor, needColor, SPEEDS, GAME_MIN_PER_SEC, clockText, dayOf, hourOf, skyTint, isNight, actionsFor, TRAITS, SKILLS, SKILL_MAX, xpForLevel, CAREER, friendLevel } from './js/sim.js';
+import { STARTER, ACHIEVEMENTS, SIGNATURE, ALL_EMOJIS, replyTo, unlockedSet } from './js/emoji.js';
+import { CITY_LIST, ROUTES, CITY_PACKS, cityMeta, buildCity, addWillowvaleRoad } from './js/cities.js';
+import * as CA from './js/cityart.js';
+import { NEEDS, freshNeeds, mood, moodLabel, moodColor, needColor, SPEEDS, GAME_MIN_PER_SEC, clockText, dayOf, hourOf, skyTint, isNight, actionsFor, TRAITS, SKILLS, SKILL_MAX, xpForLevel, CAREER, CAREERS, friendLevel } from './js/sim.js';
 
 const IS_NATIVE = location.protocol === 'capacitor:' || !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
 const API_BASE = IS_NATIVE ? (safeGet('willowvale_server') || 'https://willowvale-animal-town.onrender.com') : '';
@@ -50,7 +52,18 @@ S.progress.achievements = S.progress.achievements || [];
 S.progress.places = S.progress.places || {};
 S.progress.owned = S.progress.owned || [];
 S.progress.skills = Object.assign(Object.fromEntries(SKILLS.map(k => [k.k, { lv: 0, xp: 0 }])), S.progress.skills || {});
-S.progress.job = Object.assign({ level: 0, good: 0, lastDay: 0 }, S.progress.job || {});
+// careers: one ladder per town, one shift a day across all of them
+S.progress.jobs = S.progress.jobs || {};
+if (S.progress.job) { S.progress.jobs.tram = { level: S.progress.job.level || 0, good: S.progress.job.good || 0 }; S.progress.lastWorkDay = S.progress.job.lastDay || 0; delete S.progress.job; }
+for (const k of Object.keys(CAREERS)) S.progress.jobs[k] = Object.assign({ level: 0, good: 0 }, S.progress.jobs[k] || {});
+S.progress.lastWorkDay = S.progress.lastWorkDay || 0;
+// the island road: where you are, where you've been, homes you rent elsewhere, emoji packs
+S.progress.city = S.progress.city || 'willowvale';
+S.progress.visited = Object.assign({ willowvale: 1 }, S.progress.visited || {});
+S.progress.unlocked = S.progress.unlocked || {};
+S.progress.packs = S.progress.packs || [];
+S.progress.homes = S.progress.homes || {};
+if (typeof S.progress.rentDay !== 'number') S.progress.rentDay = Math.floor((S.progress.clock || 0) / 1440);
 const skillLv = k => S.progress.skills[k]?.lv || 0;
 // Profiles saved before the wardrobe used an outfit number; turn it into a full look.
 if (S.profile && !S.profile.look) S.profile.look = A.normLook(S.profile.outfit ?? 0);
@@ -60,8 +73,8 @@ const saveProgress = () => { if (!S.token) S.progress.coins = S.coins; store.set
 const saveSettings = () => store.set('willowvale_settings_v2', S.settings);
 
 // ---------- world ----------
-const cityWorld = buildWorld();
-let world = cityWorld;
+let cityWorld = null, cityThings = [], cityFlats = [], cityNpcs = [], myHome = null, C = null;
+let world = null;
 const canvas = $('world'), ctx = canvas.getContext('2d');
 let W = 0, H = 0, DPR = 1;
 const mobile = () => Math.min(W, H) < 620;
@@ -70,48 +83,66 @@ const cam = { x: 0, y: 0, zoom: 0.6, tz: 0, free: false };
 const tileCache = new Map();
 function tileSpr(type, i, j) {
   const v = (i * 7 + j * 13) % 4, k = type * 10 + v;
-  if (!tileCache.has(k)) tileCache.set(k, A.tileSprite(type, v));
+  if (!tileCache.has(k)) tileCache.set(k, type >= 13 ? CA.skinTileSprite(type, v) : A.tileSprite(type, v));
   return tileCache.get(k);
 }
 const treeCache = new Map();
-function treeSpr(kind, seed) { const k = kind + (seed % 5); if (!treeCache.has(k)) treeCache.set(k, A.treeSprite(kind, seed % 5)); return treeCache.get(k); }
+function treeSpr(kind, seed) { const k = kind + (seed % 5); if (!treeCache.has(k)) treeCache.set(k, CA.CITY_TREES.has(kind) ? CA.cityTreeSprite(kind, seed % 5) : A.treeSprite(kind, seed % 5)); return treeCache.get(k); }
 const smallCache = new Map();
-function smallSpr(kind, seed, face) { const k = kind + (kind === 'bench' ? face : seed % 6); if (!smallCache.has(k)) smallCache.set(k, A.smallSprite(kind, seed % 6, face)); return smallCache.get(k); }
+function smallSpr(kind, seed, face, art) {
+  const k = kind + (art || '') + (kind === 'bench' ? face : seed % 6);
+  if (!smallCache.has(k)) smallCache.set(k, art === 'marigold' ? CA.marigoldSprite(seed % 6) : art ? CA.cityLampSprite(art, seed % 6) : A.smallSprite(kind, seed % 6, face));
+  return smallCache.get(k);
+}
 const TREE_SHADOW = A.treeShadow();
 
-// Static scene objects with their art.
+// Static scene objects with their art. Each town builds its own set the first time you visit.
 let things = [];
 let flats = [];
-const venuesById = {};
-for (const o of cityWorld.objects) {
-  const t = { o, box: [o.i, o.j, o.i + o.w, o.j + o.d], ax: o.i, ay: o.j, interactive: true };
-  if (['house', 'apartment', 'villa', 'venue', 'shop', 'myhome'].includes(o.kind)) {
-    t.sprite = A.buildingSprite(o);
-    const h = { house: 120, myhome: 120, apartment: 200, villa: 140, venue: 140, shop: 120 }[o.kind];
-    t.shadow = A.shadowSprite(o.w, o.d, h);
-    t.top = { house: 130, myhome: 130, apartment: 230, villa: 160, venue: 165, shop: 135 }[o.kind];
-    if (o.id === 'station') t.top = 90;
-    if (o.kind === 'venue') venuesById[o.id] = o;
-  } else if (o.kind === 'fountain') { t.sprite = A.fountainSprite(); t.live = 'fountain'; }
-  else if (o.kind === 'clock') { t.sprite = A.clockSprite(); t.shadow = A.shadowSprite(1, 1, 120); t.live = 'clock'; t.top = 240; }
-  else if (o.kind === 'board') { t.sprite = A.boardSprite(); }
-  else if (o.kind === 'sunwheel') { t.sprite = A.sunwheelBase(); t.live = 'sunwheel'; t.top = 280; }
-  else if (o.kind === 'windmill') { t.sprite = A.windmillBase(); t.live = 'windmill'; t.shadow = A.shadowSprite(2, 2, 90); t.top = 200; }
-  things.push(t);
+let venuesById = {};
+const BUILDING_KINDS = ['house', 'apartment', 'villa', 'venue', 'shop', 'myhome'];
+function makeThings(wd) {
+  const list = [], flatList = [], byId = {};
+  for (const o of wd.objects) {
+    const t = { o, box: [o.i, o.j, o.i + o.w, o.j + o.d], ax: o.i, ay: o.j, interactive: true };
+    if (o.kind === 'venue') byId[o.id] = o;
+    if (o.flatArt) { flatList.push({ d: o, obj: o, x: o.i, y: o.j, sprite: CA.flatSprite(o) }); continue; }
+    if (BUILDING_KINDS.includes(o.kind)) {
+      if (o.style) { t.sprite = CA.cityBuildingSprite(o); const m = CA.styleMeta(o); t.top = m.top; t.shadow = A.shadowSprite(o.w, o.d, m.shadow); }
+      else {
+        t.sprite = A.buildingSprite(o);
+        const hh = { house: 120, myhome: 120, apartment: 200, villa: 140, venue: 140, shop: 120 }[o.kind];
+        t.shadow = A.shadowSprite(o.w, o.d, hh);
+        t.top = { house: 130, myhome: 130, apartment: 230, villa: 160, venue: 165, shop: 135 }[o.kind];
+        if (o.vstyle) t.top = 50 + (o.vstyle.floors || 2) * 44;
+        if (o.id === 'station') t.top = 90;
+      }
+    } else if (o.kind === 'landmark') {
+      if (o.flat) { flatList.push({ d: o, obj: o, x: o.i, y: o.j, sprite: CA.landmarkSprite(o) }); continue; }
+      t.sprite = CA.landmarkSprite(o); t.top = CA.LM_TOP[o.lm] || 0; t.interactive = !o.deco;
+      if (!o.deco && o.lm !== 'rangoli') t.shadow = A.shadowSprite(o.w, o.d, Math.min(160, t.top * 0.6));
+    } else if (o.kind === 'busstop') { t.sprite = CA.busStopSprite(); t.top = 100; }
+    else if (o.kind === 'fountain') { t.sprite = A.fountainSprite(); t.live = 'fountain'; }
+    else if (o.kind === 'clock') { t.sprite = A.clockSprite(); t.shadow = A.shadowSprite(1, 1, 120); t.live = 'clock'; t.top = 240; }
+    else if (o.kind === 'board') { t.sprite = A.boardSprite(); }
+    else if (o.kind === 'sunwheel') { t.sprite = A.sunwheelBase(); t.live = 'sunwheel'; t.top = 280; }
+    else if (o.kind === 'windmill') { t.sprite = A.windmillBase(); t.live = 'windmill'; t.shadow = A.shadowSprite(2, 2, 90); t.top = 200; }
+    list.push(t);
+  }
+  addDecor(list, flatList, wd.decor);
+  for (const b of wd.boats) list.push({ o: b, box: [b.x - 0.4, b.y - 0.4, b.x + 0.4, b.y + 0.4], ax: b.x, ay: b.y, centered: true, live: 'boat' });
+  return { things: list, flats: flatList, byId };
 }
 function addDecor(list, flatList, decor) {
   for (const d of decor) {
     const x = d.i + 0.5 + (d.ox || 0), y = d.j + 0.5 + (d.oy || 0);
-    if (d.kind === 'flowers' || d.kind === 'bench') { flatList.push({ d, x, y, sprite: smallSpr(d.kind, d.seed || 0, d.face) }); continue; }
+    if (d.kind === 'flowers' || d.kind === 'bench') { flatList.push({ d, x, y, sprite: smallSpr(d.kind, d.seed || 0, d.face, d.kind === 'flowers' && d.marigold && (d.seed % 2) ? 'marigold' : null) }); continue; }
     const t = { o: d, box: [d.i + 0.2, d.j + 0.2, d.i + 0.8, d.j + 0.8], ax: x, ay: y, centered: true };
     if (d.kind === 'tree') { t.sprite = treeSpr(d.tree, d.seed); t.treeShadow = true; }
-    else t.sprite = smallSpr(d.kind, d.seed || 0, d.face);
+    else t.sprite = smallSpr(d.kind, d.seed || 0, d.face, d.kind === 'lamp' ? d.art : null);
     list.push(t);
   }
 }
-addDecor(things, flats, cityWorld.decor);
-for (const b of cityWorld.boats) things.push({ o: b, box: [b.x - 0.4, b.y - 0.4, b.x + 0.4, b.y + 0.4], ax: b.x, ay: b.y, centered: true, live: 'boat' });
-const cityThings = things, cityFlats = flats;
 
 // Inside your cottage: walls on tile edges, furniture, and a little garden.
 const homeWorld = buildHome();
@@ -132,7 +163,6 @@ for (const f of homeWorld.objects) {
 }
 addDecor(homeThings, homeFlats, homeWorld.decor);
 const homeDoor = homeWorld.objects.find(f => f.door);
-const myHome = cityWorld.objects.find(o => o.kind === 'myhome');
 
 // ---------- characters ----------
 class Walker {
@@ -161,16 +191,48 @@ class Walker {
 const playerStart = [23.5, 23.5];
 const BASE_SPEED = 4.2;
 const player = new Walker(...playerStart, S.profile?.species || 'fox', S.profile?.look || A.OUTFITS[0], { speed: BASE_SPEED, seed: 3 });
-let npcs = NEIGHBOURS.map((n, k) => {
-  const spot = nearestWalkable(cityWorld, n.home[0], n.home[1]) || [22, 22];
-  const w = new Walker(spot[0] + 0.5, spot[1] + 0.5, n.species, A.randomLook(k * 31 + 5), { speed: 1.5 + (k % 3) * 0.2, seed: k * 3 + 1, name: n.name });
-  w.data = n; w.home = spot; w.busy = 0; w.traits = n.traits || [];
-  w.needs = { hunger: 55 + (k * 7) % 40, energy: 60 + (k * 11) % 35, fun: 45 + (k * 13) % 45, social: 40 + (k * 5) % 50, hygiene: 60 + (k * 3) % 35, comfort: 55 + (k * 9) % 40 };
-  w.task = null; w.doing = 'Out for a walk';
-  if (n.traits?.includes('Athletic')) w.speed *= TRAITS.Athletic.speed;
-  return w;
-});
-const cityNpcs = npcs;
+let npcs = [];
+function makeNpcs(defs, wd, base) {
+  return defs.map((n, k) => {
+    const spot = nearestWalkable(wd, n.home[0], n.home[1]) || [22, 22];
+    const w = new Walker(spot[0] + 0.5, spot[1] + 0.5, n.species, A.randomLook(base + k * 31 + 5), { speed: 1.5 + (k % 3) * 0.2, seed: k * 3 + 1, name: n.name });
+    w.data = n; w.home = spot; w.busy = 0; w.traits = n.traits || [];
+    w.needs = { hunger: 55 + (k * 7) % 40, energy: 60 + (k * 11) % 35, fun: 45 + (k * 13) % 45, social: 40 + (k * 5) % 50, hygiene: 60 + (k * 3) % 35, comfort: 55 + (k * 9) % 40 };
+    w.task = null; w.doing = 'Out for a walk';
+    if (n.traits?.includes('Athletic')) w.speed *= TRAITS.Athletic.speed;
+    w.baseSpeed = w.speed;
+    return w;
+  });
+}
+// ---------- towns ----------
+const CITIES = {};
+function getCity(id) {
+  if (CITIES[id]) return CITIES[id];
+  let rec;
+  if (id === 'willowvale') {
+    const wd = buildWorld(); addWillowvaleRoad(wd);
+    rec = { id, world: wd, venues: VENUES, districts: DISTRICTS, districtAt, neighbours: NEIGHBOURS, stop: wd.stop };
+  } else {
+    const wd = buildCity(id);
+    rec = { id, world: wd, venues: wd.venues, districts: wd.districts, districtAt: wd.districtAt, neighbours: wd.neighbours, stop: wd.stop };
+  }
+  const made = makeThings(rec.world);
+  Object.assign(rec, made, { venuesById: made.byId, myHome: rec.world.objects.find(o => o.kind === 'myhome') || null });
+  rec.npcs = makeNpcs(rec.neighbours, rec.world, id.length * 97);
+  rec.meta = cityMeta(id);
+  CITIES[id] = rec;
+  return rec;
+}
+function useCity(id) {
+  C = getCity(id);
+  cityWorld = C.world; cityThings = C.things; cityFlats = C.flats; cityNpcs = C.npcs; myHome = C.myHome; venuesById = C.venuesById;
+  S.progress.city = id;
+  SND.setCity(id);
+}
+if (!cityMeta(S.progress.city) || !cityOpen(S.progress.city)) S.progress.city = 'willowvale';
+useCity(S.progress.city);
+world = cityWorld; things = cityThings; flats = cityFlats; npcs = cityNpcs;
+if (S.progress.city !== 'willowvale') { player.x = C.stop.stand[0]; player.y = C.stop.stand[1] + 1; }
 let sceneName = 'city';
 function setScene(name, x, y) {
   sceneName = name;
@@ -188,16 +250,22 @@ function fadeTo(fn) {
   const f = $('fade'); f.classList.add('on');
   setTimeout(() => { fn(); f.classList.remove('on'); }, S.settings.reduced ? 40 : 380);
 }
-function enterHome() { cancelActions(); closePie(); fadeTo(() => { setScene('home', ...homeWorld.insideDoor); player.face(player.x - 1, player.y - 1); toast('Home sweet home'); }); }
+function enterHome(o) {
+  cancelActions(); closePie();
+  const door = o && o.doorTile ? o.doorTile : myHome ? myHome.doorTile : C.stop.doorTile;
+  S.progress.homeDoor = { city: C.id, x: door[0] + 0.5, y: door[1] + 0.5, name: o?.name || 'Your cottage' };
+  fadeTo(() => { setScene('home', ...homeWorld.insideDoor); player.face(player.x - 1, player.y - 1); toast(o && o.home ? `Welcome home to ${o.name}` : 'Home sweet home'); });
+}
 function leaveHome() {
   cancelActions(); closePie();
-  fadeTo(() => { setScene('city', myHome.doorTile[0] + 0.5, myHome.doorTile[1] + 0.5); player.face(player.x + 1, player.y + 1); });
+  const hd = S.progress.homeDoor && S.progress.homeDoor.city === C.id ? S.progress.homeDoor : null;
+  const [x, y] = hd ? [hd.x, hd.y] : myHome ? [myHome.doorTile[0] + 0.5, myHome.doorTile[1] + 0.5] : C.stop.stand;
+  fadeTo(() => { setScene('city', x, y); player.face(player.x + 1, player.y + 1); });
 }
 // ---------- neighbours live their own lives ----------
 // Each neighbour has the same six needs as you and picks what to do the way Sims do: every place and
 // object advertises what it fixes, the neighbour scores each offer against their needs and traits,
 // nearer offers score higher, and they choose among the best few. At night they go home to sleep.
-const NPC_KINDS = new Set(['cafe', 'market', 'community', 'theatre', 'library', 'marina', 'clinic', 'sunwheel', 'windmill', 'fountain', 'bench']);
 const PLACE_WORDS = { cafe: 'At the café', market: 'At the market', community: 'At a workshop', theatre: 'At the theatre', library: 'At the library', marina: 'Fishing at the marina', clinic: 'Freshening up at the clinic', sunwheel: 'On the Sunwheel', windmill: 'By the windmill', fountain: 'At the fountain', bench: 'Resting on a bench' };
 const benchTaken = new Set();
 const sleepHours = n => { for (const t of n.traits) if (TRAITS[t]?.sleep) return TRAITS[t].sleep; return [22, 6]; };
@@ -209,6 +277,20 @@ function npcEnd(n) {
   if (t.bench) benchTaken.delete(t.bench);
   if (t.partner && t.partner.task && t.partner.task.partner === n) { const p = t.partner; p.task = null; p.pose = null; p.wait = 1 + Math.random() * 2; }
   n.task = null; n.pose = null; n.arms = null; n.path = []; n.onArrive = null; n.wait = 1 + Math.random() * 3; n.doing = 'Out for a walk';
+  if (n.baseSpeed) n.speed = n.baseSpeed;
+}
+// A morning jog: twice round the ring lane.
+function npcJog(n) {
+  const loop = cityWorld.jogLoop || [[10.5, 10.5], [33.5, 10.5], [33.5, 33.5], [10.5, 33.5]];
+  let k0 = 0, bd = Infinity; loop.forEach(([x, y], k) => { const d = Math.hypot(x - n.x, y - n.y); if (d < bd) { bd = d; k0 = k; } });
+  const pts = []; for (let k = 0; k <= loop.length * 2; k++) pts.push(loop[(k0 + k) % loop.length]);
+  let path = [], from = [n.x, n.y];
+  for (const p of pts) { const seg = findPath(cityWorld, from[0], from[1], p[0], p[1]); if (!seg) break; path = path.concat(seg.slice(1)); from = p; }
+  if (path.length < 4) return false;
+  n.task = { kind: 'jog', label: 'Out for a jog', phase: 'walk', emoteT: 2 }; n.doing = 'Out for a jog';
+  n.speed = (n.baseSpeed || n.speed) * 1.8; n.jogDay = dayOf(S.progress.clock);
+  n.go(path, () => { if (n.task && n.task.kind === 'jog') npcEnd(n); });
+  return true;
 }
 function npcStart(n, task) {
   n.task = task; n.doing = task.label;
@@ -226,7 +308,16 @@ function npcStart(n, task) {
   });
 }
 function npcDecide(n) {
-  const h = hourOf(S.progress.clock);
+  const h = hourOf(S.progress.clock), day = dayOf(S.progress.clock), weekday = day % 7 !== 6 && day % 7 !== 0;
+  // routines: joggers run in the morning, workers head to work on weekdays
+  if (n.data.jogger && h >= 6 && h < 9 && n.jogDay !== day && !asleepAt(n, h) && n.needs.energy > 35 && Math.random() < 0.7 && npcJog(n)) return;
+  const job = n.data.work && venuesById[n.data.work];
+  if (job && weekday && h >= 9 && h < 16 && n.workDay !== day && !asleepAt(n, h)) {
+    n.workDay = day;
+    const stand = job.flatArt || ACTIONS_STAND.has(kindKey(job));
+    npcStart(n, { kind: 'work', label: `Working at ${job.name.replace(/^The /, '')}`, dest: approachOf(job, cityWorld), pose: stand ? 'stand' : 'inside', mins: (16 - h) * 60, gain: { social: 12, fun: 6 }, emotes: ['💼', '😊', '✨'], look: [job.i + job.w / 2, job.j + job.d / 2], place: job.id });
+    return;
+  }
   if (asleepAt(n, h)) {
     const wake = sleepHours(n)[1] * 60, now = S.progress.clock % 1440;
     npcStart(n, { kind: 'sleep', label: 'Asleep at home', dest: [n.home[0] + 0.5, n.home[1] + 0.5], pose: 'inside', mins: ((wake - now) + 1440) % 1440 || 60, gain: { energy: 95, hygiene: 40, hunger: 35, comfort: 30 } });
@@ -237,13 +328,9 @@ function npcDecide(n) {
   const scoreGain = gain => Object.entries(gain || {}).reduce((sum, [k, v]) => sum + v * Math.pow((100 - n.needs[k]) / 100, 2) * 2, 0);
   for (const t of cityThings) {
     const o = t.o; if (!t.interactive || !o) continue;
-    const key = kindKey(o); if (!NPC_KINDS.has(key)) continue;
-    const dest = approachOf(o, cityWorld), d = Math.hypot(dest[0] - n.x, dest[1] - n.y);
-    for (const def of actionsFor(key)) {
-      if (def.special || def.job || def.hearts || def.needSkill) continue;
-      add(scoreGain(def.gain) * traitMult(n, def.id) / (1 + d / 14), { kind: 'act', label: PLACE_WORDS[key] || 'Out and about', dest, pose: def.pose === 'stand' ? 'stand' : 'inside', mins: def.mins, gain: def.gain, emotes: def.emotes, arms: def.arms, look: [o.i + (o.w || 1) / 2, o.j + (o.d || 1) / 2], place: o.kind === 'venue' ? o.id : o.kind });
-    }
+    npcOffers(n, o, add, scoreGain);
   }
+  for (const f of cityFlats) if (f.obj && !f.obj.deco) npcOffers(n, f.obj, add, scoreGain);
   for (const f of cityFlats) {
     if (f.d.kind !== 'bench') continue;
     const key = f.d.i + ',' + f.d.j; if (benchTaken.has(key)) continue;
@@ -277,6 +364,18 @@ function npcDecide(n) {
   if (pick.bench) benchTaken.add(pick.bench);
   npcStart(n, pick);
 }
+const ACTIONS_STAND = new Set(['nightmarket', 'bazaar', 'chai', 'garden', 'shrinegarden', 'koi', 'track', 'rangoli', 'bandstand', 'bigtree', 'admire']);
+function npcOffers(n, o, add, scoreGain) {
+  const key = kindKey(o); if (!key || key === 'myhome' || key === 'busstop') return;
+  const dest = approachOf(o, cityWorld), d = Math.hypot(dest[0] - n.x, dest[1] - n.y);
+  const word = PLACE_WORDS[key] || (o.name ? `At ${o.name.replace(/^The /, '')}` : 'Out and about');
+  for (const def of actionsFor(key)) {
+    if (def.special || def.job || def.hearts || def.needSkill || def.pose === 'jog') continue;
+    let dd = dest;
+    if (o.flatArt || o.flat) dd = [o.i + 0.5 + Math.random() * (o.w - 1), o.j + 0.5 + Math.random() * (o.d - 1)];
+    add(scoreGain(def.gain) * traitMult(n, def.id) / (1 + d / 14), { kind: 'act', label: word, dest: dd, pose: def.pose === 'stand' ? 'stand' : 'inside', mins: def.mins, gain: def.gain, emotes: def.emotes, arms: def.arms, look: [o.i + (o.w || 1) / 2, o.j + (o.d || 1) / 2], place: o.kind === 'venue' ? o.id : o.kind });
+  }
+}
 function npcThink(n, dt, gm) {
   // needs keep moving wherever you are
   const sleeping = n.task && n.task.kind === 'sleep' && n.task.phase === 'do';
@@ -300,6 +399,7 @@ function npcThink(n, dt, gm) {
       if (t.kind === 'chat' && t.partner && (!t.partner.task || t.partner.task.partner !== n)) { npcEnd(n); return; }
       if (t.t >= t.mins - 0.001) npcEnd(n);
     } else if (t.phase === 'wait') { if (!t.partner.task || t.partner.task.partner !== n) npcEnd(n); }
+    else if (t.kind === 'jog') { t.emoteT -= dt; if (t.emoteT <= 0) { t.emoteT = 3 + Math.random() * 3; n.say(['💦', '🏃', '💪', '☀️'][Math.floor(Math.random() * 4)], 1.4); } if (!n.path.length && !n.onArrive) npcEnd(n); }
     else if (!n.path.length && !n.onArrive) npcEnd(n);
     return;
   }
@@ -437,7 +537,7 @@ function drawFrame(now) {
       if (sea(i, j + 1)) { const [ax, ay] = toScreen(i, j + 1), [bx, by] = toScreen(i + 1, j + 1); ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(bx, by + drop); ctx.lineTo(ax, ay + drop); ctx.fill(); }
     }
     if (t === T.POND) drawPond(i, j, sx, sy, z);
-    else tileSpr(t, i, j).draw(ctx, sx, sy, z);
+    else tileSpr(world.skin?.[t] ?? t, i, j).draw(ctx, sx, sy, z);
   }
   // edges: path curbs and shoreline foam
   ctx.lineCap = 'round';
@@ -471,7 +571,7 @@ function drawFrame(now) {
     (t.shadow || TREE_SHADOW).draw(ctx, sx, sy, z);
   }
   ctx.globalAlpha = 1;
-  for (const f of flats) { const [sx, sy] = toScreen(f.x, f.y); if (onScreen(sx, sy, 80 * z)) f.sprite.draw(ctx, sx, sy, z); }
+  for (const f of flats) { const [sx, sy] = toScreen(f.x, f.y); if (onScreen(sx, sy, (f.obj ? 420 : 80) * z)) f.sprite.draw(ctx, sx, sy, z); }
   if (marker) {
     const [sx, sy] = toScreen(marker.x, marker.y); marker.life -= 0.016;
     const p = (time * 1.5) % 1;
@@ -634,13 +734,17 @@ function drawLabels(z) {
   ctx.save();
   const fs = Math.round(Math.max(11, Math.min(15, 13 * z * 1.4)));
   ctx.font = `700 ${fs}px "Baloo 2", system-ui, sans-serif`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-  for (const t of drawn) {
+  const flatTags = world.interior ? [] : flats.filter(f => f.obj && !f.obj.deco).map(f => ({ o: f.obj, top: 30 }));
+  for (const t of [...drawn, ...flatTags]) {
     const o = t.o; if (!o || !t.top) continue;
     let text = null, icon = '', col = '#26395A';
     if (o.kind === 'venue') { const c = insideCount(o.id); text = o.name.replace(/^The /, '') + (c ? `  👥 ${c}` : ''); icon = o.icon; col = o.color; }
-    else if (o.home && S.sheet === 'homes') { const p = propFor(o.id); text = p && p.status !== 'available' ? (p.status === 'owned' ? 'Owned' : 'Rented') : `✦ ${o.rent}/day`; icon = '🏠'; col = '#3FA86A'; }
+    else if (o.home && S.sheet === 'homes') { const st = homeStatus(o); text = st === 'Available' ? `✦ ${o.rent}/day` : st; icon = '🏠'; col = '#3FA86A'; }
     else if (o.kind === 'sunwheel') { text = 'Sunwheel'; icon = '🎡'; col = '#F0587A'; }
     else if (o.kind === 'myhome') { text = 'Your home'; icon = '🏡'; col = '#F2A93B'; }
+    else if (o.home && homeIsMine(o)) { text = 'Your home'; icon = '🏡'; col = '#F2A93B'; }
+    else if (o.kind === 'busstop') { text = 'Island bus'; icon = '🚌'; col = '#3F6FD8'; }
+    else if (o.kind === 'landmark' && o.name && (t.top > 60 || o.flat)) { text = o.name.replace(/^The /, ''); icon = o.icon || '⭐'; col = C.meta.color; }
     if (!text) continue;
     const [x, y] = toScreen(o.i + o.w / 2, o.j + o.d / 2, t.top + 18);
     if (x < -100 || x > W + 100 || y < -40 || y > H + 40) continue;
@@ -677,7 +781,7 @@ function update(dt) {
   // direct walking from the stick or keyboard (screen directions turned into grid directions)
   const running = S.run || keys.has('run');
   const tired = S.progress.needs.energy < 10 ? 0.7 : 1;
-  player.speed = BASE_SPEED * (running ? 1.7 : 1) * tired * (1 + 0.02 * skillLv('fitness'));
+  player.speed = BASE_SPEED * (running ? 1.7 : 1) * tired * (1 + 0.02 * skillLv('fitness')) * (player.jogging ? 1.5 : 1);
   let sx = 0, sy = 0, mag = 0;
   if (keys.has('up')) sy -= 1; if (keys.has('down')) sy += 1; if (keys.has('left')) sx -= 1; if (keys.has('right')) sx += 1;
   if (sx || sy) { const m = Math.hypot(sx, sy); sx /= m; sy /= m; mag = 1; }
@@ -725,11 +829,11 @@ function update(dt) {
   }
   // district chip
   const square = player.x >= 19 && player.x < 25 && player.y >= 19 && player.y < 25;
-  const d = world.interior ? 'home' : square ? 'square' : districtAt(player.x, player.y);
-  if (d !== update.lastDistrict) {
-    update.lastDistrict = d;
-    $('district-name').textContent = d === 'home' ? 'Your cottage' : square ? 'Town Square' : DISTRICTS[d].name;
-    $('district-name').style.background = d === 'home' ? '#C98A1E' : square ? '#C98A1E' : A.darken(DISTRICTS[d].color, 0.15);
+  const d = world.interior ? 'home' : square ? 'square' : C.districtAt(player.x, player.y);
+  if (d + C.id !== update.lastDistrict) {
+    update.lastDistrict = d + C.id;
+    $('district-name').textContent = d === 'home' ? (S.progress.homeDoor?.name || 'Your cottage') : square ? (C.id === 'willowvale' ? 'Town Square' : C.meta.name) : C.districts[d].name;
+    $('district-name').style.background = d === 'home' ? '#C98A1E' : square ? A.darken(C.meta.color, 0.1) : A.darken(C.districts[d].color, 0.15);
   }
   drawRadar();
 }
@@ -810,6 +914,8 @@ function tap(sx, sy) {
   if (world.interior && homeDoor && ti === homeDoor.i && tj === homeDoor.j) { showPie({ o: homeDoor }, sx, sy); return; }
   const bench = !world.interior && flats.find(f => f.d.kind === 'bench' && f.d.i === ti && f.d.j === tj);
   if (bench) { showPie({ o: bench.d }, sx, sy); return; }
+  const flatObj = !world.interior && flats.find(f => f.obj && !f.obj.deco && ti >= f.obj.i && ti < f.obj.i + f.obj.w && tj >= f.obj.j && tj < f.obj.j + f.obj.d);
+  if (flatObj) { showPie({ o: flatObj.obj }, sx, sy); return; }
   cancelActions();
   walkTo(x, y);
 }
@@ -835,11 +941,13 @@ function approachOf(o, wd = world) {
 }
 function kindKey(o) {
   if (o.kind === 'furn') return o.door ? 'door' : o.type;
-  if (o.kind === 'venue') return o.id;
+  if (o.kind === 'venue') return o.acts || o.id;
+  if (o.kind === 'landmark') return o.deco ? null : o.acts || null;
+  if (o.home && homeIsMine(o)) return 'myhome';
   if (o.kind === 'shop') return o.label === 'Bakery' ? 'cafe' : null;
   return o.kind;
 }
-function displayName(o) { return o.name || o.label || ({ fountain: 'Fountain', bench: 'Bench', board: 'Property board', clock: 'Town Clock' }[o.kind]) || 'Here'; }
+function displayName(o) { return o.name || o.label || ({ fountain: 'Fountain', bench: 'Bench', board: 'Property board', clock: 'Town Clock', busstop: 'Island bus stop' }[o.kind]) || 'Here'; }
 
 // Lists and other screens use this to send you somewhere and pop the menu on arrival.
 function visitThing(o) {
@@ -860,6 +968,7 @@ function findNearby() {
     const [ax, ay] = approachOf(o), d = Math.hypot(ax - player.x, ay - player.y);
     if (d < bd) { bd = d; best = { o }; }
   }
+  if (!world.interior) for (const f of flats) if (f.obj && !f.obj.deco) { const o = f.obj; const inside = player.x >= o.i && player.x < o.i + o.w && player.y >= o.j && player.y < o.j + o.d; const d = inside ? 0.5 : Math.hypot(o.stand[0] - player.x, o.stand[1] - player.y); if (d < bd) { bd = d; best = { o }; } }
   if (world.interior && homeDoor) { const d = Math.hypot(homeDoor.stand[0] - player.x, homeDoor.stand[1] - player.y); if (d < bd) best = { o: homeDoor }; }
   return best;
 }
@@ -900,13 +1009,14 @@ function showPie(target, sx, sy) {
     if (def.coins < 0 && S.coins < -def.coins) { disabled = 'Not enough coins'; }
     if (n && def.hearts && friendship(n.name).hearts < def.hearts) { disabled = `Needs ${def.hearts} hearts`; }
     if (def.coins) note = (def.coins > 0 ? '+' : '') + def.coins + ' ✦';
-    if (def.job) { note = `+${CAREER[S.progress.job.level].pay} ✦`; disabled = jobBlocked() ? (hourOf(S.progress.clock) < 7 || hourOf(S.progress.clock) >= 18 ? 'Open 7 AM–6 PM' : 'Done for today') : ''; }
+    if (def.job) { note = `+${rankOf(def.career).pay} ✦`; disabled = jobBlocked(def.career) ? (hourOf(S.progress.clock) < 7 || hourOf(S.progress.clock) >= 18 ? 'Open 7 AM–6 PM' : 'Done for today') : ''; }
     if (def.needSkill) for (const [k, lv] of Object.entries(def.needSkill)) if (skillLv(k) < lv) disabled = `Needs ${SKILLS.find(x => x.k === k).label} ${lv}`;
     opts.push({ icon: def.icon, label: def.label, note, disabled, run: () => queueAction(def, n ? { npc: n } : { o }) });
   }
   if (n) { opts.unshift({ icon: '💬', label: 'Emoji chat', run: () => meetThen(n, () => showEmojiChat(n)) }); opts.push({ icon: '🎁', label: 'Gifts & friendship', run: () => { n.busy = 4; showNeighbour(n); } }); }
   else if (o.kind === 'venue') opts.push({ icon: '⭐', label: visitedToday(o.id) ? 'Today’s activity ✓' : `Today: ${o.activity.title}`, run: () => visitThenSheet(o, () => showVenue(o)) });
-  else if (o.home) opts.push({ icon: '🏠', label: 'See the listing', run: () => showHome(o) });
+  else if (o.home) opts.push({ icon: '🏠', label: homeIsMine(o) ? 'Your home' : 'See the listing', run: () => showHome(o) });
+  else if (o.kind === 'busstop') opts.push({ icon: '🛍️', label: 'Coin shop', run: () => showShop() });
   else if (o.kind === 'board') opts.push({ icon: '🏠', label: 'Browse homes', run: () => showHomes() });
   else if (o.kind === 'clock') opts.push({ icon: '🕰️', label: 'Check the time', run: () => toast(`It’s ${clockText(S.progress.clock)}, day ${dayOf(S.progress.clock)}.`) });
   else if (o.kind === 'shop' && o.label !== 'Bakery') opts.push({ icon: o.icon || '🏪', label: 'Look in the window', run: () => showInfo(o.icon || '🏪', o.label, { Florist: 'Bunches from the Fernhill meadows.', Books: 'A tiny bookshop with a very sleepy cat.' }[o.label] || 'A little shop in Old Town.') });
@@ -950,9 +1060,10 @@ function stepsOf(def, target) {
 function queueAction(def, target) {
   if (def.special === 'leave') { leaveHome(); return; }
   if (def.special === 'wardrobe') { const d = approachOf(target.o); const go = () => { player.face(...(target.o.look || d)); showWardrobe(); }; if (near(...d, 1.3)) go(); else walkTo(...d, go); return; }
-  if (def.special === 'enter') { const go = () => enterHome(); const d = approachOf(target.o); if (near(...d, 1.3)) go(); else walkTo(...d, go); return; }
+  if (def.special === 'enter') { const go = () => enterHome(target.o); const d = approachOf(target.o); if (near(...d, 1.3)) go(); else walkTo(...d, go); return; }
+  if (def.special === 'travel') { const go = () => showIsland(); const d = approachOf(target.o); if (near(...d, 1.3)) go(); else walkTo(...d, go); return; }
   if (def.coins < 0 && S.coins < -def.coins) { toast('Not enough coins for that.'); return; }
-  if (def.job) { const why = jobBlocked(); if (why) { toast(why); return; } }
+  if (def.job) { const why = jobBlocked(def.career); if (why) { toast(why); return; } }
   if (def.needSkill) for (const [k, lv] of Object.entries(def.needSkill)) if (skillLv(k) < lv) { toast(`You need ${SKILLS.find(x => x.k === k).label.toLowerCase()} level ${lv} for that.`); return; }
   if (queue.length >= 4) { toast('Your to-do list is full.'); return; }
   queue.push({ def, target, label: def.label, icon: def.icon, steps: stepsOf(def, target) });
@@ -1026,6 +1137,12 @@ function beginDoing() {
   player.arms = step.arms || null; player.prop = step.prop || null;
   player.override = step.outfit || def.outfit || null; player.saved = S.profile?.sleepLook ? { sleep: S.profile.sleepLook } : null;
   player.blanket = step.blanket || null; player.faceFront = !!step.faceFront;
+  if (step.pose === 'jog' && o) {
+    player.pose = null;
+    const cx = o.i + o.w / 2, cy = o.j + o.d / 2, rx = o.w / 2 - 0.3, ry = o.d / 2 - 0.3;
+    act.jog = Array.from({ length: 10 }, (_, k) => [cx + Math.cos(k / 10 * 6.283) * rx, cy + Math.sin(k / 10 * 6.283) * ry]);
+    player.jogging = true; player.go(act.jog.slice());
+  }
   if (step.loop) SND.startLoop(step.loop);
   if (act.item.def.job && act.item.startMood == null) act.item.startMood = mood(S.progress.needs);
   if (step.burnable && skillLv('cooking') < 2 && Math.random() < 0.35) { act.item.burnt = true; setTimeout(() => { if (act && act.step === step) { player.say('💨', 2); toast('Oops, a little burnt! Cooking gets better with practice.'); } }, 2500); }
@@ -1034,6 +1151,7 @@ function beginDoing() {
 }
 function endStep(cancelled) {
   if (!act) return;
+  if (player.jogging) { player.jogging = false; player.path = []; player.onArrive = null; act.jog = null; }
   if (act.target && act.target.npc) { act.target.npc.busy = 2; }
   standUp();
   SND.stopLoops();
@@ -1051,6 +1169,7 @@ function tickAction(gm, dt) {
   const mealMult = step.meal ? (act.item.burnt ? 0.5 : 1 + 0.04 * skillLv('cooking')) : 1;
   for (const [k, v] of Object.entries(step.gain || {})) N2[k] = Math.min(100, N2[k] + v * part / mins * (k === 'hunger' ? mealMult : 1));
   if (step.skill) addXP(step.skill, part * 0.4);
+  if (act.jog && !player.path.length) player.go(act.jog.slice());
   for (const [k, v] of Object.entries(step.cost || {})) N2[k] = Math.max(0, N2[k] - v * part / mins);
   act.emoteT -= dt;
   if (act.emoteT <= 0 && step.emotes) {
@@ -1067,7 +1186,7 @@ function finishStep() {
   if (!last) { endStep(false); act.k++; startStep(); return; }
   endStep(false);
   if (def.coins) setCoins(S.coins + def.coins, true);
-  if (def.job) finishShift(item.startMood);
+  if (def.job) finishShift(def.career || 'tram', item.startMood);
   if (def.id === 'craft' && skillLv('creativity') > 0) { setCoins(S.coins + 2 * skillLv('creativity'), true); toast(`Someone bought your craft for ${2 * skillLv('creativity')} ✦!`); }
   if (def.special === 'mail') { const notes = ['A postcard from Nori: “The gulls say hi.”', 'A coupon for one free honey bun.', 'Your library card is ready!', 'A drawing from Dot of the Sunwheel.']; toast(notes[Math.floor(Math.random() * notes.length)]); if (Math.random() < 0.4) setCoins(S.coins + 3, true); }
   if (def.friend && act.target.npc) befriend(act.target.npc, def.friend);
@@ -1123,7 +1242,7 @@ function updateQueueProgress() {
 const warned = {};
 function tickClock(gm) {
   const before = S.progress.clock; S.progress.clock += gm;
-  if (Math.floor(before / 1440) !== Math.floor(S.progress.clock / 1440)) { toast(`Good morning! Day ${dayOf(S.progress.clock)} in Willowvale.`); checkAchievements(); }
+  if (Math.floor(before / 1440) !== Math.floor(S.progress.clock / 1440)) { toast(`Good morning! Day ${dayOf(S.progress.clock)} in ${C.meta.name}.`); chargeRent(); checkAchievements(); }
   if (Math.floor(before / 30) !== Math.floor(S.progress.clock / 30)) saveProgress();
 }
 function tickNeeds(gm, curDef) {
@@ -1210,7 +1329,7 @@ $('sheet-close').onclick = closeSheet;
 function thumb(o, size = 76) {
   const c = document.createElement('canvas'); c.className = 'thumb';
   const dpr = Math.min(2, window.devicePixelRatio || 1); c.width = size * dpr; c.height = size * dpr; c.style.width = c.style.height = size + 'px';
-  const t = things.find(x => x.o === o) || things.find(x => x.o.id === o.id);
+  const t = cityThings.find(x => x.o === o) || cityFlats.find(x => x.obj === o) || things.find(x => x.o === o) || (o.id && things.find(x => x.o.id === o.id));
   const g = c.getContext('2d');
   if (t && t.sprite) {
     const [bx, by, bw, bh] = t.sprite.opaqueBox(), k = Math.min(size / bw, size / bh) * 0.86;
@@ -1232,45 +1351,76 @@ async function loadProperties() {
   catch { S.properties = S.properties || HOMES.map(h => ({ ...h, status: 'available' })); }
   return S.properties;
 }
+const localHomes = () => !S.token || C.id !== 'willowvale';
+function homeIsMine(o) {
+  if (S.progress.homes[o.id]) return true;
+  const p = !localHomes() && propFor(o.id);
+  return !!(p && S.user && (p.owner === S.user.username || p.tenant === S.user.username));
+}
+function homeStatus(o) {
+  const mine = S.progress.homes[o.id];
+  if (mine) return mine.type === 'own' ? 'Yours' : 'Your rental';
+  if (localHomes()) return 'Available';
+  const p = propFor(o.id) || { status: 'available' };
+  if (homeIsMine(o)) return p.owner === S.user.username ? 'Yours' : 'Your rental';
+  return p.status === 'owned' ? 'Owned' : p.status === 'rented' ? 'Rented' : 'Available';
+}
 function homeCard(o, big = false) {
   const p = propFor(o.id) || { ...o, status: 'available' };
-  const mine = S.user && (p.owner === S.user.username || p.tenant === S.user.username);
-  const status = mine ? (p.owner === S.user.username ? 'Yours' : 'Your rental') : p.status === 'owned' ? 'Owned' : p.status === 'rented' ? 'Rented' : 'Available';
+  const status = homeStatus(o), mine = status === 'Yours' || status === 'Your rental';
+  const rental = S.progress.homes[o.id];
   const el = h(`<article class="card home-card ${big ? 'big' : ''}">
     <div class="card-art"></div>
     <div class="card-main">
       <div class="card-top"><h3>${esc(o.name)}</h3><span class="chip ${status === 'Available' ? 'chip-ok' : mine ? 'chip-mine' : 'chip-off'}">${status}</span></div>
-      <p class="card-sub">${esc(o.kind[0].toUpperCase() + o.kind.slice(1))} · ${esc(DISTRICTS[districtAt(o.i, o.j)].name)}</p>
+      <p class="card-sub">${esc(o.kind[0].toUpperCase() + o.kind.slice(1))} · ${esc(C.districts[C.districtAt(o.i, o.j)].name)}</p>
       ${big ? `<p class="card-text">${esc(p.description || o.description)}</p>` : ''}
       <div class="price-row"><span><b>✦ ${o.rent}</b> a day to rent</span><span><b>✦ ${o.price}</b> to buy</span></div>
       <div class="card-actions">
+        ${mine ? `<button class="btn btn-primary" data-act="enter">Go inside</button>${rental && rental.type === 'rent' ? '<button class="btn btn-ghost" data-act="leave">Move out</button>' : ''}` : `
         <button class="btn btn-primary" data-act="rent" ${status !== 'Available' ? 'disabled' : ''}>Rent</button>
-        <button class="btn btn-sun" data-act="buy" ${status !== 'Available' ? 'disabled' : ''}>Buy</button>
+        <button class="btn btn-sun" data-act="buy" ${status !== 'Available' ? 'disabled' : ''}>Buy</button>`}
         ${big ? '' : '<button class="btn btn-ghost" data-act="go">Visit</button>'}
       </div>
     </div></article>`);
   el.querySelector('.card-art').append(thumb(o, big ? 120 : 84));
-  el.querySelector('[data-act=rent]').onclick = () => propertyAction(o, 'rent');
-  el.querySelector('[data-act=buy]').onclick = () => propertyAction(o, 'buy');
-  const go = el.querySelector('[data-act=go]'); if (go) go.onclick = () => { closeSheet(); visitThing(o); };
+  const on = (k, fn) => { const b = el.querySelector(`[data-act=${k}]`); if (b) b.onclick = fn; };
+  on('rent', () => propertyAction(o, 'rent'));
+  on('buy', () => propertyAction(o, 'buy'));
+  on('enter', () => { closeSheet(); queueAction(actionsFor('myhome')[0], { o }); });
+  on('leave', () => { delete S.progress.homes[o.id]; saveProgress(); toast(`You moved out of ${o.name}.`); S.sheet === 'homes' ? showHomes() : showHome(o); });
+  on('go', () => { closeSheet(); visitThing(o); });
   return el;
 }
 async function showHomes(filter = 'all') {
-  const body = openSheet('homes', 'Willowvale homes', 'Find your place', '<div class="loading-text">Checking which homes are free…</div>', { tab: 'homes' });
-  await loadProperties();
+  const body = openSheet('homes', C.meta.name + ' homes', 'Find your place', '<div class="loading-text">Checking which homes are free…</div>', { tab: 'homes' });
+  if (!localHomes()) await loadProperties();
   if (S.sheet !== 'homes') return;
   body.innerHTML = '';
-  const tabs = h(`<div class="filter-row" role="tablist">${[['all', 'All'], ['house', 'Cottages'], ['apartment', 'Apartments'], ['villa', 'Villas']].map(([k, l]) => `<button class="filter ${k === filter ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>`);
+  const tabs = h(`<div class="filter-row" role="tablist">${[['all', 'All'], ['house', 'Houses'], ['apartment', 'Apartments'], ['villa', 'Villas']].map(([k, l]) => `<button class="filter ${k === filter ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>`);
   tabs.querySelectorAll('button').forEach(b => b.onclick = () => showHomes(b.dataset.f));
   body.append(tabs);
-  if (!S.token) body.append(h(`<div class="notice"><b>Want a home of your own?</b><span>Renting and buying need a free account so your home is saved.</span><button class="btn btn-small btn-primary" id="homes-signin">Make an account</button></div>`));
+  const mineElsewhere = Object.entries(S.progress.homes).filter(([, x]) => x.city !== C.id);
+  if (mineElsewhere.length) body.append(h(`<div class="notice"><b>Your other homes</b><span>${mineElsewhere.map(([, x]) => `${esc(x.name)} in ${esc(cityMeta(x.city).name)}`).join(' · ')}</span></div>`));
+  body.append(h(`<p class="lead">Rent a home in any town to sleep, cook and relax there. Rent is paid each morning with coins.</p>`));
   const homes = world.objects.filter(o => o.home && (filter === 'all' || o.kind === filter));
   for (const o of homes) body.append(homeCard(o));
-  const s = body.querySelector('#homes-signin'); if (s) s.onclick = () => showProfile('Make an account to rent or buy homes.');
 }
-function showHome(o) { loadProperties().then(() => { if (S.sheet === 'home:' + o.id) { const b = $('sheet-body'); b.innerHTML = ''; b.append(homeCard(o, true)); } }); openSheet('home:' + o.id, 'Home', o.name, homeCard(o, true), { tab: 'homes' }); }
+function showHome(o) { if (!localHomes()) loadProperties().then(() => { if (S.sheet === 'home:' + o.id) { const b = $('sheet-body'); b.innerHTML = ''; b.append(homeCard(o, true)); } }); openSheet('home:' + o.id, 'Home', o.name, homeCard(o, true), { tab: 'homes' }); }
 async function propertyAction(o, action) {
-  if (!S.token) { showProfile(`Make an account to ${action} ${o.name}.`); return; }
+  if (localHomes()) {
+    const cost = action === 'buy' ? o.price : o.rent;
+    if (S.coins < cost) { toast(`You need ✦ ${cost} to ${action} ${o.name}.`); return; }
+    if (Object.values(S.progress.homes).filter(x => x.type === 'rent').length >= 3 && action === 'rent') { toast('You can rent up to 3 homes. Move out of one first.'); return; }
+    setCoins(S.coins - cost, true);
+    S.progress.homes[o.id] = { city: C.id, type: action === 'buy' ? 'own' : 'rent', name: o.name, rent: o.rent };
+    S.progress.rentDay = Math.floor(S.progress.clock / 1440);
+    saveProgress(); player.say('🏡'); SND.sfx('unlock');
+    toast(action === 'buy' ? `${o.name} is yours! Tap it to go inside.` : `You rented ${o.name}. Tap it to go inside.`);
+    checkAchievements();
+    if (S.sheet === 'homes') showHomes(); else showHome(o);
+    return;
+  }
   try {
     const d = await request('/api/properties/' + encodeURIComponent(o.id) + '/' + action, 'POST', {});
     if (d.world) setCoins(d.world.coins, true);
@@ -1279,6 +1429,20 @@ async function propertyAction(o, action) {
     await loadProperties();
     if (S.sheet === 'homes') showHomes(); else showHome(o);
   } catch (e) { toast(e.message); }
+}
+// Rent comes out each morning; if you can't pay, you move out (gently).
+function chargeRent() {
+  const today2 = Math.floor(S.progress.clock / 1440);
+  const days = Math.max(0, today2 - (S.progress.rentDay || today2));
+  S.progress.rentDay = today2;
+  if (!days) return;
+  for (const [id, x] of Object.entries(S.progress.homes)) {
+    if (x.type !== 'rent') continue;
+    const due = (x.rent || 10) * days;
+    if (S.coins >= due) { setCoins(S.coins - due, true); toastQuiet(`Rent paid for ${x.name}: ✦ ${due}`); }
+    else { delete S.progress.homes[id]; toast(`Not enough coins for rent, so you moved out of ${x.name}. You can rent again any time.`); }
+  }
+  saveProgress();
 }
 
 function visitedToday(id) { return !!S.progress.visits[id + '|' + today()]; }
@@ -1312,11 +1476,13 @@ function showVenue(v) {
   openSheet('venue:' + v.id, v.type, v.name, el, { tab: 'places' });
 }
 function showPlaces() {
-  const body = openSheet('places', 'Around the island', 'Places to visit', null, { tab: 'places' });
+  const body = openSheet('places', 'Around ' + C.meta.name, 'Places to visit', null, { tab: 'places' });
   const groups = {};
-  for (const v of VENUES) (groups[districtAt(v.i, v.j)] ||= []).push(v);
+  for (const v of C.venues) (groups[C.districtAt(v.i + v.w / 2, v.j + v.d / 2)] ||= []).push(v);
+  const more = h(`<button class="island-cta"><span>🗺️</span><b>Island map</b><small>Take the bus to other towns</small></button>`); more.onclick = () => showIsland();
+  body.append(more);
   for (const [d, list] of Object.entries(groups)) {
-    body.append(h(`<h4 class="group-title"><i style="background:${DISTRICTS[d].color}"></i>${esc(DISTRICTS[d].name)}</h4>`));
+    body.append(h(`<h4 class="group-title"><i style="background:${C.districts[d].color}"></i>${esc(C.districts[d].name)}</h4>`));
     for (const v of list) {
       const done = visitedToday(v.id);
       const el = h(`<article class="card place-card"><div class="card-art"></div><div class="card-main"><div class="card-top"><h3>${esc(v.name)}</h3>${done ? '<span class="chip chip-ok">Done ✓</span>' : `<span class="chip chip-sun">+${v.activity.coins} ✦</span>`}</div><p class="card-sub">${esc(v.activity.title)}</p><div class="card-actions"><button class="btn btn-small btn-primary">Go there</button></div></div></article>`);
@@ -1382,24 +1548,36 @@ function showJournal() {
     ${GOALS.map(g => { const c = Math.min(g.need, g.count()); return `<div class="goal ${c >= g.need ? 'met' : ''}"><div class="goal-top"><span>${esc(g.text)}</span><b>${c}/${g.need}</b></div><div class="bar"><i style="width:${c / g.need * 100}%"></i></div></div>`; }).join('')}
     <h4 class="group-title">Skills</h4>
     <div class="skills">${SKILLS.map(sk => { const s2 = S.progress.skills[sk.k]; const pct = s2.lv >= SKILL_MAX ? 100 : Math.round(s2.xp / xpForLevel(s2.lv) * 100); return `<div class="skill" title="${esc(sk.perk)}"><span class="skill-icon">${sk.icon}</span><div class="need-main"><div class="need-top"><b>${esc(sk.label)}</b><span>Level ${s2.lv}</span></div><div class="need-bar"><i style="width:${pct}%;background:var(--sky)"></i></div><small>${esc(sk.perk)}</small></div></div>`; }).join('')}</div>
-    <h4 class="group-title">Career</h4>
-    <div class="career"><span class="career-icon">${CAREER[S.progress.job.level].icon}</span><div><b>${esc(CAREER[S.progress.job.level].title)}</b><small>${CAREER[S.progress.job.level].pay} ✦ a shift at the Tram Station, 7 AM–6 PM. ${S.progress.job.level < CAREER.length - 1 ? `Next: ${esc(CAREER[S.progress.job.level + 1].title)} after ${(skillLv('logic') >= 3 ? 2 : 3) - S.progress.job.good} more good shift(s).` : 'Top of the ladder!'}</small></div></div>
-    <h4 class="group-title">Emoji collection <small>${unlockedSet(S.progress).size} of ${STARTER.length + ACHIEVEMENTS.length * 2 + Object.keys(SIGNATURE).length}</small></h4>
+    <h4 class="group-title">Careers <small>one shift a day, 7 AM–6 PM</small></h4>
+    ${careerCards()}
+    <h4 class="group-title">Emoji collection <small>${unlockedSet(S.progress).size} of ${new Set([...ALL_EMOJIS, ...Object.values(SIGNATURE)]).size}</small></h4>
     <div class="stickers">${STARTER.map(e => `<span class="sticker" title="Starter">${e}</span>`).join('')}${ACHIEVEMENTS.map(a => { const got = S.progress.achievements.includes(a.id); return a.emojis.map(e => `<span class="sticker ${got ? '' : 'locked'}" title="${esc(got ? a.label : 'Locked: ' + a.label)}">${got ? e : '🔒'}</span>`).join(''); }).join('')}${Object.entries(SIGNATURE).map(([nm, e]) => { const got = (S.progress.friends[nm]?.hearts || 0) >= 3; return `<span class="sticker ${got ? '' : 'locked'}" title="${esc(got ? nm + '’s emoji' : 'Reach 3 hearts with ' + nm)}">${got ? e : '🔒'}</span>`; }).join('')}</div>
     <h4 class="group-title">Next to unlock</h4>
     <ul class="log">${ACHIEVEMENTS.filter(a => !S.progress.achievements.includes(a.id)).slice(0, 4).map(a => `<li><b>${esc(a.label)}</b><span>${a.emojis.join(' ')}</span></li>`).join('') || '<li><b>You’ve unlocked them all!</b><span>🏆</span></li>'}</ul>
     <h4 class="group-title">Recently</h4>
     ${S.progress.done.length ? '<ul class="log">' + S.progress.done.slice(0, 6).map(d => `<li><b>${esc(d.what)}</b><span>${esc(d.place)}</span></li>`).join('') + '</ul>' : '<p class="lead">Nothing yet. Visit a place and try its activity to start your journal.</p>'}
   </div>`);
-  openSheet('journal', 'Your journal', 'Today in Willowvale', el, { tab: 'journal' });
+  const shopBtn = h(`<button class="island-cta"><span>🛍️</span><b>Coin shop</b><small>Emoji packs and town passes</small></button>`); shopBtn.onclick = () => showShop();
+  el.querySelector('.stickers').after(shopBtn);
+  openSheet('journal', 'Your journal', 'Today in ' + C.meta.name, el, { tab: 'journal' });
+}
+function careerCards() {
+  const ids = Object.keys(CAREERS).filter(id => S.progress.jobs[id].level > 0 || S.progress.jobs[id].good > 0 || careerOf(id).city === C.id || id === 'tram');
+  return ids.map(id => {
+    const car = careerOf(id), j = S.progress.jobs[id], r = car.ladder[j.level], next = car.ladder[j.level + 1];
+    return `<div class="career"><span class="career-icon">${r.icon}</span><div><b>${esc(r.title)}</b><small>${r.pay} ✦ a shift at ${esc(car.place)}. ${next ? `Next: ${esc(next.title)} after ${(skillLv('logic') >= 3 ? 2 : 3) - j.good} more good shift(s).` : 'Top of the ladder!'}</small></div></div>`;
+  }).join('');
 }
 function showInfo(icon, title, text) {
   openSheet('info', 'Landmark', title, h(`<div class="info"><div class="emoji-art">${icon}</div><p class="card-text">${esc(text)}</p></div>`), { compact: true, tab: 'explore' });
 }
 function showDistricts() {
-  const body = openSheet('districts', 'Travel', 'Districts', null, { tab: 'explore' });
-  for (const [k, d] of Object.entries(DISTRICTS)) {
-    const here = districtAt(player.x, player.y) === k;
+  const body = openSheet('districts', C.meta.name, 'Getting around', null, { tab: 'explore' });
+  const more = h(`<button class="island-cta"><span>🗺️</span><b>Island map</b><small>Take the bus to other towns</small></button>`); more.onclick = () => showIsland();
+  body.append(more);
+  body.append(h(`<h4 class="group-title">Tram stops in ${esc(C.meta.name)}</h4>`));
+  for (const [k, d] of Object.entries(C.districts)) {
+    const here = C.districtAt(player.x, player.y) === k;
     const el = h(`<button class="district-row ${here ? 'here' : ''}"><i style="background:${d.color}"></i><span><b>${esc(d.name)}</b><small>${esc(d.blurb)}</small></span><em>${here ? 'You’re here' : 'Take the tram'}</em></button>`);
     el.onclick = () => { if (here) { closeSheet(); return; } travel(k); };
     body.append(el);
@@ -1410,9 +1588,114 @@ function travel(k) {
   const fade = $('fade'); fade.classList.add('on');
   setTimeout(() => {
     cancelActions();
-    const [i, j] = DISTRICTS[k].spawn; setScene('city', i + 0.5, j + 0.5);
-    fade.classList.remove('on'); toast(`Welcome to ${DISTRICTS[k].name}`); player.say('🚋', 1.6);
+    const sp = C.districts[k].spawn, at = nearestWalkable(cityWorld, sp[0], sp[1]) || sp; setScene('city', at[0] + 0.5, at[1] + 0.5);
+    fade.classList.remove('on'); toast(`Welcome to ${C.districts[k].name}`); player.say('🚋', 1.6);
   }, S.settings.reduced ? 50 : 420);
+}
+
+// ---------- the island road: towns, passports, the bus and the coin shop ----------
+function taskProgress(t, st = statsView()) { return Math.min(t.n, st[t.k] || 0); }
+function cityTasksDone(id, st = statsView()) { const m = cityMeta(id); return (m.tasks || []).every(t => taskProgress(t, st) >= t.n); }
+function cityOpen(id) { return id === 'willowvale' || id === 'maple' || !!S.progress.unlocked[id] || !!S.progress.visited[id] || cityTasksDone(id); }
+function islandMapSvg() {
+  const st = statsView();
+  const pos = id => cityMeta(id).pos;
+  const roads = ROUTES.map(([a, b]) => { const [x1, y1] = pos(a), [x2, y2] = pos(b); const open = cityOpen(a) && cityOpen(b); return `<path d="M${x1} ${y1} Q ${(x1 + x2) / 2 + (y2 - y1) * 0.12} ${(y1 + y2) / 2 - (x2 - x1) * 0.12} ${x2} ${y2}" class="iroad ${open ? 'open' : ''}"/>`; }).join('');
+  const isles = CITY_LIST.map(c => {
+    const [x, y] = c.pos, here = c.id === C.id, open = cityOpen(c.id);
+    return `<g class="isle ${here ? 'here' : ''} ${open ? 'open' : 'locked'}" data-city="${c.id}" tabindex="0" role="button" aria-label="${esc(c.name)}${open ? '' : ' (locked)'}">
+      <ellipse cx="${x}" cy="${y + 1.5}" rx="11" ry="6.5" class="isle-sand"/><ellipse cx="${x}" cy="${y}" rx="9.5" ry="5.6" fill="${open ? c.color : '#B9C4CF'}" class="isle-land"/>
+      <text x="${x}" y="${y + 1.8}" text-anchor="middle" class="isle-icon">${open ? c.icon : '🔒'}</text>
+      <text x="${x}" y="${y + 11.5}" text-anchor="middle" class="isle-name">${esc(c.name)}</text>
+      ${here ? `<circle cx="${x + 8}" cy="${y - 5}" r="2.6" class="isle-pin"/>` : ''}</g>`;
+  }).join('');
+  return `<svg class="island-map" viewBox="0 0 100 100" role="img" aria-label="Map of the island towns"><rect width="100" height="100" rx="6" class="isea"/>${[...Array(14)].map((_, k) => `<path d="M${(k * 37) % 96 + 2} ${(k * 23) % 90 + 6} q2 -1.5 4 0" class="wave"/>`).join('')}${roads}${isles}</svg>`;
+}
+function showIsland(focus) {
+  const st = statsView();
+  const body = openSheet('island', 'The island road', 'Travel the island', null, { tab: 'explore' });
+  const map = h(`<div class="island-wrap">${islandMapSvg()}</div>`);
+  body.append(map);
+  body.append(h(`<p class="lead">Every town has its own neighbours, jobs and emojis. Finish a town’s passport to open its road.</p>`));
+  const cards = {};
+  for (const c of CITY_LIST) {
+    const here = c.id === C.id, open = cityOpen(c.id), fare = Math.max(c.fare, C.meta.fare);
+    const tasks = c.tasks || [];
+    const el = h(`<article class="card town-card ${here ? 'here' : ''} ${open ? '' : 'locked'}" style="--town:${c.color}">
+      <div class="town-head"><span class="town-icon">${c.icon}</span><div><h3>${esc(c.name)}</h3><p class="card-sub">${esc(c.tagline)}</p></div>
+      <span class="chip ${here ? 'chip-mine' : open ? 'chip-ok' : 'chip-off'}">${here ? 'You’re here' : open ? (S.progress.visited[c.id] ? 'Visited' : 'Open') : 'Locked'}</span></div>
+      ${!open && tasks.length ? `<ul class="passport">${tasks.map(t => { const v = taskProgress(t, st), ok = v >= t.n; return `<li class="${ok ? 'ok' : ''}"><i>${ok ? '✓' : ''}</i><span>${esc(t.label)}</span><b>${v}/${t.n}</b></li>`; }).join('')}</ul>` : ''}
+      <div class="card-actions">
+        ${here ? '' : open ? `<button class="btn btn-primary" data-a="go">🚌 Ride there · ✦ ${fare}</button>` : `<button class="btn btn-sun" data-a="skip">Open now for ✦ ${c.skip}</button>`}
+      </div></article>`);
+    const go = el.querySelector('[data-a=go]'); if (go) go.onclick = () => travelTo(c.id);
+    const skip = el.querySelector('[data-a=skip]');
+    if (skip) skip.onclick = () => {
+      if (S.coins < c.skip) { toast(`You need ✦ ${c.skip}. Keep playing to earn coins, or finish the passport.`); return; }
+      if (!skip.dataset.sure) { skip.dataset.sure = 1; skip.textContent = `Tap again to spend ✦ ${c.skip}`; return; }
+      setCoins(S.coins - c.skip, true); S.progress.unlocked[c.id] = 1; saveProgress(); SND.sfx('unlock');
+      celebrations.push({ title: 'Road open!', emojis: [c.icon, '🚌'], label: `The road to ${c.name} is open.` }); nextCelebration();
+      showIsland(c.id);
+    };
+    cards[c.id] = el; body.append(el);
+  }
+  map.querySelectorAll('.isle').forEach(g => { g.onclick = () => cards[g.dataset.city]?.scrollIntoView({ behavior: S.settings.reduced ? 'auto' : 'smooth', block: 'center' }); g.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') g.onclick(); }; });
+  if (focus && cards[focus]) setTimeout(() => cards[focus].scrollIntoView({ block: 'center' }), 60);
+  // a road that just opened by finishing its passport gets a little party
+  for (const c of CITY_LIST) if (c.tasks?.length && !S.progress.unlocked[c.id] && !S.progress.visited[c.id] && cityTasksDone(c.id, st) && !S.progress.daily['road:' + c.id]) { S.progress.daily['road:' + c.id] = 1; celebrations.push({ title: 'Road open!', emojis: [c.icon, '🚌'], label: `You finished the ${c.name} passport!` }); nextCelebration(); }
+}
+function travelTo(id) {
+  const m = cityMeta(id);
+  if (id === C.id) { closeSheet(); return; }
+  if (!cityOpen(id)) { showIsland(id); return; }
+  const fare = Math.max(m.fare, C.meta.fare);
+  if (S.coins < fare) { toast(`The bus costs ✦ ${fare}. Earn a few coins first.`); return; }
+  closeSheet(); cancelActions(); closePie();
+  if (fare) setCoins(S.coins - fare, true);
+  const ride = $('ride'); $('ride-to').textContent = m.name; $('ride-from').textContent = C.meta.name; $('ride-icon').textContent = m.icon;
+  ride.style.setProperty('--town', m.color);
+  ride.classList.remove('hidden'); ride.classList.remove('go'); void ride.offsetWidth; ride.classList.add('go');
+  SND.sfx('door');
+  setTimeout(() => {
+    useCity(id);
+    const first = !S.progress.visited[id];
+    S.progress.visited[id] = (S.progress.visited[id] || 0) + 1;
+    setScene('city', C.stop.stand[0], C.stop.stand[1] + 1);
+    player.face(player.x + 1, player.y + 1);
+    bumpStat('trips');
+    if (first && CITY_PACKS[id] && !S.progress.packs.includes(id)) { S.progress.packs.push(id); celebrations.push({ title: `Welcome to ${m.name}!`, emojis: CITY_PACKS[id].emojis, label: 'New emojis unlocked for your first visit.' }); }
+    saveProgress(); checkAchievements();
+  }, S.settings.reduced ? 150 : 1300);
+  setTimeout(() => { ride.classList.add('hidden'); ride.classList.remove('go'); toast(`Welcome to ${m.name}!`); player.say(m.icon, 2); nextCelebration(); }, S.settings.reduced ? 300 : 2200);
+}
+function showShop() {
+  const body = openSheet('shop', 'Spend your coins', 'Coin shop', null, { tab: 'journal' });
+  body.append(h(`<div class="notice calm"><b>Coins only</b><span>Everything here is bought with coins you earn by playing. There is no real money in Willowvale.</span></div>`));
+  body.append(h(`<h4 class="group-title">Emoji packs</h4>`));
+  for (const [id, pk] of Object.entries(CITY_PACKS)) {
+    const have = S.progress.packs.includes(id);
+    const el = h(`<article class="card shop-card"><div class="shop-emojis">${pk.emojis.join(' ')}</div><div class="card-main"><div class="card-top"><h3>${esc(pk.name)}</h3>${have ? '<span class="chip chip-mine">Yours</span>' : `<span class="chip chip-sun">✦ ${pk.price}</span>`}</div><p class="card-sub">${have ? 'Ready to use in emoji chat.' : `Free when you first visit ${esc(cityMeta(id).name)}.`}</p>${have ? '' : `<button class="btn btn-sun btn-small">Buy for ✦ ${pk.price}</button>`}</div></article>`);
+    const b = el.querySelector('button');
+    if (b) b.onclick = () => {
+      if (S.coins < pk.price) { toast(`You need ✦ ${pk.price}.`); return; }
+      if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = `Tap again to spend ✦ ${pk.price}`; return; }
+      setCoins(S.coins - pk.price, true); S.progress.packs.push(id); saveProgress(); SND.sfx('unlock');
+      celebrations.push({ title: 'New emojis!', emojis: pk.emojis, label: `${pk.name} added to your chat.` }); nextCelebration(); showShop();
+    };
+    body.append(el);
+  }
+  body.append(h(`<h4 class="group-title">Town passes</h4>`));
+  const locked = CITY_LIST.filter(c => !cityOpen(c.id));
+  if (!locked.length) body.append(h(`<p class="lead">Every town is open. Happy travels!</p>`));
+  for (const c of locked) {
+    const el = h(`<article class="card shop-card"><div class="shop-emojis">${c.icon}</div><div class="card-main"><div class="card-top"><h3>${esc(c.name)} pass</h3><span class="chip chip-sun">✦ ${c.skip}</span></div><p class="card-sub">Opens the road now, or finish its passport for free.</p><button class="btn btn-ghost btn-small">See passport</button></div></article>`);
+    el.querySelector('button').onclick = () => showIsland(c.id);
+    body.append(el);
+  }
+  body.append(h(`<h4 class="group-title">Homes in other towns</h4>`));
+  const hb = h(`<article class="card shop-card"><div class="shop-emojis">🔑</div><div class="card-main"><div class="card-top"><h3>Rent a home</h3></div><p class="card-sub">Every town has homes to rent by the day. Visit a town and open Homes.</p><button class="btn btn-ghost btn-small">Homes in ${esc(C.meta.name)}</button></div></article>`);
+  hb.querySelector('button').onclick = () => showHomes();
+  body.append(hb);
 }
 
 // ---------- profile, account & settings ----------
@@ -1548,23 +1831,26 @@ async function restoreSession() {
 }
 
 // ---------- career ----------
+const careerOf = id => CAREERS[id] || CAREERS.tram;
+const rankOf = id => careerOf(id).ladder[S.progress.jobs[id]?.level || 0];
 function jobBlocked() {
   const h = hourOf(S.progress.clock);
   if (h < 7 || h >= 18) return 'Shifts run from 7 AM to 6 PM. Come back in the morning.';
-  if (S.progress.job.lastDay === dayOf(S.progress.clock)) return 'You’ve already worked today. Have some fun!';
+  if (S.progress.lastWorkDay === dayOf(S.progress.clock)) return 'You’ve already worked today. Have some fun!';
   return null;
 }
-function finishShift(startMood = mood(S.progress.needs)) {
-  const job = S.progress.job, rank = CAREER[job.level];
-  job.lastDay = dayOf(S.progress.clock);
+function finishShift(id, startMood = mood(S.progress.needs)) {
+  const job = S.progress.jobs[id], car = careerOf(id), rank = car.ladder[job.level];
+  S.progress.lastWorkDay = dayOf(S.progress.clock);
   setCoins(S.coins + rank.pay, true);
   const good = startMood >= 45;
   if (good) job.good++;
   const needed = skillLv('logic') >= 3 ? 2 : 3;
   let label = good ? `Great shift! ${job.good} of ${needed} toward a promotion.` : 'A tiring shift. Arrive happier to impress your boss.';
-  if (job.good >= needed && job.level < CAREER.length - 1) {
+  if (job.good >= needed && job.level < car.ladder.length - 1) {
     job.level++; job.good = 0;
-    celebrations.push({ title: 'Promoted!', emojis: [CAREER[job.level].icon], label: `You’re now a ${CAREER[job.level].title}. Pay is ${CAREER[job.level].pay} ✦ a shift.` });
+    const nr = car.ladder[job.level];
+    celebrations.push({ title: 'Promoted!', emojis: [nr.icon], label: `You’re now a ${nr.title}. Pay is ${nr.pay} ✦ a shift.` });
     label = 'You got promoted!';
   }
   celebrations.unshift({ title: 'Payslip', emojis: ['💰'], label: `+${rank.pay} ✦ as ${rank.title}. ${label}` });
@@ -1592,7 +1878,10 @@ function statsView() {
   st.friends = fr.filter(f => (f.hearts || 0) >= 2).length; st.bestFriends = fr.filter(f => (f.hearts || 0) >= 5).length;
   st.coins = S.coins; st.day = dayOf(S.progress.clock); st.places = Object.keys(S.progress.places || {}).length;
   for (const sk of SKILLS) st[sk.k] = skillLv(sk.k);
-  st.jobLevel = S.progress.job.level;
+  st.jobLevel = Math.max(...Object.values(S.progress.jobs).map(j => j.level));
+  st.cities = Object.keys(S.progress.visited).length; st.achv = S.progress.achievements.length;
+  st.rentals = Object.values(S.progress.homes).filter(x => x.city !== 'willowvale').length;
+  for (const id of Object.keys(S.progress.visited)) st['visited:' + id] = 1;
   return st;
 }
 const celebrations = [];
@@ -1731,7 +2020,7 @@ function autonomy(dt) {
   if (Math.min(...NEEDS.map(nd => N2[nd.k])) > 55) return;
   let best = null;
   const consider = (def, target, dist) => {
-    if (def.special || (def.coins < 0 && S.coins < -def.coins) || (def.id === 'work' && S.coins > 80)) return;
+    if (def.special || def.job || def.pose === 'jog' || (def.coins < 0 && S.coins < -def.coins)) return;
     const gain = {};
     for (const st of (def.steps || [def])) for (const [k, v] of Object.entries(st.gain || {})) gain[k] = (gain[k] || 0) + v;
     let sc = 0;
@@ -1813,7 +2102,7 @@ function buildRadarMap() {
     const p = (x, y) => { const [a, b] = A.P(x, y); return [a * RS + ox, b * RS]; };
     g.beginPath(); g.moveTo(...p(i, j)); g.lineTo(...p(i + w2, j)); g.lineTo(...p(i + w2, j + d2)); g.lineTo(...p(i, j + d2)); g.closePath(); g.fillStyle = fill; g.fill();
   };
-  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const t = world.get(i, j); if (t !== T.SEA) dia(i, j, 1.04, 1.04, col[t]); }
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const t = world.get(i, j); if (t !== T.SEA) { const sk = world.skin?.[t]; dia(i, j, 1.04, 1.04, sk ? CA.SKIN_RADAR[sk] : col[t]); } }
   for (const o of world.objects) if (!o.flat) dia(o.i, o.j, o.w, o.d, o.kind === 'venue' ? A.lighten(o.color, 0.1) : o.kind === 'myhome' ? '#F2A93B' : o.home ? '#B9C6D6' : '#C9D3DE');
   return { c, ox };
 }
@@ -1827,7 +2116,7 @@ function drawRadar() {
   const [px, py] = A.P(player.x, player.y);
   const toR = (x, y) => { const [a, b] = A.P(x, y); return [size / 2 + (a - px) * RS * k, size / 2 + (b - py) * RS * k]; };
   g.drawImage(radarMap.c, size / 2 - (px * RS + radarMap.ox) * k, size / 2 - py * RS * k, radarMap.c.width * k, radarMap.c.height * k);
-  if (!world.interior) for (const v of VENUES) { const [x, y] = toR(v.i + v.w / 2, v.j + v.d / 2); g.fillStyle = '#fff'; g.beginPath(); g.arc(x, y, 4.2, 0, 7); g.fill(); g.fillStyle = v.color; g.beginPath(); g.arc(x, y, 2.9, 0, 7); g.fill(); }
+  if (!world.interior) for (const v of C.venues) { const [x, y] = toR(v.i + v.w / 2, v.j + v.d / 2); g.fillStyle = '#fff'; g.beginPath(); g.arc(x, y, 4.2, 0, 7); g.fill(); g.fillStyle = v.color; g.beginPath(); g.arc(x, y, 2.9, 0, 7); g.fill(); }
   g.fillStyle = '#26395A';
   for (const n of npcs) { if (!npcVisible(n)) continue; const [x, y] = toR(n.x, n.y); g.beginPath(); g.arc(x, y, 1.8, 0, 7); g.fill(); }
   if (marker) { const [x, y] = toR(marker.x, marker.y); g.strokeStyle = '#FFC83D'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.stroke(); }
@@ -1878,4 +2167,4 @@ $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 700);
 
 // Small read-only hook for automated play-testing.
-window.__willowvale = { state: S, screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.job), setClock: m => { S.progress.clock = m; }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
+window.__willowvale = { state: S, screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { S.progress.clock = m; }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
