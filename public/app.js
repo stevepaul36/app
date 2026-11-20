@@ -3,6 +3,8 @@ import { N, T, buildWorld, findPath, nearestWalkable, stepOK, DISTRICTS, distric
 import * as A from './js/art.js';
 import * as F from './js/furniture.js';
 import { buildHome, O as HOME_O } from './js/home.js';
+import * as SND from './js/audio.js';
+import { STARTER, ACHIEVEMENTS, SIGNATURE, replyTo, unlockedSet } from './js/emoji.js';
 import { NEEDS, freshNeeds, mood, moodLabel, moodColor, needColor, SPEEDS, GAME_MIN_PER_SEC, clockText, dayOf, hourOf, skyTint, isNight, actionsFor } from './js/sim.js';
 
 const IS_NATIVE = location.protocol === 'capacitor:' || !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
@@ -32,7 +34,7 @@ const S = {
   user: null,
   profile: store.get('willowvale_player_v2', null),
   progress: loadProgress(),
-  settings: Object.assign({ labels: true, reduced: false }, store.get('willowvale_settings_v2', {})),
+  settings: Object.assign({ labels: true, reduced: false, music: true, sfx: true, freewill: true }, store.get('willowvale_settings_v2', {})),
   coins: 0,
   properties: null,
   online: 'guest',
@@ -43,6 +45,14 @@ S.coins = S.progress.coins;
 S.progress.needs = Object.assign(freshNeeds(), S.progress.needs || {});
 if (typeof S.progress.clock !== 'number') S.progress.clock = 8 * 60;
 S.speed = 1;
+S.progress.stats = Object.assign({}, S.progress.stats || {});
+S.progress.achievements = S.progress.achievements || [];
+S.progress.places = S.progress.places || {};
+S.progress.owned = S.progress.owned || [];
+// Profiles saved before the wardrobe used an outfit number; turn it into a full look.
+if (S.profile && !S.profile.look) S.profile.look = A.normLook(S.profile.outfit ?? 0);
+const cleanName = v => String(v || '').replace(/[^\p{L} '-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 14);
+SND.setPrefs({ music: S.settings.music, sfx: S.settings.sfx });
 const saveProgress = () => { if (!S.token) S.progress.coins = S.coins; store.set('willowvale_progress_v2', S.progress); };
 const saveSettings = () => store.set('willowvale_settings_v2', S.settings);
 
@@ -147,10 +157,10 @@ class Walker {
 
 const playerStart = [23.5, 23.5];
 const BASE_SPEED = 4.2;
-const player = new Walker(...playerStart, S.profile?.species || 'fox', S.profile?.outfit ?? 0, { speed: BASE_SPEED, seed: 3 });
+const player = new Walker(...playerStart, S.profile?.species || 'fox', S.profile?.look || A.OUTFITS[0], { speed: BASE_SPEED, seed: 3 });
 let npcs = NEIGHBOURS.map((n, k) => {
   const spot = nearestWalkable(cityWorld, n.home[0], n.home[1]) || [22, 22];
-  const w = new Walker(spot[0] + 0.5, spot[1] + 0.5, n.species, n.outfit, { speed: 1.5 + (k % 3) * 0.2, seed: k * 3 + 1, name: n.name });
+  const w = new Walker(spot[0] + 0.5, spot[1] + 0.5, n.species, A.randomLook(k * 31 + 5), { speed: 1.5 + (k % 3) * 0.2, seed: k * 3 + 1, name: n.name });
   w.data = n; w.home = spot; w.busy = 0;
   return w;
 });
@@ -161,13 +171,14 @@ function setScene(name, x, y) {
   if (name === 'home') { world = homeWorld; things = homeThings; flats = homeFlats; npcs = []; }
   else { world = cityWorld; things = cityThings; flats = cityFlats; npcs = cityNpcs; }
   player.x = x; player.y = y; player.path = []; player.onArrive = null; player.using = null; player.pose = null;
-  marker = null; cam.free = false; cam.tz = 0;
+  marker = null; cam.free = false; cam.tz = 0; cam.manual = false;
   if (name === 'home') { cam.zoom = mobile() ? 0.4 : 0.62; const p = A.P(HOME_O[0] + 6.5, HOME_O[1] + 6, 30); cam.x = p[0]; cam.y = p[1]; }
   else { cam.zoom = mobile() ? 0.56 : 0.72; const p = A.P(player.x, player.y, 34); cam.x = p[0]; cam.y = p[1]; }
   radarMap = buildRadarMap(); update.lastDistrict = null; lastNear = '';
   document.body.classList.toggle('indoors', name === 'home');
 }
 function fadeTo(fn) {
+  SND.sfx('door');
   const f = $('fade'); f.classList.add('on');
   setTimeout(() => { fn(); f.classList.remove('on'); }, S.settings.reduced ? 40 : 380);
 }
@@ -217,6 +228,7 @@ function toWorld(sx, sy) {
   return [(a + b) / 2, (b - a) / 2];
 }
 function setZoom(z, ax = W / 2, ay = H / 2) {
+  cam.manual = true;
   const before = toWorld(ax, ay);
   cam.zoom = Math.max(0.3, Math.min(1.5, z));
   const after = toWorld(ax, ay);
@@ -270,7 +282,12 @@ function drawSea() {
   ctx.fillStyle = gradients().sea; ctx.fillRect(0, 0, W, H);
 }
 
+// One bad frame must never stop the game: log it and keep the loop running.
 function frame(now) {
+  try { drawFrame(now); } catch (e) { console.error('frame error', e); }
+  requestAnimationFrame(frame);
+}
+function drawFrame(now) {
   const dt = S.sheet === 'pause' ? 0 : Math.min(0.05, (now - t0) / 1000); t0 = now; time += S.settings.reduced ? dt * 0.4 : dt;
   update(dt);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -372,6 +389,7 @@ function frame(now) {
   drawn = sortScene(list);
   for (const t of drawn) drawThing(t, z);
   drawPlayerIfHidden(z);
+  drawFx(z);
 
   // overlays
   if (!indoor) for (const b of butterflies) {
@@ -399,7 +417,6 @@ function frame(now) {
     ctx.restore();
   }
   drawDaylight(z);
-  requestAnimationFrame(frame);
 }
 
 // Sun by day, warm evening light, then night with lamps glowing.
@@ -451,7 +468,7 @@ function drawThing(t, z) {
     const [sx, sy] = toScreen(c.x, c.y);
     ctx.save(); ctx.translate(sx, sy); ctx.scale(z * 1.15, z * 1.15);
     if (c.pose === 'sleep') { ctx.translate(0, -24); ctx.rotate(c.flip ? 1.25 : -1.25); ctx.translate(0, 26); }
-    A.drawAnimal(ctx, c.species, c.outfit, { t: time, walk: c.walk, moving: c.moving, dir: c.pose === 'sleep' ? 'front' : c.dir, flip: c.flip, seed: c.seed, wave: c.wave > 0, happy: c.wave > 0 || !!c.emote, pose: c.pose === 'sleep' ? 'stand' : c.pose, asleep: c.pose === 'sleep', shadow: c.pose !== 'sleep' });
+    A.drawAnimal(ctx, c.species, c.outfit, { t: time, walk: c.walk, moving: c.moving, dir: c.pose === 'sleep' || c.faceFront ? 'front' : c.dir, flip: c.flip, seed: c.seed, wave: c.wave > 0, happy: c.wave > 0 || !!c.emote, pose: c.pose === 'sleep' ? 'stand' : c.pose, asleep: c.pose === 'sleep', shadow: c.pose !== 'sleep', arms: c.arms, prop: c.prop, override: c.override, blanket: c.pose === 'sleep' ? c.blanket : null, shake: c.shake > 0 ? Math.min(1, c.shake) : 0, saved: c.saved });
     ctx.restore();
     return;
   }
@@ -470,6 +487,23 @@ function drawThing(t, z) {
   t.sx = sx; t.sy = sy;
 }
 
+// Steam and bubbles in the shower, droplets when shaking dry.
+function drawFx(z) {
+  const showering = act && act.phase === 'do' && act.step.pose === 'shower';
+  if (!showering && !(player.shake > 0)) return;
+  const [sx, sy] = toScreen(player.x, player.y);
+  ctx.save();
+  if (showering) {
+    for (let k = 0; k < 7; k++) { const ph = (time * 0.5 + k / 7) % 1; ctx.fillStyle = `rgba(255,255,255,${0.35 * (1 - ph)})`; ctx.beginPath(); ctx.arc(sx + Math.sin(k * 2.1 + time) * 18 * z, sy - (40 + ph * 70) * z, (8 + ph * 12) * z, 0, 7); ctx.fill(); }
+    for (let k = 0; k < 6; k++) { const ph = (time * 0.8 + k / 6) % 1; ctx.strokeStyle = `rgba(180,225,245,${1 - ph})`; ctx.fillStyle = `rgba(255,255,255,${0.6 * (1 - ph)})`; ctx.lineWidth = 1.2 * z; ctx.beginPath(); ctx.arc(sx + Math.cos(k * 1.7) * 14 * z, sy - (30 + k * 6 + ph * 25) * z, 3 * z, 0, 7); ctx.fill(); ctx.stroke(); }
+  }
+  if (player.shake > 0) {
+    ctx.fillStyle = 'rgba(127,200,221,.85)';
+    for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2 + time * 3, r = (18 + (1.1 - player.shake) * 40) * z; ctx.beginPath(); ctx.ellipse(sx + Math.cos(a) * r, sy - 40 * z + Math.sin(a) * r * 0.6, 2.2 * z, 3.2 * z, a, 0, 7); ctx.fill(); }
+  }
+  ctx.restore();
+}
+
 // When a building stands between the camera and the player, show the player through it.
 function drawPlayerIfHidden(z) {
   const k = drawn.findIndex(t => t.char === player);
@@ -480,7 +514,7 @@ function drawPlayerIfHidden(z) {
   if (!hidden) return;
   ctx.save(); ctx.globalAlpha = 0.5;
   ctx.translate(sx, sy); ctx.scale(z * 1.15, z * 1.15);
-  A.drawAnimal(ctx, player.species, player.outfit, { t: time, walk: player.walk, moving: player.moving, dir: player.dir, flip: player.flip, seed: player.seed, shadow: false });
+  A.drawAnimal(ctx, player.species, player.outfit, { t: time, walk: player.walk, moving: player.moving, dir: player.faceFront ? 'front' : player.dir, flip: player.flip, seed: player.seed, shadow: false, arms: player.arms, prop: player.prop, override: player.override, pose: player.pose === 'sleep' ? 'stand' : player.pose });
   ctx.restore();
 }
 
@@ -551,13 +585,22 @@ function update(dt) {
     hideHint();
   } else player.update(simDt);
   updateNearby();
+  if (player.shake > 0) { player.shake -= dt; if (player.shake <= 0) { player.shake = 0; player.override = null; player.faceFront = false; } }
+  if (player.moving) { const st = Math.floor(player.walk / 3.14); if (st !== update.lastStep) { update.lastStep = st; SND.sfx('step'); } }
+  if (!onboardingOpen) autonomy(dt);
   for (const n of npcs) { npcThink(n, simDt); n.update(simDt); }
   updateHudClock();
   // camera
   const onboarding = !$('onboarding').classList.contains('hidden');
   let target;
   if (onboarding) { onboardT += dt; target = A.P(22 + Math.cos(onboardT * 0.08) * 7, 22 + Math.sin(onboardT * 0.08) * 7, 30); }
-  else if (world.interior) { const c = A.P(HOME_O[0] + 6.5, HOME_O[1] + 6, 30), p = A.P(player.x, player.y, 30); target = [c[0] * 0.6 + p[0] * 0.4, c[1] * 0.6 + p[1] * 0.4]; }
+  else if (world.interior) {
+    // overview of the cottage, but a close-up on you while you're busy with something
+    const busy = (act && act.phase === 'do') || player.shake > 0;
+    const c = A.P(HOME_O[0] + 6.5, HOME_O[1] + 6, 30), p = A.P(player.x, player.y, 36), w = busy ? 1 : 0.4;
+    target = [c[0] * (1 - w) + p[0] * w, c[1] * (1 - w) + p[1] * w];
+    if (!cam.manual && !cam.tz) { const want = busy ? (mobile() ? 0.66 : 0.9) : (mobile() ? 0.4 : 0.62); cam.zoom += (want - cam.zoom) * (S.settings.reduced ? 1 : 1 - Math.exp(-dt * 2.5)); }
+  }
   else target = A.P(player.x, player.y, 34);
   if (cam.tz) {
     const nz = cam.zoom + (cam.tz - cam.zoom) * (S.settings.reduced ? 1 : 1 - Math.exp(-dt * 8));
@@ -748,7 +791,7 @@ function showPie(target, sx, sy) {
     if (def.coins) note = (def.coins > 0 ? '+' : '') + def.coins + ' ✦';
     opts.push({ icon: def.icon, label: def.label, note, disabled, run: () => queueAction(def, n ? { npc: n } : { o }) });
   }
-  if (n) opts.push({ icon: '🎁', label: 'Gifts & friendship', run: () => { n.busy = 4; showNeighbour(n); } });
+  if (n) { opts.unshift({ icon: '💬', label: 'Emoji chat', run: () => meetThen(n, () => showEmojiChat(n)) }); opts.push({ icon: '🎁', label: 'Gifts & friendship', run: () => { n.busy = 4; showNeighbour(n); } }); }
   else if (o.kind === 'venue') opts.push({ icon: '⭐', label: visitedToday(o.id) ? 'Today’s activity ✓' : `Today: ${o.activity.title}`, run: () => visitThenSheet(o, () => showVenue(o)) });
   else if (o.home) opts.push({ icon: '🏠', label: 'See the listing', run: () => showHome(o) });
   else if (o.kind === 'board') opts.push({ icon: '🏠', label: 'Browse homes', run: () => showHomes() });
@@ -773,7 +816,7 @@ function showPie(target, sx, sy) {
   });
   const center = h(`<div class="pie-center"><b>${esc(n ? n.name : displayName(o))}</b></div>`);
   ring.append(center);
-  pie.classList.remove('hidden');
+  pie.classList.remove('hidden'); SND.sfx('pop');
   if (n) { n.busy = Math.max(n.busy, 3); n.face(player.x, player.y); }
 }
 function closePie() { $('pie').classList.add('hidden'); pieTarget = null; }
@@ -793,6 +836,7 @@ function stepsOf(def, target) {
 }
 function queueAction(def, target) {
   if (def.special === 'leave') { leaveHome(); return; }
+  if (def.special === 'wardrobe') { const d = approachOf(target.o); const go = () => { player.face(...(target.o.look || d)); showWardrobe(); }; if (near(...d, 1.3)) go(); else walkTo(...d, go); return; }
   if (def.special === 'enter') { const go = () => enterHome(); const d = approachOf(target.o); if (near(...d, 1.3)) go(); else walkTo(...d, go); return; }
   if (def.coins < 0 && S.coins < -def.coins) { toast('Not enough coins for that.'); return; }
   if (queue.length >= 4) { toast('Your to-do list is full.'); return; }
@@ -863,11 +907,23 @@ function beginDoing() {
   player.pose = step.pose === 'chat' || step.pose === 'stand' ? null : step.pose === 'shower' ? null : step.pose;
   if (step.pose === 'sit' && !(o && o.use) && o && o.kind !== 'bench') player.pose = null;
   if (step.pose === 'sit' && o && o.kind === 'bench') { player.x = o.i + 0.5; player.y = o.j + 0.5; player.pose = 'sit'; }
+  const def = act.item.def;
+  player.arms = step.arms || null; player.prop = step.prop || null;
+  player.override = step.outfit || def.outfit || null; player.saved = S.profile?.sleepLook ? { sleep: S.profile.sleepLook } : null;
+  player.blanket = step.blanket || null; player.faceFront = !!step.faceFront;
+  if (step.loop) SND.startLoop(step.loop);
+  if (step.start) SND.sfx(step.start);
+  if (step.pose === 'inside') SND.sfx('door');
 }
 function endStep(cancelled) {
   if (!act) return;
   if (act.target && act.target.npc) { act.target.npc.busy = 2; }
   standUp();
+  SND.stopLoops();
+  player.arms = null; player.prop = null; player.blanket = null; player.faceFront = false;
+  // a shower ends with a shake-off before the towel comes off
+  if (!cancelled && act.step && act.step.after === 'shake') { player.shake = 1.1; player.faceFront = true; SND.sfx('splash'); }
+  else player.override = null;
   if (cancelled) player.say('✋', 1);
 }
 function tickAction(gm, dt) {
@@ -880,6 +936,7 @@ function tickAction(gm, dt) {
   act.emoteT -= dt;
   if (act.emoteT <= 0 && step.emotes) {
     act.emoteT = 1.8;
+    if (step.tick) SND.sfx(step.tick);
     const e = step.emotes[Math.floor(Math.random() * step.emotes.length)];
     if (act.target.npc && Math.random() < 0.5) act.target.npc.say(e, 1.6); else player.say(e, 1.6);
   }
@@ -894,7 +951,12 @@ function finishStep() {
   if (def.special === 'mail') { const notes = ['A postcard from Nori: “The gulls say hi.”', 'A coupon for one free honey bun.', 'Your library card is ready!', 'A drawing from Dot of the Sunwheel.']; toast(notes[Math.floor(Math.random() * notes.length)]); if (Math.random() < 0.4) setCoins(S.coins + 3, true); }
   if (def.friend && act.target.npc) befriend(act.target.npc, def.friend);
   if (def.id === 'fish') addItem('fish', 1);
+  if (def.stat) bumpStat(def.stat);
+  const o = act.obj;
+  if (o && o.kind === 'venue') { S.progress.places[o.id] = 1; saveProgress(); }
+  SND.sfx('done');
   player.say('⭐', 1.2);
+  checkAchievements();
   queue.shift(); act = null; renderQueue(); startNext();
 }
 function befriend(n, kind) {
@@ -902,7 +964,7 @@ function befriend(n, kind) {
   if (kind === 'chat' && f.day !== day) { f.day = day; f.hearts = Math.min(3, (f.hearts || 0) + (f.hearts < 3 ? 1 : 0)); S.progress.daily[day + ':hello'] = (S.progress.daily[day + ':hello'] || 0) + 1; }
   if (kind === 'joke' && f.joke !== day) { f.joke = day; f.hearts = Math.min(4, (f.hearts || 0) + (f.hearts < 4 ? 1 : 0)); }
   if (kind === 'hug' && f.hug !== day) { f.hug = day; f.hearts = Math.min(5, (f.hearts || 0) + 1); }
-  S.progress.friends[n.name] = f; n.say('💛', 2); saveProgress(); checkGoals();
+  S.progress.friends[n.name] = f; n.say('💛', 2); saveProgress(); checkGoals(); checkAchievements();
 }
 function renderQueue() {
   const el = $('queue'); el.innerHTML = '';
@@ -927,7 +989,7 @@ function updateQueueProgress() {
 const warned = {};
 function tickClock(gm) {
   const before = S.progress.clock; S.progress.clock += gm;
-  if (Math.floor(before / 1440) !== Math.floor(S.progress.clock / 1440)) toast(`Good morning! Day ${dayOf(S.progress.clock)} in Willowvale.`);
+  if (Math.floor(before / 1440) !== Math.floor(S.progress.clock / 1440)) { toast(`Good morning! Day ${dayOf(S.progress.clock)} in Willowvale.`); checkAchievements(); }
   if (Math.floor(before / 30) !== Math.floor(S.progress.clock / 30)) saveProgress();
 }
 function tickNeeds(gm, curDef) {
@@ -947,6 +1009,7 @@ let hudTick = 0;
 function updateHudClock() {
   updateQueueProgress();
   if (++hudTick % 10) return;
+  SND.setScene(sceneName, isNight(hourOf(S.progress.clock)));
   $('clock-time').textContent = clockText(S.progress.clock);
   const m = mood(S.progress.needs);
   $('mood-ring').style.setProperty('--m', moodColor(m));
@@ -980,6 +1043,8 @@ function toast(msg) { const el = $('toast'); el.textContent = msg; el.classList.
 function toastQuiet(msg) { if (!S.sheet) toast(msg); }
 function setCoins(n, pop) {
   const diff = n - S.coins; S.coins = n; $('coins').textContent = n;
+  if (pop && diff > 0) SND.sfx('coin');
+  if (diff > 0) setTimeout(checkAchievements, 0);
   if (pop && diff) { pops.push({ x: player.x, y: player.y, text: (diff > 0 ? '+' : '') + diff + ' ✦', life: 1.6 }); const c = $('coin-pill'); c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump'); }
   saveProgress();
 }
@@ -989,6 +1054,7 @@ function hideHint() { $('hint').classList.add('hidden'); }
 function h(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; }
 
 function openSheet(name, kicker, title, body, opts = {}) {
+  if (!S.sheet) SND.sfx('open');
   S.sheet = name; hideHint();
   $('sheet-kicker').textContent = kicker || '';
   $('sheet-title').textContent = title;
@@ -1000,6 +1066,7 @@ function openSheet(name, kicker, title, body, opts = {}) {
   return b;
 }
 function closeSheet() {
+  if (S.sheet) SND.sfx('close');
   S.sheet = null; $('sheet').classList.add('hidden');
   document.querySelectorAll('.dock-item').forEach(x => x.classList.toggle('active', x.dataset.mode === 'explore'));
 }
@@ -1176,6 +1243,10 @@ function showJournal() {
     <div class="bag">${Object.entries(ITEMS).map(([k, it]) => `<div class="bag-item"><span>${it.icon}</span><b>${inv[k] || 0}</b><small>${esc(it.many)}</small></div>`).join('')}</div>
     <h4 class="group-title">Today’s goals <small>+15 ✦ each</small></h4>
     ${GOALS.map(g => { const c = Math.min(g.need, g.count()); return `<div class="goal ${c >= g.need ? 'met' : ''}"><div class="goal-top"><span>${esc(g.text)}</span><b>${c}/${g.need}</b></div><div class="bar"><i style="width:${c / g.need * 100}%"></i></div></div>`; }).join('')}
+    <h4 class="group-title">Emoji collection <small>${unlockedSet(S.progress).size} of ${STARTER.length + ACHIEVEMENTS.length * 2 + Object.keys(SIGNATURE).length}</small></h4>
+    <div class="stickers">${STARTER.map(e => `<span class="sticker" title="Starter">${e}</span>`).join('')}${ACHIEVEMENTS.map(a => { const got = S.progress.achievements.includes(a.id); return a.emojis.map(e => `<span class="sticker ${got ? '' : 'locked'}" title="${esc(got ? a.label : 'Locked: ' + a.label)}">${got ? e : '🔒'}</span>`).join(''); }).join('')}${Object.entries(SIGNATURE).map(([nm, e]) => { const got = (S.progress.friends[nm]?.hearts || 0) >= 3; return `<span class="sticker ${got ? '' : 'locked'}" title="${esc(got ? nm + '’s emoji' : 'Reach 3 hearts with ' + nm)}">${got ? e : '🔒'}</span>`; }).join('')}</div>
+    <h4 class="group-title">Next to unlock</h4>
+    <ul class="log">${ACHIEVEMENTS.filter(a => !S.progress.achievements.includes(a.id)).slice(0, 4).map(a => `<li><b>${esc(a.label)}</b><span>${a.emojis.join(' ')}</span></li>`).join('') || '<li><b>You’ve unlocked them all!</b><span>🏆</span></li>'}</ul>
     <h4 class="group-title">Recently</h4>
     ${S.progress.done.length ? '<ul class="log">' + S.progress.done.slice(0, 6).map(d => `<li><b>${esc(d.what)}</b><span>${esc(d.place)}</span></li>`).join('') + '</ul>' : '<p class="lead">Nothing yet. Visit a place and try its activity to start your journal.</p>'}
   </div>`);
@@ -1209,36 +1280,44 @@ function avatarEditor(state, onChange) {
   const sr = el.querySelector('.species-row'), or = el.querySelector('.outfit-row');
   for (const [k, s] of Object.entries(A.SPECIES)) {
     const b = h(`<button class="species ${state.species === k ? 'on' : ''}" role="radio" aria-checked="${state.species === k}" aria-label="${s.label}"><span>${s.label}</span></button>`);
-    b.prepend(portrait(k, state.outfit, 48));
-    b.onclick = () => { state.species = k; onChange(); };
+    b.prepend(portrait(k, state.look, 48));
+    b.onclick = () => { state.species = k; SND.sfx('tap'); onChange(); };
     sr.append(b);
   }
   A.OUTFITS.forEach((o, k) => {
-    const b = h(`<button class="swatch ${state.outfit === k ? 'on' : ''}" role="radio" aria-checked="${state.outfit === k}" aria-label="Outfit ${k + 1}" style="--a:${o.shirt};--b:${o.extraColor}"></button>`);
-    b.onclick = () => { state.outfit = k; onChange(); };
+    const on = state.preset === k;
+    const b = h(`<button class="swatch ${on ? 'on' : ''}" role="radio" aria-checked="${on}" aria-label="Starter outfit ${k + 1}" style="--a:${o.topColor};--b:${o.accColor}"></button>`);
+    b.onclick = () => { state.preset = k; state.look = { ...o }; SND.sfx('tap'); onChange(); };
     or.append(b);
   });
+  const dice = h('<button class="swatch dice" aria-label="Surprise me: a random look">🎲</button>');
+  dice.onclick = () => { state.preset = -1; state.look = A.randomLook(Math.floor(Math.random() * 1e6)); SND.sfx('pop'); onChange(); };
+  or.append(dice);
   return el;
 }
 function applyProfile() {
-  player.species = S.profile.species; player.outfit = S.profile.outfit;
+  if (!S.profile.look) S.profile.look = A.normLook(S.profile.outfit ?? 0);
+  player.species = S.profile.species; player.outfit = S.profile.look;
   $('player-name').textContent = S.user ? S.user.username : S.profile.name;
-  A.drawPortrait($('hud-avatar'), S.profile.species, S.profile.outfit, { size: 40 });
+  A.drawPortrait($('hud-avatar'), S.profile.species, S.profile.look, { size: 40 });
   store.set('willowvale_player_v2', S.profile);
 }
 function showProfile(message) {
   const state = { ...S.profile };
   const el = h(`<div class="profile">
     ${message ? `<div class="notice"><b>${esc(message)}</b></div>` : ''}
-    <div class="profile-hero"><div class="portrait-wrap"></div><label class="field"><span>Your name in town</span><input id="profile-name" maxlength="16" value="${esc(state.name)}" autocomplete="nickname"></label></div>
+    <div class="profile-hero"><div class="portrait-wrap"></div><label class="field"><span>Your name in town</span><input id="profile-name" maxlength="14" value="${esc(state.name)}" autocomplete="off"></label></div>
     <div class="editor-slot"></div>
+    <button class="btn btn-sun btn-wide" id="open-wardrobe">Open the wardrobe</button>
     <section class="account"></section></div>`);
   const redraw = () => {
-    el.querySelector('.portrait-wrap').innerHTML = ''; el.querySelector('.portrait-wrap').append(portrait(state.species, state.outfit, 96, { full: true, t: time }));
+    el.querySelector('.portrait-wrap').innerHTML = ''; el.querySelector('.portrait-wrap').append(portrait(state.species, state.look, 96, { full: true, t: time }));
     const slot = el.querySelector('.editor-slot'); slot.innerHTML = ''; slot.append(avatarEditor(state, () => { redraw(); save(); }));
   };
-  const save = () => { state.name = (el.querySelector('#profile-name').value.trim() || state.name).slice(0, 16); S.profile = { ...state }; applyProfile(); };
+  const save = () => { state.name = cleanName(el.querySelector('#profile-name').value) || state.name; S.profile = { ...S.profile, ...state }; applyProfile(); };
+  el.querySelector('#profile-name').addEventListener('input', e => { const c = cleanName(e.target.value); if (c !== e.target.value.trim()) e.target.value = c; });
   el.querySelector('#profile-name').addEventListener('change', save);
+  el.querySelector('#open-wardrobe').onclick = () => showWardrobe();
   redraw();
   const acc = el.querySelector('.account');
   if (S.token) {
@@ -1280,11 +1359,18 @@ function showSettings() {
   const el = h(`<div class="settings">
     <label class="switch"><input type="checkbox" id="set-labels" ${S.settings.labels ? 'checked' : ''}><span class="track"></span><span>Show place names</span></label>
     <label class="switch"><input type="checkbox" id="set-reduced" ${S.settings.reduced ? 'checked' : ''}><span class="track"></span><span>Reduce motion</span></label>
+    <label class="switch"><input type="checkbox" id="set-music" ${S.settings.music ? 'checked' : ''}><span class="track"></span><span>Music</span></label>
+    <label class="switch"><input type="checkbox" id="set-sfx" ${S.settings.sfx ? 'checked' : ''}><span class="track"></span><span>Sound effects</span></label>
+    <label class="switch"><input type="checkbox" id="set-freewill" ${S.settings.freewill ? 'checked' : ''}><span class="track"></span><span>Free will: your character looks after themselves when you stop tapping</span></label>
     <h4 class="group-title">How to play</h4>
     <ul class="tips"><li><b>Walk</b> Use the stick, tap the ground, or WASD / arrow keys.</li><li><b>Visit</b> Tap a building to walk to its door.</li><li><b>Meet</b> Tap a neighbour to say hello and help them out.</li><li><b>Look around</b> Drag to pan, pinch or scroll to zoom.</li></ul>
-    <p class="fine">Be kind to other players and never share personal details. Coins are in-game only.</p></div>`);
+    <h4 class="group-title">For grown-ups</h4>
+    <ul class="tips"><li><b>Chat</b> Players talk only with emojis. There is no typing, so nobody can send words, links or personal details.</li><li><b>Names</b> Town names allow letters only. Accounts use a nickname, never a real name.</li><li><b>Money</b> Coins are earned in the game. There are no purchases with real money.</li><li><b>Saving</b> As a guest, progress stays on this device only.</li></ul></div>`);
   el.querySelector('#set-labels').onchange = e => { S.settings.labels = e.target.checked; saveSettings(); };
   el.querySelector('#set-reduced').onchange = e => { S.settings.reduced = e.target.checked; saveSettings(); };
+  el.querySelector('#set-music').onchange = e => { S.settings.music = e.target.checked; SND.setPrefs({ music: e.target.checked }); saveSettings(); };
+  el.querySelector('#set-sfx').onchange = e => { S.settings.sfx = e.target.checked; SND.setPrefs({ sfx: e.target.checked }); saveSettings(); };
+  el.querySelector('#set-freewill').onchange = e => { S.settings.freewill = e.target.checked; saveSettings(); };
   el.prepend(h(`<div class="pause-actions"><button class="btn btn-primary btn-wide btn-big" id="resume-button">Resume</button><button class="btn btn-ghost btn-wide" id="pause-profile">Character &amp; account</button></div>`));
   el.querySelector('#resume-button').onclick = closeSheet;
   el.querySelector('#pause-profile').onclick = () => showProfile();
@@ -1320,7 +1406,169 @@ async function restoreSession() {
   catch { S.token = ''; try { localStorage.removeItem('willowvale_token'); } catch { /* ignore */ } }
 }
 
+// ---------- achievements & unlockable emojis ----------
+function bumpStat(k, n = 1) { S.progress.stats[k] = (S.progress.stats[k] || 0) + n; saveProgress(); }
+function statsView() {
+  const st = { ...S.progress.stats }, fr = Object.values(S.progress.friends || {});
+  st.friends = fr.filter(f => (f.hearts || 0) >= 2).length; st.bestFriends = fr.filter(f => (f.hearts || 0) >= 5).length;
+  st.coins = S.coins; st.day = dayOf(S.progress.clock); st.places = Object.keys(S.progress.places || {}).length;
+  return st;
+}
+const celebrations = [];
+function checkAchievements() {
+  const st = statsView(), got = S.progress.achievements;
+  for (const a of ACHIEVEMENTS) if (!got.includes(a.id) && a.test(st)) { got.push(a.id); celebrations.push({ emojis: a.emojis, label: a.label }); }
+  for (const [nm, e] of Object.entries(SIGNATURE)) { const k = 'sig:' + nm; if (!got.includes(k) && (S.progress.friends[nm]?.hearts || 0) >= 3) { got.push(k); celebrations.push({ emojis: [e], label: `${nm} shared their own emoji with you` }); } }
+  saveProgress();
+  if (celebrations.length && $('unlock').classList.contains('hidden')) nextCelebration();
+}
+function nextCelebration() {
+  const c = celebrations.shift(); if (!c) return;
+  $('unlock-emojis').textContent = c.emojis.join(' '); $('unlock-label').textContent = c.label;
+  $('unlock').classList.remove('hidden'); SND.sfx('unlock'); player.say(c.emojis[0], 2.5);
+  setTimeout(() => { $('unlock').classList.add('hidden'); setTimeout(nextCelebration, 400); }, 3200);
+}
+
+// ---------- emoji chat ----------
+const chatLogs = new Map();
+function meetThen(n, fn) {
+  n.busy = 10; n.path = [];
+  if (near(n.x, n.y, 2.2)) { n.face(player.x, player.y); player.face(n.x, n.y); fn(); return; }
+  const ni = Math.floor(n.x), nj = Math.floor(n.y);
+  const side = [[ni + 1, nj - 1], [ni - 1, nj + 1], [ni + 1, nj], [ni, nj + 1]].find(([a, b]) => world.walkable(a, b)) || [ni, nj];
+  walkTo(side[0] + 0.5, side[1] + 0.5, () => { n.face(player.x, player.y); player.face(n.x, n.y); fn(); });
+}
+function showEmojiChat(n) {
+  const log = chatLogs.get(n.name) || []; chatLogs.set(n.name, log);
+  const unlocked = unlockedSet(S.progress);
+  let draft = [];
+  const el = h(`<div class="echat">
+    <div class="echat-who"><div class="portrait-wrap"></div><p class="lead">${esc(n.name)} loves ${esc(ITEMS[n.data.wants].icon)} and chats in emojis. Pick up to three and send.</p></div>
+    <div class="echat-log" id="echat-log" aria-live="polite"></div>
+    <div class="echat-compose"><div class="echat-draft" id="echat-draft" aria-label="Your message"></div><button class="btn btn-small btn-ghost" id="echat-clear">Clear</button><button class="btn btn-primary" id="echat-send" disabled>Send</button></div>
+    <div class="echat-grid" id="echat-grid"></div>
+    <p class="fine">Emoji chat only, no typing. Unlock more emojis in your Journal.</p></div>`);
+  el.querySelector('.portrait-wrap').append(portrait(n.species, n.outfit, 64, { full: true, t: time }));
+  const logEl = el.querySelector('#echat-log'), draftEl = el.querySelector('#echat-draft'), sendBtn = el.querySelector('#echat-send');
+  const renderLog = () => { logEl.innerHTML = log.length ? log.map(m => `<div class="bubble-row ${m.me ? 'me' : ''}"><span class="ebubble">${m.e.join(' ')}</span></div>`).join('') : '<p class="fine">Say hello with 👋</p>'; logEl.scrollTop = logEl.scrollHeight; };
+  const renderDraft = () => { draftEl.textContent = draft.join(' ') || '…'; sendBtn.disabled = !draft.length; };
+  const grid = el.querySelector('#echat-grid');
+  const all = [...STARTER, ...ACHIEVEMENTS.flatMap(a => a.emojis), ...Object.values(SIGNATURE)];
+  for (const e of all) {
+    const ok = unlocked.has(e);
+    const b = h(`<button class="ekey ${ok ? '' : 'locked'}" ${ok ? '' : 'disabled'} aria-label="${ok ? e : 'Locked emoji'}">${ok ? e : '🔒'}</button>`);
+    if (ok) b.onclick = () => { if (draft.length < 3) { draft.push(e); SND.sfx('tap'); renderDraft(); } };
+    grid.append(b);
+  }
+  el.querySelector('#echat-clear').onclick = () => { draft = []; renderDraft(); };
+  sendBtn.onclick = () => {
+    if (!draft.length) return;
+    const msg = draft.slice(); draft = []; renderDraft();
+    log.push({ me: true, e: msg }); renderLog(); player.say(msg[0], 2); SND.sfx('chat');
+    n.busy = 12; n.face(player.x, player.y);
+    S.progress.needs.social = Math.min(100, S.progress.needs.social + 5);
+    bumpStat('chats');
+    if (friendship(n.name).day !== today()) befriend(n, 'chat');
+    setTimeout(() => {
+      const r = replyTo(msg, n.name); log.push({ me: false, e: r });
+      if (S.sheet === 'echat:' + n.name) renderLog();
+      n.say(r[0], 2.4); n.wave = 0.8; SND.sfx('chat'); checkAchievements();
+    }, 900);
+  };
+  renderLog(); renderDraft();
+  openSheet('echat:' + n.name, 'Emoji chat', n.name, el, { tab: 'friends' });
+}
+
+// ---------- wardrobe ----------
+function showWardrobe() {
+  const prof = S.profile;
+  let occasion = 'everyday', slot = 'top', facing = 'front', changed = false;
+  const el = h(`<div class="wardrobe">
+    <div class="wr-stage"><canvas id="wr-preview" class="wr-preview"></canvas><button class="btn btn-small btn-ghost" id="wr-turn">Turn around</button></div>
+    <div class="filter-row" id="wr-occ"></div>
+    <div class="filter-row" id="wr-slots"></div>
+    <div class="wr-items" id="wr-items"></div>
+    <div id="wr-colors"></div>
+  </div>`);
+  const cv = el.querySelector('#wr-preview');
+  const editing = () => occasion === 'everyday' ? prof.look : (prof.sleepLook ||= { topColor: '#B9A8EC', top2: '#FFFFFF', bottomColor: '#B9A8EC', shoeColor: '#F7B6C6' });
+  const previewLook = () => occasion === 'everyday' ? prof.look : A.occasionLook(prof.look, 'sleep', { sleep: prof.sleepLook });
+  const anim = () => { if (S.sheet !== 'wardrobe') return; A.drawPortrait(cv, prof.species, previewLook(), { size: 168, full: true, t: time, dir: facing }); requestAnimationFrame(anim); };
+  const save = () => { if (!changed) { changed = true; bumpStat('outfits'); checkAchievements(); } S.profile = prof; applyProfile(); };
+  const render = () => {
+    const occ = el.querySelector('#wr-occ'); occ.innerHTML = '';
+    for (const [k, lbl] of [['everyday', 'Everyday'], ['sleep', 'Pyjamas']]) { const b = h(`<button class="filter ${occasion === k ? 'on' : ''}">${lbl}</button>`); b.onclick = () => { occasion = k; slot = k === 'sleep' ? 'pj' : 'top'; render(); }; occ.append(b); }
+    const slots = el.querySelector('#wr-slots'); slots.innerHTML = '';
+    const keys = occasion === 'sleep' ? [['pj', 'Pyjamas'], ['pjshoes', 'Slippers']] : Object.entries(A.WARDROBE).map(([k, v]) => [k, v.label]);
+    for (const [k, lbl] of keys) { const b = h(`<button class="filter ${slot === k ? 'on' : ''}">${esc(lbl)}</button>`); b.onclick = () => { slot = k; render(); }; slots.append(b); }
+    const items = el.querySelector('#wr-items'); items.innerHTML = '';
+    const colors = el.querySelector('#wr-colors'); colors.innerHTML = '';
+    const look = editing();
+    const swatchRow = (label, key, palette) => {
+      const row = h(`<div class="wr-color-row"><small>${esc(label)}</small><div class="wr-swatches"></div></div>`);
+      for (const c of palette) { const b = h(`<button class="cswatch ${look[key] === c ? 'on' : ''}" style="--c:${c}" aria-label="${esc(label)} ${c}"></button>`); b.onclick = () => { look[key] = c; SND.sfx('tap'); save(); render(); }; row.querySelector('.wr-swatches').append(b); }
+      colors.append(row);
+    };
+    if (occasion === 'sleep') {
+      if (slot === 'pj') { swatchRow('Pyjama colour', 'topColor', A.PALETTE); swatchRow('Spots', 'top2', A.PALETTE); look.bottomColor = look.topColor; }
+      else swatchRow('Slipper colour', 'shoeColor', A.PALETTE);
+      return;
+    }
+    const W = A.WARDROBE[slot];
+    for (const it of W.items) {
+      const key = slot + ':' + it.id, owned = !it.price || S.progress.owned.includes(key), on = look[slot] === it.id;
+      const b = h(`<button class="wr-item ${on ? 'on' : ''} ${owned ? '' : 'locked'}"><span>${esc(it.label)}</span>${owned ? '' : `<em>✦ ${it.price}</em>`}</button>`);
+      b.onclick = () => {
+        if (!owned) {
+          if (S.coins < it.price) { toast(`You need ✦ ${it.price} for the ${it.label.toLowerCase()}. Earn coins at work or at places in town.`); return; }
+          setCoins(S.coins - it.price, true); S.progress.owned.push(key); saveProgress(); toast(`Bought: ${it.label}`); SND.sfx('coin');
+        }
+        look[slot] = it.id; SND.sfx('tap'); save(); render();
+      };
+      items.append(b);
+    }
+    if (W.color) swatchRow('Colour', W.color, W.palette || A.PALETTE);
+    if (W.color2 && ['stripes', 'overalls', 'pyjamas'].includes(look.top)) swatchRow(look.top === 'overalls' ? 'Shirt under' : 'Stripes', W.color2, A.PALETTE);
+  };
+  el.querySelector('#wr-turn').onclick = () => { facing = facing === 'front' ? 'back' : 'front'; SND.sfx('tap'); };
+  render();
+  openSheet('wardrobe', 'Your wardrobe', 'What to wear', el, { tab: 'explore' });
+  anim();
+}
+
+// ---------- free will ----------
+let idle = 0;
+function autonomy(dt) {
+  if (!S.settings.freewill || act || queue.length || player.moving || joy.vx || joy.vy || keys.size || S.sheet || pieTarget || player.shake > 0) { idle = 0; return; }
+  idle += dt;
+  if (idle < 10) return;
+  idle = 0;
+  const N2 = S.progress.needs;
+  if (Math.min(...NEEDS.map(nd => N2[nd.k])) > 55) return;
+  let best = null;
+  const consider = (def, target, dist) => {
+    if (def.special || (def.coins < 0 && S.coins < -def.coins) || (def.id === 'work' && S.coins > 80)) return;
+    const gain = {};
+    for (const st of (def.steps || [def])) for (const [k, v] of Object.entries(st.gain || {})) gain[k] = (gain[k] || 0) + v;
+    let sc = 0;
+    for (const [k, v] of Object.entries(gain)) sc += v * Math.pow((100 - N2[k]) / 100, 2) * 2;
+    sc /= 1 + dist / 10;
+    if (!best || sc > best.sc) best = { sc, def, target };
+  };
+  for (const t of things) {
+    if (!t.interactive || !t.o) continue;
+    const key = kindKey(t.o); if (!key) continue;
+    const [ax, ay] = approachOf(t.o), d = Math.hypot(ax - player.x, ay - player.y);
+    for (const def of actionsFor(key)) consider(def, { o: t.o }, d);
+  }
+  for (const f of flats) if (f.d.kind === 'bench') for (const def of actionsFor('bench')) consider(def, { o: f.d }, Math.hypot(f.x - player.x, f.y - player.y));
+  for (const nn of npcs) for (const def of actionsFor('neighbour')) if (!def.hearts) consider(def, { npc: nn }, Math.hypot(nn.x - player.x, nn.y - player.y));
+  if (best && best.sc > 4) { toastQuiet(`${S.profile.name} decided to ${best.def.label.toLowerCase()}.`); queueAction(best.def, best.target); }
+}
+
 // ---------- chrome wiring ----------
+window.addEventListener('pointerdown', () => SND.unlock(), { capture: true });
+window.addEventListener('keydown', () => SND.unlock(), { capture: true });
 document.querySelectorAll('.dock-item').forEach(b => b.onclick = () => {
   const m = b.dataset.mode;
   if (S.sheet && document.querySelector('.dock-item.active') === b && m !== 'explore') { closeSheet(); return; }
@@ -1339,7 +1587,7 @@ function cameraButton() {
   if (cam.free) { cam.free = false; $('cam-button').classList.remove('free'); return; }
   const levels = mobile() ? [0.4, 0.56, 0.8] : [0.45, 0.72, 1.0];
   const cur = cam.tz || cam.zoom, k = levels.findIndex(l => l > cur + 0.02);
-  cam.tz = levels[k === -1 ? 0 : k];
+  cam.tz = levels[k === -1 ? 0 : k]; cam.manual = true;
 }
 
 // ---------- on-screen stick ----------
@@ -1410,18 +1658,20 @@ function drawRadar() {
 // ---------- onboarding ----------
 function startOnboarding() {
   const names = ['Pippin', 'Maple', 'Juno', 'Rowan', 'Poppy', 'Basil', 'Tansy', 'Moss'];
-  const state = { species: 'fox', outfit: 0, name: names[Math.floor(Math.random() * names.length)] };
+  const state = { species: 'fox', look: { ...A.OUTFITS[0] }, preset: 0, name: names[Math.floor(Math.random() * names.length)] };
   $('name-input').value = state.name;
+  $('name-input').addEventListener('input', e => { const c = cleanName(e.target.value); if (c !== e.target.value.trim()) e.target.value = c; });
   const draw = () => {
-    A.drawPortrait($('onboard-avatar'), state.species, state.outfit, { size: 132, full: true, t: time, wave: true });
+    A.drawPortrait($('onboard-avatar'), state.species, state.look, { size: 132, full: true, t: time, wave: true });
     const slot = $('editor-slot'); slot.innerHTML = ''; slot.append(avatarEditor(state, draw));
   };
   draw();
-  const tick = () => { if ($('onboarding').classList.contains('hidden')) return; A.drawPortrait($('onboard-avatar'), state.species, state.outfit, { size: 132, full: true, t: time, wave: (time % 4) < 1.2 }); requestAnimationFrame(tick); };
+  const tick = () => { if ($('onboarding').classList.contains('hidden')) return; A.drawPortrait($('onboard-avatar'), state.species, state.look, { size: 132, full: true, t: time, wave: (time % 4) < 1.2 }); requestAnimationFrame(tick); };
   tick();
   const begin = then => {
-    state.name = ($('name-input').value.trim() || state.name).slice(0, 16);
-    S.profile = { ...state }; applyProfile();
+    state.name = cleanName($('name-input').value) || state.name;
+    S.profile = { name: state.name, species: state.species, look: state.look }; applyProfile();
+    SND.unlock(); SND.sfx('unlock');
     $('onboarding').classList.add('hidden'); document.body.classList.remove('onboarding-open');
     setScene('home', ...homeWorld.insideDoor);
     player.wave = 1.6; player.say('👋');
@@ -1435,7 +1685,7 @@ function startOnboarding() {
 applyProfileSafe();
 function applyProfileSafe() {
   if (S.profile) { applyProfile(); $('onboarding').classList.add('hidden'); setScene('home', ...homeWorld.insideDoor); $('hint').classList.remove('hidden'); setTimeout(hideHint, 7000); }
-  else { S.profile = { species: 'fox', outfit: 0, name: 'Guest' }; document.body.classList.add('onboarding-open'); startOnboarding(); }
+  else { S.profile = { species: 'fox', look: { ...A.OUTFITS[0] }, name: 'Guest' }; document.body.classList.add('onboarding-open'); startOnboarding(); }
 }
 setCoins(S.coins);
 restoreSession();
@@ -1444,4 +1694,4 @@ $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 700);
 
 // Small read-only hook for automated play-testing.
-window.__willowvale = { state: S, screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; } };
+window.__willowvale = { state: S, screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type)); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };

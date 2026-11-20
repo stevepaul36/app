@@ -41,37 +41,48 @@ export const isNight = hour => hour >= 20.5 || hour < 6;
 // steps let one choice use several objects (cook at the stove, then eat at the table).
 export const ACTIONS = {
   bed: [
-    { id: 'sleep', label: 'Sleep', icon: '😴', mins: 420, pose: 'sleep', gain: { energy: 95, comfort: 30 }, slow: { hunger: 0.4, fun: 0.3, social: 0.3, hygiene: 0.5 }, fast: 10, emotes: ['💤'] },
-    { id: 'nap', label: 'Nap', icon: '🛌', mins: 90, pose: 'sleep', gain: { energy: 28, comfort: 15 }, fast: 4, emotes: ['💤'] },
+    { id: 'sleep', label: 'Sleep', icon: '😴', mins: 420, pose: 'sleep', outfit: 'sleep', blanket: '#7FB8E6', loop: 'snore', start: 'yawn', stat: 'sleeps', gain: { energy: 95, comfort: 30 }, slow: { hunger: 0.4, fun: 0.3, social: 0.3, hygiene: 0.5 }, fast: 10, emotes: ['💤', '🌙', '💭'] },
+    { id: 'nap', label: 'Nap', icon: '🛌', mins: 90, pose: 'sleep', blanket: '#7FB8E6', loop: 'snore', start: 'yawn', gain: { energy: 28, comfort: 15 }, fast: 4, emotes: ['💤'] },
   ],
-  bookshelf: [{ id: 'read', label: 'Read a book', icon: '📖', mins: 45, pose: 'stand', gain: { fun: 32 }, emotes: ['📖', '🤔', '😮'] }],
-  shower: [{ id: 'shower', label: 'Take a shower', icon: '🚿', mins: 20, pose: 'shower', gain: { hygiene: 90, comfort: 8 }, emotes: ['🫧', '🎵'] }],
+  bookshelf: [{ id: 'read', label: 'Read a book', icon: '📖', stat: 'reads', steps: [
+    { obj: 'bookshelf', mins: 3, pose: 'stand', arms: 'hold', emotes: ['🔎'] },
+    { obj: 'armchair', mins: 45, pose: 'sit', arms: 'read', prop: 'book', tick: 'page', gain: { fun: 32, comfort: 10 }, emotes: ['📖', '🤔', '😮'] },
+  ] }],
+  shower: [{ id: 'shower', label: 'Take a shower', icon: '🚿', mins: 20, pose: 'shower', outfit: 'towel', arms: 'scrub', prop: 'sponge', loop: 'water', faceFront: true, after: 'shake', stat: 'showers', gain: { hygiene: 90, comfort: 8 }, emotes: ['🫧', '🎵', '🎶'] }],
+  wardrobe: [{ id: 'dress', label: 'Change outfit', icon: '👗', special: 'wardrobe' }],
   sink: [
-    { id: 'wash', label: 'Wash up', icon: '🧼', mins: 8, pose: 'stand', gain: { hygiene: 25 }, emotes: ['🫧'] },
+    { id: 'wash', label: 'Wash up', icon: '🧼', mins: 8, pose: 'stand', arms: 'scrub', prop: 'sponge', loop: 'water', gain: { hygiene: 25 }, emotes: ['🫧'] },
     { id: 'mirror', label: 'Practise a speech', icon: '🪞', mins: 15, pose: 'stand', gain: { social: 10, fun: 4 }, emotes: ['💬', '😄'] },
   ],
   fridge: [
-    { id: 'snack', label: 'Grab a snack', icon: '🥪', mins: 15, pose: 'stand', gain: { hunger: 30 }, emotes: ['🥪', '😋'] },
-    { id: 'cook', label: 'Cook a meal', icon: '🍳', steps: [
-      { obj: 'fridge', mins: 5, pose: 'stand', emotes: ['🥕'] },
-      { obj: 'stove', mins: 30, pose: 'stand', gain: { fun: 5 }, emotes: ['🍳', '🔥', '🍳'] },
-      { obj: 'chair', mins: 25, pose: 'sit', gain: { hunger: 78, comfort: 10 }, emotes: ['🍲', '😋'] },
+    { id: 'snack', label: 'Grab a snack', icon: '🥪', steps: [
+      { obj: 'fridge', mins: 3, pose: 'stand', arms: 'hold', emotes: ['🥪'] },
+      { obj: 'chair', mins: 12, pose: 'sit', arms: 'eat', prop: 'fork', gain: { hunger: 30 }, emotes: ['🥪', '😋'] },
+    ] },
+    { id: 'cook', label: 'Cook a meal', icon: '🍳', stat: 'meals', steps: [
+      { obj: 'fridge', mins: 5, pose: 'stand', arms: 'hold', emotes: ['🥕'] },
+      { obj: 'counter', mins: 10, pose: 'stand', arms: 'chop', prop: 'knife', tick: 'chop', emotes: ['🔪', '🥕'] },
+      { obj: 'stove', mins: 25, pose: 'stand', arms: 'stir', prop: 'bowl', loop: 'sizzle', gain: { fun: 5 }, emotes: ['🍳', '🔥', '🍳'] },
+      { obj: 'chair', mins: 25, pose: 'sit', arms: 'eat', prop: 'fork', gain: { hunger: 78, comfort: 10 }, emotes: ['🍲', '😋'] },
     ] },
   ],
   stove: [{ ref: 'fridge', id: 'cook' }],
   table: [{ ref: 'fridge', id: 'cook' }],
   chair: [{ id: 'sit', label: 'Sit down', icon: '🪑', mins: 20, pose: 'sit', gain: { comfort: 25 }, emotes: ['😌'] }],
-  radio: [{ id: 'dance', label: 'Dance to the radio', icon: '💃', mins: 30, pose: 'dance', gain: { fun: 36, social: 4 }, cost: { energy: 8, hygiene: 6 }, emotes: ['🎵', '🎶', '✨'] }],
+  radio: [{ id: 'dance', label: 'Dance to the radio', icon: '💃', mins: 30, pose: 'dance', stat: 'dances', gain: { fun: 36, social: 4 }, cost: { energy: 8, hygiene: 6 }, emotes: ['🎵', '🎶', '✨'] }],
   tv: [{ ref: 'sofa', id: 'tv' }],
   sofa: [
-    { id: 'tv', label: 'Watch TV', icon: '📺', mins: 60, pose: 'sit', gain: { fun: 50, comfort: 25 }, emotes: ['📺', '😂', '😮'], tv: true },
+    { id: 'tv', label: 'Watch TV', icon: '📺', mins: 60, pose: 'sit', arms: 'remote', prop: 'remote', loop: 'tv', stat: 'tv', gain: { fun: 50, comfort: 25 }, emotes: ['📺', '😂', '😮', '🍿'], tv: true },
     { id: 'sit', label: 'Sit and relax', icon: '🛋️', mins: 30, pose: 'sit', gain: { comfort: 45 }, emotes: ['😌'] },
-    { id: 'nap', label: 'Nap', icon: '💤', mins: 90, pose: 'sleep', gain: { energy: 24, comfort: 20 }, fast: 4, emotes: ['💤'] },
+    { id: 'nap', label: 'Nap', icon: '💤', mins: 90, pose: 'sleep', blanket: '#F7B6C6', loop: 'snore', start: 'yawn', gain: { energy: 24, comfort: 20 }, fast: 4, emotes: ['💤'] },
   ],
-  armchair: [{ id: 'sit', label: 'Sit and relax', icon: '🛋️', mins: 30, pose: 'sit', gain: { comfort: 40 }, emotes: ['😌', '☕'] }],
+  armchair: [
+    { id: 'sit', label: 'Sit and relax', icon: '🛋️', mins: 30, pose: 'sit', gain: { comfort: 40 }, emotes: ['😌', '☕'] },
+    { ref: 'bookshelf', id: 'read' },
+  ],
   desk: [
-    { id: 'games', label: 'Play computer games', icon: '🎮', mins: 60, pose: 'sit', gain: { fun: 55 }, cost: { comfort: 4 }, emotes: ['🎮', '😆', '🏆'] },
-    { id: 'chat', label: 'Message friends', icon: '💻', mins: 40, pose: 'sit', gain: { social: 28 }, emotes: ['💬', '😊'] },
+    { id: 'games', label: 'Play computer games', icon: '🎮', mins: 60, pose: 'sit', arms: 'type', tick: 'type', gain: { fun: 55 }, cost: { comfort: 4 }, emotes: ['🎮', '😆', '🏆'] },
+    { id: 'chat', label: 'Video call a friend', icon: '💻', mins: 40, pose: 'sit', arms: 'type', tick: 'type', gain: { social: 28 }, emotes: ['💬', '😊', '👋'] },
   ],
   plant: [{ id: 'water', label: 'Water the plant', icon: '🪴', mins: 5, pose: 'stand', gain: { fun: 4 }, emotes: ['💧'] }],
   door: [{ id: 'leave', label: 'Go to town', icon: '🏘️', special: 'leave' }],
@@ -89,14 +100,14 @@ export const ACTIONS = {
   community: [{ id: 'craft', label: 'Join a workshop', icon: '🎨', mins: 45, pose: 'inside', gain: { fun: 30, social: 18 }, emotes: ['🎨', '✂️'] }],
   theatre: [{ id: 'show', label: 'Watch a show', icon: '🎭', mins: 90, pose: 'inside', gain: { fun: 70, social: 10 }, coins: -8, fast: 3, emotes: ['🎭', '👏', '😂'] }],
   library: [{ id: 'read', label: 'Read quietly', icon: '📚', mins: 45, pose: 'inside', gain: { fun: 30, comfort: 10 }, emotes: ['📚', '🤓'] }],
-  station: [{ id: 'work', label: 'Work a shift (+40 ✦)', icon: '💼', mins: 240, pose: 'inside', gain: {}, cost: { energy: 22, fun: 18, hygiene: 10 }, coins: 40, fast: 8, emotes: ['💼', '🚋'] }],
-  marina: [{ id: 'fish', label: 'Go fishing', icon: '🎣', mins: 40, pose: 'stand', gain: { fun: 26, comfort: 6 }, emotes: ['🎣', '🌊', '🐟'] }],
+  station: [{ id: 'work', label: 'Work a shift (+40 ✦)', icon: '💼', mins: 240, pose: 'inside', stat: 'works', gain: {}, cost: { energy: 22, fun: 18, hygiene: 10 }, coins: 40, fast: 8, emotes: ['💼', '🚋'] }],
+  marina: [{ id: 'fish', label: 'Go fishing', icon: '🎣', mins: 40, pose: 'stand', stat: 'fish', arms: 'hold', gain: { fun: 26, comfort: 6 }, emotes: ['🎣', '🌊', '🐟'] }],
   clinic: [{ id: 'freshen', label: 'Freshen up', icon: '🧼', mins: 15, pose: 'inside', gain: { hygiene: 45, comfort: 10 }, emotes: ['🧼'] }],
-  sunwheel: [{ id: 'ride', label: 'Ride the Sunwheel', icon: '🎡', mins: 20, pose: 'inside', gain: { fun: 34 }, coins: -2, emotes: ['🎡', '😆'] }],
+  sunwheel: [{ id: 'ride', label: 'Ride the Sunwheel', icon: '🎡', mins: 20, pose: 'inside', stat: 'rides', gain: { fun: 34 }, coins: -2, emotes: ['🎡', '😆'] }],
   windmill: [{ id: 'admire', label: 'Admire the view', icon: '🌾', mins: 10, pose: 'stand', gain: { fun: 8, comfort: 6 }, emotes: ['😊'] }],
   neighbour: [
     { id: 'chat', label: 'Chat', icon: '💬', mins: 25, pose: 'chat', gain: { social: 30, fun: 6 }, emotes: ['💬', '😄', '🌼', '☀️', '🎵'], friend: 'chat' },
-    { id: 'joke', label: 'Tell a joke', icon: '😂', mins: 10, pose: 'chat', gain: { social: 15, fun: 10 }, emotes: ['😂', '🤣'], friend: 'joke' },
+    { id: 'joke', label: 'Tell a joke', icon: '😂', mins: 10, pose: 'chat', start: 'laugh', gain: { social: 15, fun: 10 }, emotes: ['😂', '🤣'], friend: 'joke' },
     { id: 'hug', label: 'Hug', icon: '🤗', mins: 5, pose: 'chat', gain: { social: 22, comfort: 6 }, emotes: ['🤗', '💛'], friend: 'hug', hearts: 2 },
   ],
 };

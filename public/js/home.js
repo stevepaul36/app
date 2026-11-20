@@ -48,13 +48,14 @@ export function buildHome() {
   add('nightstand', 0, 0, 1, 1, 'Nightstand', { lamp: true, decor: true });
   add('bed', 1, 0, 2, 3, 'Cosy bed', { use: [2, 1.45], stand: [3.5, 1.5] });
   add('bookshelf', 4, 0, 1, 1, 'Bookshelf', { stand: [4.5, 1.5], look: [4.5, 0.2] });
+  add('wardrobe', 0, 3, 1, 1, 'Wardrobe', { stand: [1.5, 3.5], look: [0.2, 3.5] });
   add('shower', 0, 5, 1, 1, 'Shower', { use: [0.5, 5.55], stand: [1.5, 5.5], walkIn: true });
   add('sink', 0, 7, 1, 1, 'Sink & mirror', { stand: [1.5, 7.5], look: [0.2, 7.5] });
   add('plant', 3, 9, 1, 1, 'Fern', { stand: [2.5, 8.5], look: [3.5, 9.5] });
   add('plant', 5, 0, 1, 1, 'Monstera', { stand: [5.5, 1.5], look: [5.5, 0.4], variant: 1 });
   add('radio', 6, 0, 1, 1, 'Radio', { stand: [6.5, 1.5], look: [6.5, 0.4] });
   add('fridge', 7, 0, 1, 1, 'Fridge', { stand: [7.5, 1.5], look: [7.5, 0.3] });
-  add('counter', 8, 0, 1, 1, 'Counter', { decor: true });
+  add('counter', 8, 0, 1, 1, 'Counter', { decor: true, stand: [8.5, 1.5], look: [8.5, 0.3] });
   add('stove', 9, 0, 1, 1, 'Stove', { stand: [9.5, 1.5], look: [9.5, 0.3] });
   add('kitchensink', 10, 0, 1, 1, 'Kitchen sink', { decor: true });
   add('counter', 11, 0, 1, 1, 'Counter', { decor: true, fruit: true });
