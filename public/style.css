@@ -215,3 +215,68 @@ button:focus-visible,input:focus-visible{outline:3px solid #e9b86c;outline-offse
  .mobile-layout .interact-button{z-index:20;min-height:52px;touch-action:manipulation}
  .mobile-layout .bottom-nav{z-index:15}
 }
+
+
+/* Responsive gameplay pass: prioritize usable play area across phones, tablets and desktop. */
+#world{touch-action:none;overscroll-behavior:none}
+.mobile-layout #world{touch-action:none}
+.mobile-layout .topbar{z-index:12}
+.mobile-layout .movement,.mobile-layout .interact-button,.mobile-layout .bottom-nav{z-index:11}
+.mobile-layout .movement button{touch-action:none;-webkit-touch-callout:none}
+.mobile-layout .interact-button{min-width:108px;box-shadow:0 8px 24px #173b3240}
+.mobile-layout .interaction-hint{z-index:2;left:auto;pointer-events:none}
+.mobile-layout .online-pill{z-index:2}
+.mobile-layout .bottom-nav{padding-bottom:calc(5px + env(safe-area-inset-bottom))}
+.mobile-layout .right-panel{z-index:15}
+.mobile-layout .welcome,.mobile-layout .help-panel,.mobile-layout .settings,.mobile-layout .place-card{z-index:20}
+.mobile-layout .property-list{overscroll-behavior:contain;touch-action:pan-y}
+.mobile-layout button{ -webkit-tap-highlight-color:transparent; }
+@media(max-width:520px) and (orientation:portrait){
+ .mobile-layout .topbar{gap:6px;padding-left:calc(8px + env(safe-area-inset-left));padding-right:calc(8px + env(safe-area-inset-right))}
+ .mobile-layout .brand-mark{width:31px;height:31px;border-radius:10px;font-size:19px}
+ .mobile-layout .brand strong{font-size:14px}
+ .mobile-layout .brand small{font-size:6px;letter-spacing:.09em}
+ .mobile-layout .top-actions{gap:5px}
+ .mobile-layout .wallet{padding:6px 8px;gap:4px}
+ .mobile-layout .wallet b{font-size:12px}
+ .mobile-layout .avatar-button,.mobile-layout .icon-button{width:33px;height:33px;min-height:33px}
+ .mobile-layout .left-rail{top:calc(54px + env(safe-area-inset-top));max-height:17dvh}
+ .mobile-layout .rail-intro{padding:8px 11px;border-radius:13px}
+ .mobile-layout .rail-intro h1{font-size:clamp(18px,5.5vw,25px);margin:3px 0}
+ .mobile-layout .rail-intro>.eyebrow{font-size:6px;letter-spacing:1px}
+ .mobile-layout .movement{bottom:calc(82px + env(safe-area-inset-bottom));left:calc(9px + env(safe-area-inset-left))}
+ .mobile-layout .movement button{width:clamp(45px,13vw,55px);height:clamp(45px,13vw,55px);border-radius:16px}
+ .mobile-layout .interact-button{right:calc(10px + env(safe-area-inset-right));bottom:calc(91px + env(safe-area-inset-bottom));min-height:48px}
+ .mobile-layout .online-pill{bottom:calc(142px + env(safe-area-inset-bottom));left:calc(9px + env(safe-area-inset-left));padding:7px 9px}
+ .mobile-layout .interaction-hint{bottom:calc(142px + env(safe-area-inset-bottom));right:calc(9px + env(safe-area-inset-right));max-width:47vw;font-size:8px;padding:7px 8px}
+ .mobile-layout .bottom-nav{bottom:calc(5px + env(safe-area-inset-bottom));left:calc(5px + env(safe-area-inset-left));right:calc(5px + env(safe-area-inset-right));gap:2px;padding:4px}
+ .mobile-layout .nav-item{min-height:48px;padding:5px 1px}
+ .mobile-layout .nav-item span{font-size:18px}
+ .mobile-layout .nav-item small{font-size:clamp(7px,2.1vw,9px)}
+ .mobile-layout .right-panel{bottom:calc(66px + env(safe-area-inset-bottom));max-height:58dvh}
+}
+@media(min-width:521px) and (max-width:899px) and (orientation:portrait){
+ .mobile-layout .left-rail{max-height:20dvh}
+ .mobile-layout .right-panel{max-height:60dvh}
+ .mobile-layout .movement{bottom:calc(82px + env(safe-area-inset-bottom))}
+ .mobile-layout .interact-button{bottom:calc(88px + env(safe-area-inset-bottom))}
+}
+@media(max-height:520px) and (orientation:landscape){
+ .mobile-layout .left-rail{max-height:36dvh;max-width:190px}
+ .mobile-layout .rail-intro{padding:7px 10px}
+ .mobile-layout .rail-intro h1{font-size:18px}
+ .mobile-layout .topbar .brand small{display:none}
+ .mobile-layout .bottom-nav{max-width:60px}
+ .mobile-layout .nav-item{width:48px;min-height:40px}
+ .mobile-layout .movement{bottom:calc(8px + env(safe-area-inset-bottom))}
+ .mobile-layout .movement button{width:42px;height:42px;min-height:42px}
+ .mobile-layout .online-pill{bottom:calc(58px + env(safe-area-inset-bottom))}
+ .mobile-layout .interaction-hint{bottom:calc(8px + env(safe-area-inset-bottom))}
+ .mobile-layout .interact-button{bottom:calc(8px + env(safe-area-inset-bottom));right:78px}
+ .mobile-layout .right-panel{bottom:8px;max-height:calc(100dvh - 64px);width:min(360px,52vw)}
+ .mobile-layout .property-list{max-height:36dvh}
+}
+@media(min-width:900px){
+ .movement{display:none!important}
+ .interact-button{display:block}
+}
