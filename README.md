@@ -1,12 +1,13 @@
 # Willowvale: Animal Town
 
-A mobile-first 3D animal-town life-simulation prototype with original characters, browser gameplay, account registration, shared Socket.IO town events, and a reproducible Android debug APK workflow.
+A mobile-first illustrated animal-town life-simulation prototype with original characters, browser gameplay, account registration, shared Socket.IO town events, and a reproducible Android debug APK workflow.
 
 ## Included
 
-- Three.js town: Town Hearth, Willow Bridge, cottages, pond, market, garden plots, meadow restoration patches, original stylised animal neighbours and tractor.
-- Activities: restore nature, plant and harvest, fish, sell goods, place cottages and greet neighbours.
-- Touch and keyboard controls, responsive HUD, settings and day/night lighting.
+- Illustrated 2.5D island town drawn on a 2D canvas (no 3D library, no image downloads): four districts (Willow Park, Old Town, Bluewater Quay, Fernhill Heights), a town square, eight places to visit, twelve homes, the Sunwheel and the windmill.
+- Twelve original animal neighbours who wander, react and can be befriended; choose your own animal and outfit.
+- Daily activities at each place, a bag of items, neighbour gifts, friendship hearts and daily goals.
+- Tap-to-walk with pathfinding, drag to pan, pinch or scroll to zoom, WASD/arrow keys on desktop. Phone-first layout with bottom sheets.
 - Username/password accounts with bcrypt password hashes, JWT sessions, rate-limited authentication, security headers and PostgreSQL persistence when DATABASE_URL is configured.
 - Authenticated Socket.IO shared-town presence and event broadcasting.
 - Capacitor Android wrapper and GitHub Actions APK artifact build.
@@ -19,7 +20,9 @@ Requires Node.js 20+. PostgreSQL is needed for persistent accounts. Without DATA
     npm install
     npm start
 
-Open http://localhost:3000. Create a nickname (3–20 letters, numbers or underscores) and password (8+ characters). Three.js is loaded from jsDelivr, so a network connection is required.
+Open http://localhost:3000. Pick an animal and start exploring as a guest; guest progress is kept on the device. Creating an account (nickname of 3–20 letters, numbers or underscores and an 8+ character password) needs DATABASE_URL. The game code has no CDN dependencies, so it also runs offline inside the Android shell; the Google Fonts stylesheet is optional and falls back to system fonts.
+
+Code layout: public/js/world.js (map, districts, homes, places, neighbours, pathfinding), public/js/art.js (all procedural art), public/app.js (engine, input and UI).
 
 ## Deploy to Render
 
@@ -39,5 +42,6 @@ This is a debug APK for testing, not a signed Play Store release. A signed relea
 
 - Live town events are broadcast through Socket.IO. The shared town's aggregate state is currently in memory, while per-player inventory and progress are stored in PostgreSQL. Multi-instance production deployment needs shared Redis/adapter and durable town-state storage.
 - Client-side actions still need authoritative server validation and replay protection before launch. Do not treat this as a child-safe public production service yet.
-- Original characters are simple geometry, not polished rigged assets. Animations, sound, accessibility testing and device performance QA remain.
+- Characters and buildings are procedural vector art. Sound, real-device performance QA and further accessibility testing remain.
+- Activity coins for signed-in players are shown locally but are not yet saved by the server (there is no server endpoint for activities yet).
 - Public child access requires legal/privacy review, reporting/moderation, data deletion and abuse protection.

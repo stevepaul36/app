@@ -1,19 +1,73 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#102b2b"><meta name="description" content="Build a life in Willowvale: explore districts, meet animal neighbours, rent or buy homes, and discover a lively animal city."><title>Willowvale — Animal City</title><link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/style.css?v=startup-fix-1"></head>
-<body><main id="game-shell"><canvas id="world" aria-label="Interactive 3D Willowvale city"></canvas><canvas id="town-fallback" aria-label="Illustrated interactive Willowvale town"></canvas>
-<header class="topbar">
-  <div class="brand"><span class="brand-mark">W</span><div><strong>Willowvale</strong><small>THE ANIMAL CITY</small></div></div>
-  <div class="district-chip"><span class="live-dot"></span><span id="district-name">Willow Park District</span></div>
-  <div class="top-actions"><div class="wallet"><span class="coin-icon">✦</span><b id="coins">35</b><small>coins</small></div><button id="help-button" class="icon-button help-button" aria-label="How to play">?</button><button id="profile-button" class="avatar-button" aria-label="Profile">🐾</button><button id="settings-button" class="icon-button" aria-label="Settings">☰</button></div>
-</header>
-<aside class="left-rail">
-  <div class="rail-intro"><span class="eyebrow">YOUR NEXT CHAPTER</span><h1>A city to<br><em>call home.</em></h1><p>Meet your neighbours. Find your place. Make the city yours.</p></div>
-  <div class="daily-card"><div class="daily-top"><span class="mini-icon">✧</span><span class="eyebrow">CITY JOURNAL</span><span class="daily-count">01 / 03</span></div><h2 id="quest-title">Find your first home</h2><p id="quest-desc">Visit the property board and browse homes around Willowvale.</p><button class="text-action" id="quest-action">Explore homes <span>↗</span></button></div>
-  <div class="district-card"><span class="eyebrow">EXPLORE DISTRICTS</span><button class="district-link active" data-district="park"><span>✿</span><span><b>Willow Park</b><small>Green spaces & starter homes</small></span><i>↗</i></button><button class="district-link" data-district="downtown"><span>▦</span><span><b>Old Town</b><small>Cafés, shops & town square</small></span><i>↗</i></button><button class="district-link" data-district="waterfront"><span>≈</span><span><b>Bluewater Quay</b><small>Marina & waterside apartments</small></span><i>↗</i></button><button class="district-link" data-district="hills"><span>⌁</span><span><b>Fernhill Heights</b><small>Garden villas & scenic views</small></span><i>↗</i></button></div>
-</aside>
-<section class="right-panel" id="property-panel"><div class="panel-heading"><div><span class="eyebrow">WILLOWVALE PROPERTY CO.</span><h2>Find your place</h2></div><button class="close-button" id="property-close" aria-label="Close">×</button></div><p class="panel-subtitle">A home for every kind of life.</p><div class="listing-tabs"><button class="listing-tab active" data-listing="all">All homes</button><button class="listing-tab" data-listing="rent">For rent</button><button class="listing-tab" data-listing="buy">For sale</button></div><div class="property-list" id="property-list"><div class="loading-card">Opening the property board…</div></div><div class="property-footnote">Virtual property · In-game currency only</div></section>
-<section class="place-card hidden" id="place-card"><button class="close-button" id="place-close">×</button><div class="place-art" id="place-art">☕</div><span class="eyebrow" id="place-type">CITY SPOT</span><h2 id="place-title">The Little Acorn Café</h2><p id="place-description">A cosy place to meet your neighbours.</p><button class="primary full" id="place-visit">Visit this place <span>↗</span></button></section>
-<section class="help-panel panel hidden" id="help-panel" role="dialog" aria-modal="true" aria-labelledby="help-title"><button class="close-button" id="help-close" aria-label="Close help">×</button><span class="eyebrow">QUICK START</span><h2 id="help-title">How to play Willowvale</h2><div class="help-steps"><div><b>1. Move around</b><span>Hold the arrow pad on your phone, or use WASD / arrow keys on a computer.</span></div><div><b>2. Find something to do</b><span>Tap a building or animal. If it is hard to tap, walk closer and press Interact.</span></div><div><b>3. Explore the city</b><span>Use Homes for rentals and purchases, Places for landmarks, Social for neighbours and Activities for things to try.</span></div><div><b>4. Save your progress</b><span>Play as a guest to try the controls. Create an account to use the online account features.</span></div></div><div class="help-actions"><button class="primary full" id="help-guest">Play as guest</button><button class="secondary full" id="help-homes">Find a home</button><button class="secondary full" id="help-places">Explore places</button></div></section><section class="welcome panel" id="welcome-panel"><button class="close-button" id="welcome-close" aria-label="Close">×</button><span class="eyebrow">WELCOME TO YOUR NEW WORLD</span><h2>Every great story<br>needs an <em>address.</em></h2><p>Create a player account to save your home, coins and city adventures.</p><div class="auth-fields"><input id="username" autocomplete="username" maxlength="20" placeholder="Choose a player nickname"><input id="password" autocomplete="current-password" type="password" minlength="8" placeholder="Password (8+ characters)"></div><div class="button-row"><button class="primary" id="signup-button">Create account</button><button class="secondary" id="login-button">Log in</button></div><button id="guest-button" class="guest-button">Play as guest first</button><p class="fine-print">Use a nickname, not your real name. This is a test world; do not use a real password.</p></section>
-<nav class="bottom-nav" aria-label="City activities"><button class="nav-item active" data-mode="explore"><span>⌖</span><small>Explore</small></button><button class="nav-item" data-mode="homes"><span>⌂</span><small>Homes</small></button><button class="nav-item" data-mode="places"><span>✧</span><small>Places</small></button><button class="nav-item" data-mode="social"><span>♡</span><small>Social</small></button><button class="nav-item" data-mode="activities"><span>▤</span><small>Activities</small></button></nav>
-<div class="movement" id="movement" aria-label="Movement controls"><button data-move="forward">▲</button><div><button data-move="left">◀</button><button data-move="back">▼</button><button data-move="right">▶</button></div></div><button id="interact-button" class="interact-button">Interact</button><div class="online-pill"><span class="live-dot"></span><span id="online-status">Connecting to city…</span></div><div class="interaction-hint" id="interaction-hint">Tap a building to discover what is inside</div><div class="toast" id="toast" role="status" aria-live="polite"></div>
-<aside class="settings panel hidden" id="settings-panel"><button class="close-button" id="settings-close">×</button><span class="eyebrow">YOUR CITY</span><h2>Settings</h2><label>Camera sensitivity <input id="sensitivity" type="range" min=".5" max="2" step=".1" value="1"></label><label class="toggle-label"><input id="reduced-motion" type="checkbox"> Reduce camera movement</label><button id="save-settings" class="primary full">Save settings</button><button id="logout-button" class="secondary full">Log out</button><p class="fine-print">Be kind to other players. Never share personal details in public chat.</p></aside></main><script src="/socket.io/socket.io.js"></script><script src="/fallback.js?v=startup-fix-1"></script><script type="module" src="/app.js?v=startup-fix-1"></script></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#5BC0EB">
+<meta name="description" content="Willowvale is a sunny island town of animal neighbours. Explore four districts, visit places, make friends and find a home.">
+<title>Willowvale — Animal Town</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/app-icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@600;700;800&display=swap">
+<link rel="stylesheet" href="/style.css?v=island-1">
+</head>
+<body>
+<main id="game-shell">
+  <canvas id="world" aria-label="Willowvale island town. Tap the ground to walk, tap buildings and neighbours to visit them."></canvas>
+
+  <header class="hud">
+    <button id="profile-button" class="hud-me" aria-label="Your character and account">
+      <span class="avatar-ring"><canvas id="hud-avatar" width="40" height="40"></canvas><i id="online-dot" class="online-dot"></i></span>
+      <span class="me-text"><b id="player-name">Guest</b><span id="coin-pill" class="coin-pill"><i class="coin"></i><b id="coins">35</b></span></span>
+    </button>
+    <button id="district-button" class="hud-district" aria-label="Change district"><i id="district-dot"></i><span id="district-name">Old Town</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <button id="settings-button" class="hud-round" aria-label="Settings and help"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+  </header>
+
+  <div class="map-tools" aria-label="Map controls">
+    <button id="zoom-in" aria-label="Zoom in">+</button>
+    <button id="zoom-out" aria-label="Zoom out">−</button>
+    <button id="recenter" class="hidden" aria-label="Back to my character"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+  </div>
+
+  <p id="hint" class="hint hidden">Tap the ground to walk · tap a building or neighbour to visit</p>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <section id="sheet" class="sheet hidden" role="dialog" aria-label="Details">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <header class="sheet-head">
+      <div><small id="sheet-kicker"></small><h2 id="sheet-title"></h2></div>
+      <button id="sheet-close" class="sheet-close" aria-label="Close">×</button>
+    </header>
+    <div id="sheet-body" class="sheet-body"></div>
+  </section>
+
+  <nav class="dock" aria-label="Game menu">
+    <button class="dock-item active" data-mode="explore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4L3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z M9 4v13.5 M15 6.5V20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Explore</span></button>
+    <button class="dock-item" data-mode="homes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11L12 4l8.5 7M6 9.5V20h12V9.5M10 20v-5h4v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Homes</span></button>
+    <button class="dock-item" data-mode="places"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0114 0C19 14.8 12 21 12 21z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="9.5" r="2.5" fill="currentColor"/></svg><span>Places</span></button>
+    <button class="dock-item" data-mode="friends"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10A4.2 4.2 0 0112 7.6 4.2 4.2 0 0119.5 10c0 5.4-7.5 10-7.5 10z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Friends</span></button>
+    <button class="dock-item" data-mode="journal"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h11a3 3 0 013 3V20H8a3 3 0 01-3-3z M5 17a3 3 0 013-3h11 M9 8h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Journal</span></button>
+  </nav>
+
+  <section id="onboarding" class="onboarding" aria-labelledby="ob-title">
+    <div class="ob-card">
+      <div class="wordmark" aria-hidden="true"><span>Willowvale</span><small>an island of animal neighbours</small></div>
+      <h1 id="ob-title" class="sr-only">Welcome to Willowvale</h1>
+      <canvas id="onboard-avatar" class="ob-avatar" width="132" height="132" aria-hidden="true"></canvas>
+      <p class="ob-lead">Who will you be?</p>
+      <div id="editor-slot"></div>
+      <label class="field ob-name"><span>Your name in town</span><input id="name-input" maxlength="16" autocomplete="nickname"></label>
+      <button id="start-button" class="btn btn-primary btn-wide btn-big">Start exploring</button>
+      <button id="signin-link" class="link-button">I already have an account</button>
+    </div>
+  </section>
+
+  <div id="fade" class="fade" aria-hidden="true"></div>
+  <div id="loading" class="loading" aria-hidden="true"><span>Willowvale</span></div>
+</main>
+<script type="module" src="/app.js?v=island-1"></script>
+</body>
+</html>
