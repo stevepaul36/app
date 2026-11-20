@@ -74,18 +74,18 @@ const SHOPS = [
 ];
 
 export const NEIGHBOURS = [
-  { name: 'Pip', species: 'bunny', outfit: 1, home: [16, 9], line: 'The lily pond is extra sparkly today.', wants: 'flowers' },
-  { name: 'Marlow', species: 'bear', outfit: 3, home: [27, 9], line: 'I bake the honey buns at the bakery. Try one!', wants: 'berries' },
-  { name: 'Juniper', species: 'fox', outfit: 0, home: [23, 20], line: 'I run the morning tram. Mind the doors!', wants: 'crafts' },
-  { name: 'Biscuit', species: 'cat', outfit: 2, home: [19, 23], line: 'The fountain coins are wishes. Do not take them.', wants: 'fish' },
-  { name: 'Nori', species: 'otter', outfit: 4, home: [34, 31], line: 'Gulls stole my sandwich again.', wants: 'fish' },
-  { name: 'Wren', species: 'raccoon', outfit: 5, home: [30, 21], line: 'Have you seen the theatre posters? I drew them.', wants: 'flowers' },
-  { name: 'Clover', species: 'sheep', outfit: 6, home: [8, 30], line: 'The windmill squeaks when it is about to rain.', wants: 'berries' },
-  { name: 'Hazel', species: 'deer', outfit: 2, home: [14, 31], line: 'Fernhill has the best sunsets. Stay a while.', wants: 'crafts' },
-  { name: 'Tumble', species: 'bear', outfit: 5, home: [11, 20], line: 'Library is open late tonight. Shh.', wants: 'berries' },
-  { name: 'Sable', species: 'cat', outfit: 4, home: [31, 13], line: 'The market keeper owes me two apples.', wants: 'flowers' },
-  { name: 'Dot', species: 'bunny', outfit: 6, home: [30, 33], line: 'I rode the Sunwheel eleven times today.', wants: 'crafts' },
-  { name: 'Bramble', species: 'fox', outfit: 3, home: [7, 14], line: 'My garden peas are finally sprouting!', wants: 'fish' },
+  { name: 'Pip', traits: ['Outdoorsy', 'Early Bird', 'Shy'], species: 'bunny', outfit: 1, home: [16, 9], line: 'The lily pond is extra sparkly today.', wants: 'flowers' },
+  { name: 'Marlow', traits: ['Foodie', 'Early Bird', 'Neat'], species: 'bear', outfit: 3, home: [27, 9], line: 'I bake the honey buns at the bakery. Try one!', wants: 'berries' },
+  { name: 'Juniper', traits: ['Social Butterfly', 'Athletic', 'Early Bird'], species: 'fox', outfit: 0, home: [23, 20], line: 'I run the morning tram. Mind the doors!', wants: 'crafts' },
+  { name: 'Biscuit', traits: ['Playful', 'Foodie', 'Night Owl'], species: 'cat', outfit: 2, home: [19, 23], line: 'The fountain coins are wishes. Do not take them.', wants: 'fish' },
+  { name: 'Nori', traits: ['Outdoorsy', 'Playful', 'Foodie'], species: 'otter', outfit: 4, home: [34, 31], line: 'Gulls stole my sandwich again.', wants: 'fish' },
+  { name: 'Wren', traits: ['Artist', 'Night Owl', 'Social Butterfly'], species: 'raccoon', outfit: 5, home: [30, 21], line: 'Have you seen the theatre posters? I drew them.', wants: 'flowers' },
+  { name: 'Clover', traits: ['Outdoorsy', 'Bookworm', 'Shy'], species: 'sheep', outfit: 6, home: [8, 30], line: 'The windmill squeaks when it is about to rain.', wants: 'berries' },
+  { name: 'Hazel', traits: ['Artist', 'Outdoorsy', 'Neat'], species: 'deer', outfit: 2, home: [14, 31], line: 'Fernhill has the best sunsets. Stay a while.', wants: 'crafts' },
+  { name: 'Tumble', traits: ['Bookworm', 'Night Owl', 'Shy'], species: 'bear', outfit: 5, home: [11, 20], line: 'Library is open late tonight. Shh.', wants: 'berries' },
+  { name: 'Sable', traits: ['Music Lover', 'Social Butterfly', 'Neat'], species: 'cat', outfit: 4, home: [31, 13], line: 'The market keeper owes me two apples.', wants: 'flowers' },
+  { name: 'Dot', traits: ['Playful', 'Athletic', 'Music Lover'], species: 'bunny', outfit: 6, home: [30, 33], line: 'I rode the Sunwheel eleven times today.', wants: 'crafts' },
+  { name: 'Bramble', traits: ['Outdoorsy', 'Foodie', 'Athletic'], species: 'fox', outfit: 3, home: [7, 14], line: 'My garden peas are finally sprouting!', wants: 'fish' },
 ];
 
 export function buildWorld() {
