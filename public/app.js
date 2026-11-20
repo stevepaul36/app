@@ -34,6 +34,7 @@ const S = {
   properties: null,
   online: 'guest',
   sheet: null,
+  run: false,
 };
 S.coins = S.progress.coins;
 const saveProgress = () => { if (!S.token) S.progress.coins = S.coins; store.set('willowvale_progress_v2', S.progress); };
@@ -44,7 +45,7 @@ const world = buildWorld();
 const canvas = $('world'), ctx = canvas.getContext('2d');
 let W = 0, H = 0, DPR = 1;
 const mobile = () => Math.min(W, H) < 620;
-const cam = { x: 0, y: 0, zoom: 0.6, free: false };
+const cam = { x: 0, y: 0, zoom: 0.6, tz: 0, free: false };
 
 const tileCache = new Map();
 function tileSpr(type, i, j) {
@@ -114,7 +115,8 @@ class Walker {
 }
 
 const playerStart = [23.5, 23.5];
-const player = new Walker(...playerStart, S.profile?.species || 'fox', S.profile?.outfit ?? 0, { speed: 4.6, seed: 3 });
+const BASE_SPEED = 4.2;
+const player = new Walker(...playerStart, S.profile?.species || 'fox', S.profile?.outfit ?? 0, { speed: BASE_SPEED, seed: 3 });
 const npcs = NEIGHBOURS.map((n, k) => {
   const spot = nearestWalkable(world, n.home[0], n.home[1]) || [22, 22];
   const w = new Walker(spot[0] + 0.5, spot[1] + 0.5, n.species, n.outfit, { speed: 1.5 + (k % 3) * 0.2, seed: k * 3 + 1, name: n.name });
@@ -211,7 +213,7 @@ function gradients() {
 function drawSea() { ctx.fillStyle = gradients().sea; ctx.fillRect(0, 0, W, H); }
 
 function frame(now) {
-  const dt = Math.min(0.05, (now - t0) / 1000); t0 = now; time += S.settings.reduced ? dt * 0.4 : dt;
+  const dt = S.sheet === 'pause' ? 0 : Math.min(0.05, (now - t0) / 1000); t0 = now; time += S.settings.reduced ? dt * 0.4 : dt;
   update(dt);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   drawSea();
@@ -427,25 +429,35 @@ function drawBirds(dt) {
 // ---------- simulation ----------
 const keys = new Set();
 function update(dt) {
-  // keyboard walking
+  // direct walking from the stick or keyboard (screen directions turned into grid directions)
+  const running = S.run || keys.has('run');
+  player.speed = BASE_SPEED * (running ? 1.7 : 1);
+  let sx = 0, sy = 0, mag = 0;
+  if (keys.has('up')) sy -= 1; if (keys.has('down')) sy += 1; if (keys.has('left')) sx -= 1; if (keys.has('right')) sx += 1;
+  if (sx || sy) { const m = Math.hypot(sx, sy); sx /= m; sy /= m; mag = 1; }
+  else if (joy.vx || joy.vy) { mag = Math.min(1, Math.hypot(joy.vx, joy.vy)); sx = joy.vx / mag; sy = joy.vy / mag; }
   let kx = 0, ky = 0;
-  if (keys.has('up')) { kx -= 1; ky -= 1; } if (keys.has('down')) { kx += 1; ky += 1; }
-  if (keys.has('left')) { kx -= 1; ky += 1; } if (keys.has('right')) { kx += 1; ky -= 1; }
-  if (kx || ky) {
+  if (mag) { kx = sx / 64 + sy / 32; ky = sy / 32 - sx / 64; const m = Math.hypot(kx, ky); kx /= m; ky /= m; }
+  if (mag) {
     player.path = []; player.onArrive = null; marker = null; cam.free = false;
-    const m = Math.hypot(kx, ky), sp = player.speed * dt, nx = player.x + kx / m * sp, ny = player.y + ky / m * sp;
+    const sp = player.speed * dt * (0.35 + 0.65 * mag), nx = player.x + kx * sp, ny = player.y + ky * sp;
     if (world.walkable(Math.floor(nx), Math.floor(ny))) { player.x = nx; player.y = ny; }
     else if (world.walkable(Math.floor(nx), Math.floor(player.y))) player.x = nx;
     else if (world.walkable(Math.floor(player.x), Math.floor(ny))) player.y = ny;
     player.face(player.x + kx, player.y + ky); player.moving = true; player.walk += sp * 5.2;
     hideHint();
   } else player.update(dt);
+  updateNearby();
   for (const n of npcs) { npcThink(n, dt); n.update(dt); }
   // camera
   const onboarding = !$('onboarding').classList.contains('hidden');
   let target;
   if (onboarding) { onboardT += dt; target = A.P(22 + Math.cos(onboardT * 0.08) * 7, 22 + Math.sin(onboardT * 0.08) * 7, 30); }
   else target = A.P(player.x, player.y, 34);
+  if (cam.tz) {
+    const nz = cam.zoom + (cam.tz - cam.zoom) * (S.settings.reduced ? 1 : 1 - Math.exp(-dt * 8));
+    cam.zoom = Math.abs(nz - cam.tz) < 0.002 ? cam.tz : nz; if (cam.zoom === cam.tz) cam.tz = 0;
+  }
   if (!cam.free) {
     const k = S.settings.reduced ? 1 : 1 - Math.exp(-dt * 5);
     // keep the player above an open sheet on phones
@@ -458,8 +470,9 @@ function update(dt) {
   if (d !== update.lastDistrict) {
     update.lastDistrict = d;
     $('district-name').textContent = square ? 'Town Square' : DISTRICTS[d].name;
-    $('district-dot').style.background = square ? '#FFC83D' : DISTRICTS[d].color;
+    $('district-name').style.background = square ? '#C98A1E' : A.darken(DISTRICTS[d].color, 0.15);
   }
+  drawRadar();
 }
 
 // ---------- input ----------
@@ -483,7 +496,7 @@ canvas.addEventListener('pointermove', e => {
   }
   gesture.moved += Math.hypot(cur.x - prev.x, cur.y - prev.y);
   if (gesture.moved > 10) {
-    gesture.kind = 'drag'; cam.free = true; showRecenter();
+    gesture.kind = 'drag'; cam.free = true; cam.tz = 0; $('cam-button').classList.add('free');
     cam.x -= (cur.x - prev.x) / cam.zoom; cam.y -= (cur.y - prev.y) / cam.zoom;
   }
 });
@@ -497,11 +510,14 @@ canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', e => { pointers.delete(e.pointerId); if (!pointers.size) gesture = null; });
 canvas.addEventListener('wheel', e => { e.preventDefault(); setZoom(cam.zoom * Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY); }, { passive: false });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
-const KEYMAP = { ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down', ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right' };
+const KEYMAP = { Shift: 'run', ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down', ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right' };
 window.addEventListener('keydown', e => {
   if (e.target.closest('input, textarea, select')) return;
   if (e.key === 'Escape') { closeSheet(); return; }
-  if (e.key === 'e' || e.key === 'E' || e.key === 'Enter') { interactNearby(); return; }
+  if (e.key === 'e' || e.key === 'E' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); interactNearby(); return; }
+  if (e.key === 'r' || e.key === 'R') { toggleRun(); return; }
+  if (e.key === 'c' || e.key === 'C') { cameraButton(); return; }
+  if (e.key === 'p' || e.key === 'P') { S.sheet === 'pause' ? closeSheet() : showSettings(); return; }
   if (e.key === '+' || e.key === '=') setZoom(cam.zoom * 1.15);
   if (e.key === '-') setZoom(cam.zoom / 1.15);
   const k = KEYMAP[e.key]; if (k) { keys.add(k); e.preventDefault(); }
@@ -534,7 +550,7 @@ function tap(sx, sy) {
   walkTo(x, y);
 }
 function walkTo(x, y, onArrive) {
-  cam.free = false; hideRecenter();
+  cam.free = false; $('cam-button').classList.remove('free');
   const p = findPath(world, player.x, player.y, x, y);
   if (!p) { toast('You can’t walk there.'); return false; }
   const end = p[p.length - 1];
@@ -566,12 +582,39 @@ function goMeet(n) {
   const meet = () => { n.busy = 4; n.face(player.x, player.y); player.face(n.x, n.y); n.wave = 1.4; n.say('👋'); showNeighbour(n); };
   if (near(n.x, n.y, 2.2)) meet(); else walkTo(tgt[0] + 0.5, tgt[1] + 0.5, meet);
 }
-function interactNearby() {
-  let best = null, bd = 2.6;
+function findNearby() {
+  let best = null, bd = 2.4;
   for (const n of npcs) { const d = Math.hypot(n.x - player.x, n.y - player.y); if (d < bd) { bd = d; best = { n }; } }
-  for (const o of world.objects) if (o.doorTile) { const d = Math.hypot(o.doorTile[0] + 0.5 - player.x, o.doorTile[1] + 0.5 - player.y); if (d < bd) { bd = d; best = { o }; } }
+  for (const o of world.objects) {
+    if (!o.doorTile || (o.kind === 'shop' && o.label === 'Cottage')) continue;
+    const d = Math.hypot(o.doorTile[0] + 0.5 - player.x, o.doorTile[1] + 0.5 - player.y);
+    if (d < bd) { bd = d; best = { o }; }
+  }
+  return best;
+}
+function interactNearby() {
+  const best = findNearby();
   if (!best) { toast('Nothing close by. Walk up to a door or a neighbour.'); return; }
   if (best.n) goMeet(best.n); else openThing(best.o);
+}
+// The big action button shows what is in reach: a neighbour to talk to or a door to open.
+const TALK_ICON = '<svg viewBox="0 0 24 24"><path d="M4 6.5A2.5 2.5 0 016.5 4h11A2.5 2.5 0 0120 6.5v7a2.5 2.5 0 01-2.5 2.5H11l-4.5 4v-4h0A2.5 2.5 0 014 13.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8.5" cy="10" r="1.2" fill="currentColor"/><circle cx="12" cy="10" r="1.2" fill="currentColor"/><circle cx="15.5" cy="10" r="1.2" fill="currentColor"/></svg>';
+const DOOR_ICON = '<svg viewBox="0 0 24 24"><path d="M6 21V4.5A1.5 1.5 0 017.5 3h9A1.5 1.5 0 0118 4.5V21M3.5 21h17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="14.5" cy="12.5" r="1.3" fill="currentColor"/></svg>';
+let actDefault = null, lastNear = '';
+function updateNearby() {
+  const btn = $('act-button');
+  if (actDefault === null) actDefault = $('act-icon').innerHTML;
+  const best = player.moving && player.path.length > 1 ? null : findNearby();
+  const key = best ? (best.n ? 'n:' + best.n.name : 'o:' + (best.o.id || best.o.name || best.o.label)) : '';
+  if (key === lastNear) return;
+  lastNear = key;
+  btn.disabled = !best; btn.classList.toggle('ready', !!best);
+  if (!best) { $('act-icon').innerHTML = actDefault; $('act-label').textContent = 'Nearby'; btn.setAttribute('aria-label', 'Interact (nothing in reach)'); return; }
+  if (best.n) { $('act-icon').innerHTML = TALK_ICON; $('act-label').textContent = 'Talk to ' + best.n.name; btn.setAttribute('aria-label', 'Talk to ' + best.n.name); return; }
+  const o = best.o, name = o.name || o.label || 'Door';
+  $('act-icon').innerHTML = o.icon ? `<span>${esc(o.icon)}</span>` : o.kind === 'board' ? '<span>🏠</span>' : DOOR_ICON;
+  $('act-label').textContent = (o.home ? 'View ' : o.kind === 'board' ? '' : 'Enter ') + name.replace(/^The /, '');
+  btn.setAttribute('aria-label', $('act-label').textContent);
 }
 
 // ---------- UI helpers ----------
@@ -584,8 +627,7 @@ function setCoins(n, pop) {
 }
 function addItem(k, n) { S.progress.inventory[k] = (S.progress.inventory[k] || 0) + n; saveProgress(); }
 function hideHint() { $('hint').classList.add('hidden'); }
-function showRecenter() { $('recenter').classList.remove('hidden'); }
-function hideRecenter() { $('recenter').classList.add('hidden'); }
+
 function h(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; }
 
 function openSheet(name, kicker, title, body, opts = {}) {
@@ -881,11 +923,15 @@ function showSettings() {
     <label class="switch"><input type="checkbox" id="set-labels" ${S.settings.labels ? 'checked' : ''}><span class="track"></span><span>Show place names</span></label>
     <label class="switch"><input type="checkbox" id="set-reduced" ${S.settings.reduced ? 'checked' : ''}><span class="track"></span><span>Reduce motion</span></label>
     <h4 class="group-title">How to play</h4>
-    <ul class="tips"><li><b>Walk</b> Tap the ground, or use WASD / arrow keys.</li><li><b>Visit</b> Tap a building to walk to its door.</li><li><b>Meet</b> Tap a neighbour to say hello and help them out.</li><li><b>Look around</b> Drag to pan, pinch or scroll to zoom.</li></ul>
+    <ul class="tips"><li><b>Walk</b> Use the stick, tap the ground, or WASD / arrow keys.</li><li><b>Visit</b> Tap a building to walk to its door.</li><li><b>Meet</b> Tap a neighbour to say hello and help them out.</li><li><b>Look around</b> Drag to pan, pinch or scroll to zoom.</li></ul>
     <p class="fine">Be kind to other players and never share personal details. Coins are in-game only.</p></div>`);
   el.querySelector('#set-labels').onchange = e => { S.settings.labels = e.target.checked; saveSettings(); };
   el.querySelector('#set-reduced').onchange = e => { S.settings.reduced = e.target.checked; saveSettings(); };
-  openSheet('settings', 'Settings', 'Game settings', el, { tab: 'explore' });
+  el.prepend(h(`<div class="pause-actions"><button class="btn btn-primary btn-wide btn-big" id="resume-button">Resume</button><button class="btn btn-ghost btn-wide" id="pause-profile">Character &amp; account</button></div>`));
+  el.querySelector('#resume-button').onclick = closeSheet;
+  el.querySelector('#pause-profile').onclick = () => showProfile();
+  el.querySelector('.tips').insertAdjacentHTML('beforeend', '<li><b>Controls</b> Stick to move, hand button to talk or go inside, shoe to run, camera to centre and zoom.</li><li><b>Keyboard</b> WASD to move, Shift or R to run, E or Space to interact, C for camera, P to pause.</li>');
+  openSheet('pause', 'Paused', 'Willowvale', el, { tab: 'explore' });
 }
 
 // ---------- network ----------
@@ -923,11 +969,82 @@ document.querySelectorAll('.dock-item').forEach(b => b.onclick = () => {
   ({ explore: closeSheet, homes: () => showHomes(), places: showPlaces, friends: showFriends, journal: showJournal })[m]();
 });
 $('profile-button').onclick = () => showProfile();
-$('district-button').onclick = showDistricts;
-$('settings-button').onclick = showSettings;
-$('zoom-in').onclick = () => setZoom(cam.zoom * 1.2);
-$('zoom-out').onclick = () => setZoom(cam.zoom / 1.2);
-$('recenter').onclick = () => { cam.free = false; hideRecenter(); };
+$('radar-button').onclick = showDistricts;
+$('pause-button').onclick = () => (S.sheet === 'pause' ? closeSheet() : showSettings());
+$('act-button').onclick = interactNearby;
+$('run-button').onclick = toggleRun;
+$('cam-button').onclick = cameraButton;
+function toggleRun() { S.run = !S.run; $('run-button').setAttribute('aria-pressed', String(S.run)); toastQuiet(S.run ? 'Running' : 'Walking'); }
+// Camera: first press brings the view back to you; after that it steps through three zoom levels.
+function cameraButton() {
+  if (cam.free) { cam.free = false; $('cam-button').classList.remove('free'); return; }
+  const levels = mobile() ? [0.4, 0.56, 0.8] : [0.45, 0.72, 1.0];
+  const cur = cam.tz || cam.zoom, k = levels.findIndex(l => l > cur + 0.02);
+  cam.tz = levels[k === -1 ? 0 : k];
+}
+
+// ---------- on-screen stick ----------
+const joy = { id: null, cx: 0, cy: 0, vx: 0, vy: 0 };
+{
+  const el = $('joystick'), knob = $('joy-knob'), R = 46;
+  const move = e => {
+    let dx = e.clientX - joy.cx, dy = e.clientY - joy.cy;
+    const m = Math.hypot(dx, dy);
+    if (m > R) { dx *= R / m; dy *= R / m; }
+    knob.style.transform = `translate(${dx}px, ${dy}px)`;
+    const dead = Math.min(1, m / R) < 0.15;
+    joy.vx = dead ? 0 : dx / R; joy.vy = dead ? 0 : dy / R;
+  };
+  const end = e => { if (e.pointerId !== joy.id) return; joy.id = null; joy.vx = joy.vy = 0; knob.style.transform = ''; el.classList.remove('active'); };
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault(); try { el.setPointerCapture(e.pointerId); } catch { /* older browsers */ }
+    const r = el.getBoundingClientRect(); joy.id = e.pointerId; joy.cx = r.left + r.width / 2; joy.cy = r.top + r.height / 2;
+    el.classList.add('active'); move(e);
+  });
+  el.addEventListener('pointermove', e => { if (e.pointerId === joy.id) move(e); });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => el.addEventListener(t, end));
+  el.addEventListener('contextmenu', e => e.preventDefault());
+}
+const coarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+document.body.classList.toggle('touch', !!coarse);
+window.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') document.body.classList.add('touch'); }, { capture: true });
+
+// ---------- radar ----------
+// A small map of the island drawn once, then panned so you are always in the middle.
+const RS = 12 / A.TW; // radar pixels per world pixel (drawn at 2x, shown at about half)
+const radarMap = (() => {
+  const c = document.createElement('canvas'), w = N * A.TW * RS, h = N * A.TH * RS;
+  c.width = Math.ceil(w); c.height = Math.ceil(h);
+  const g = c.getContext('2d'), ox = w / 2;
+  const col = { [T.SAND]: '#F3DFAE', [T.GRASS]: '#8FD06F', [T.PATH]: '#FFF3D6', [T.PLAZA]: '#FFFFFF', [T.PARK]: '#A3DB83', [T.POND]: '#7FD0EA', [T.DOCK]: '#D9A56B', [T.MEADOW]: '#9AD77D' };
+  const dia = (i, j, w2 = 1, d2 = 1, fill) => {
+    const p = (x, y) => { const [a, b] = A.P(x, y); return [a * RS + ox, b * RS]; };
+    g.beginPath(); g.moveTo(...p(i, j)); g.lineTo(...p(i + w2, j)); g.lineTo(...p(i + w2, j + d2)); g.lineTo(...p(i, j + d2)); g.closePath(); g.fillStyle = fill; g.fill();
+  };
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const t = world.get(i, j); if (t !== T.SEA) dia(i, j, 1.04, 1.04, col[t]); }
+  for (const o of world.objects) dia(o.i, o.j, o.w, o.d, o.kind === 'venue' ? A.lighten(o.color, 0.1) : o.home ? '#B9C6D6' : '#C9D3DE');
+  return { c, ox };
+})();
+function drawRadar() {
+  const cv = $('radar'), css = cv.clientWidth || 96, dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (cv.width !== Math.round(css * dpr)) { cv.width = cv.height = Math.round(css * dpr); }
+  const g = cv.getContext('2d'), size = css, k = 0.5 * (size / 96) * 1.15;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = '#5BC0EB'; g.fillRect(0, 0, size, size);
+  const [px, py] = A.P(player.x, player.y);
+  const toR = (x, y) => { const [a, b] = A.P(x, y); return [size / 2 + (a - px) * RS * k, size / 2 + (b - py) * RS * k]; };
+  g.drawImage(radarMap.c, size / 2 - (px * RS + radarMap.ox) * k, size / 2 - py * RS * k, radarMap.c.width * k, radarMap.c.height * k);
+  for (const v of VENUES) { const [x, y] = toR(v.i + v.w / 2, v.j + v.d / 2); g.fillStyle = '#fff'; g.beginPath(); g.arc(x, y, 4.2, 0, 7); g.fill(); g.fillStyle = v.color; g.beginPath(); g.arc(x, y, 2.9, 0, 7); g.fill(); }
+  g.fillStyle = '#26395A';
+  for (const n of npcs) { const [x, y] = toR(n.x, n.y); g.beginPath(); g.arc(x, y, 1.8, 0, 7); g.fill(); }
+  if (marker) { const [x, y] = toR(marker.x, marker.y); g.strokeStyle = '#FFC83D'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.stroke(); }
+  // you: an arrow pointing the way you face
+  const ang = { front: player.flip ? Math.PI * 0.25 : Math.PI * 0.75, back: player.flip ? -Math.PI * 0.25 : -Math.PI * 0.75 }[player.dir];
+  g.save(); g.translate(size / 2, size / 2); g.rotate(ang + Math.PI / 2);
+  g.fillStyle = '#F0587A'; g.strokeStyle = '#fff'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(0, -7); g.lineTo(5.5, 5.5); g.lineTo(0, 2.5); g.lineTo(-5.5, 5.5); g.closePath(); g.stroke(); g.fill();
+  g.restore();
+}
 
 // ---------- onboarding ----------
 function startOnboarding() {
