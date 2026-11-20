@@ -201,3 +201,17 @@ button:focus-visible,input:focus-visible{outline:3px solid #e9b86c;outline-offse
  .help-steps span{font-size:9px}
  .help-actions{margin-top:7px}
 }
+
+/* Reliable touch controls: capture the finger, prevent browser gestures, and provide a clear pressed state. */
+.movement{z-index:20;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+.movement button{pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;display:grid;place-items:center;flex-shrink:0}
+.movement button.pressed{background:#cfe5cf;color:#123d39;transform:scale(.94);box-shadow:0 0 0 3px #5c9b7040,0 5px 15px #183a3420}
+.interact-button,.bottom-nav,.nav-item,.topbar button,.district-link,.text-action,.primary,.secondary,.listing-tab,.property-action,.close-button{touch-action:manipulation;pointer-events:auto;-webkit-tap-highlight-color:transparent}
+@media(max-width:800px){
+ .mobile-layout .movement{z-index:20;gap:6px}
+ .mobile-layout .movement>div{gap:6px}
+ .mobile-layout .movement button{width:clamp(48px,13vw,58px);height:clamp(48px,13vw,58px);min-width:48px;min-height:48px;border:1px solid #ffffff;box-shadow:0 7px 18px #173b3230}
+ .mobile-layout .movement button.pressed{transform:scale(.93)}
+ .mobile-layout .interact-button{z-index:20;min-height:52px;touch-action:manipulation}
+ .mobile-layout .bottom-nav{z-index:15}
+}
