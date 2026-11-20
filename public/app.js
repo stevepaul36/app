@@ -3,10 +3,12 @@ import { N, T, buildWorld, findPath, nearestWalkable, stepOK, DISTRICTS, distric
 import * as A from './js/art.js';
 import * as F from './js/furniture.js';
 import { buildHome, O as HOME_O } from './js/home.js';
+import { buildInterior, KIT_OF, STAFF_TITLE, GAMES } from './js/interiors.js';
 import * as SND from './js/audio.js';
 import { STARTER, ACHIEVEMENTS, SIGNATURE, ALL_EMOJIS, replyTo, unlockedSet } from './js/emoji.js';
 import { CITY_LIST, ROUTES, CITY_PACKS, cityMeta, buildCity, addWillowvaleRoad } from './js/cities.js';
 import * as CA from './js/cityart.js';
+import { GAME } from './js/games.js';
 import { NEEDS, freshNeeds, mood, moodLabel, moodColor, needColor, SPEEDS, GAME_MIN_PER_SEC, clockText, dayOf, hourOf, skyTint, isNight, actionsFor, TRAITS, SKILLS, SKILL_MAX, xpForLevel, CAREER, CAREERS, friendLevel } from './js/sim.js';
 
 const IS_NATIVE = location.protocol === 'capacitor:' || !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
@@ -119,11 +121,13 @@ function makeThings(wd) {
         if (o.vstyle) t.top = 50 + (o.vstyle.floors || 2) * 44;
         if (o.id === 'station') t.top = 90;
       }
+      if (o.home || o.kind === 'apartment') { t.balc = CA.balconyPoints(o); t.balcLooks = []; }
     } else if (o.kind === 'landmark') {
       if (o.flat) { flatList.push({ d: o, obj: o, x: o.i, y: o.j, sprite: CA.landmarkSprite(o) }); continue; }
       t.sprite = CA.landmarkSprite(o); t.top = CA.LM_TOP[o.lm] || 0; t.interactive = !o.deco;
       if (!o.deco && o.lm !== 'rangoli') t.shadow = A.shadowSprite(o.w, o.d, Math.min(160, t.top * 0.6));
     } else if (o.kind === 'busstop') { t.sprite = CA.busStopSprite(); t.top = 100; }
+    else if (o.kind === 'boathire') { t.sprite = CA.boatHireSprite(); t.top = 90; }
     else if (o.kind === 'fountain') { t.sprite = A.fountainSprite(); t.live = 'fountain'; }
     else if (o.kind === 'clock') { t.sprite = A.clockSprite(); t.shadow = A.shadowSprite(1, 1, 120); t.live = 'clock'; t.top = 240; }
     else if (o.kind === 'board') { t.sprite = A.boardSprite(); }
@@ -147,6 +151,21 @@ function addDecor(list, flatList, decor) {
 }
 
 // Inside your cottage: walls on tile edges, furniture, and a little garden.
+function makeRoomThings(rw) {
+  const list = [], flatList = [];
+  for (const w of rw.walls) {
+    const sprite = F.wallSprite(w);
+    const ax = w.axis === 'i' ? HOME_O[0] + w.k : HOME_O[0] + w.at, ay = w.axis === 'i' ? HOME_O[1] + w.at : HOME_O[1] + w.k;
+    list.push({ o: { kind: 'wall' }, wall: w, sprite, ax, ay, box: w.axis === 'i' ? [ax, ay - 0.06, ax + 1, ay + 0.06] : [ax - 0.06, ay, ax + 0.06, ay + 1] });
+  }
+  for (const f of rw.objects) {
+    const t = { o: f, furn: true, sprite: F.furnitureSprite(f), ax: f.i, ay: f.j, box: [f.i, f.j, f.i + f.w, f.j + f.d], interactive: !f.decor && !f.flat };
+    if (f.flat) flatList.push({ d: f, x: f.i, y: f.j, sprite: t.sprite, furn: f, tap: !f.decor }); else list.push(t);
+  }
+  addDecor(list, flatList, rw.decor);
+  rw.doorObj = rw.objects.find(f => f.door);
+  return { things: list, flats: flatList };
+}
 const homeWorld = buildHome();
 const homeThings = [], homeFlats = [];
 for (const w of homeWorld.walls) {
@@ -165,6 +184,8 @@ for (const f of homeWorld.objects) {
 }
 addDecor(homeThings, homeFlats, homeWorld.decor);
 const homeDoor = homeWorld.objects.find(f => f.door);
+homeWorld.doorObj = homeDoor;
+const roomCenter = () => world.roomSize ? [HOME_O[0] + world.roomSize[0] / 2, HOME_O[1] + world.roomSize[1] / 2] : [HOME_O[0] + 6.5, HOME_O[1] + 6];
 
 // ---------- characters ----------
 class Walker {
@@ -206,6 +227,167 @@ function makeNpcs(defs, wd, base) {
     return w;
   });
 }
+// ---------- arcade games ----------
+function gameDone(id, res) {
+  const sc = (res && res.score) || 0;
+  S.progress.highscores = S.progress.highscores || {};
+  const best = S.progress.highscores[id] || 0;
+  if (sc > best) S.progress.highscores[id] = sc;
+  const coins = Math.min(25, Math.floor(sc / 4));
+  if (coins) setCoins(S.coins + coins, true);
+  S.progress.needs.fun = Math.min(100, S.progress.needs.fun + 10 + Math.min(20, sc));
+  addXP('logic', Math.min(12, sc / 3));
+  bumpStat('games');
+  if (sc) { player.say(sc > best ? '🏆' : '😄', 2); toast(`${GAMES[id].name}: ${sc} points${coins ? `, +${coins} ✦` : ''}${sc > best && best ? '. New high score!' : ''}`); }
+  staffReact({ emotes: ['🏆'] });
+  saveProgress(); checkAchievements();
+}
+
+// ---------- boats and fishing ----------
+const BOAT = { dock: null };
+function seaTileNear(x, y, r = 8) {
+  let best = null, bd = Infinity;
+  for (let j = Math.floor(y - r); j <= y + r; j++) for (let i = Math.floor(x - r); i <= x + r; i++) {
+    if (!cityWorld.inb(i, j) || cityWorld.get(i, j) !== T.SEA) continue;
+    const open = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([a, b]) => cityWorld.get(i + a, j + b) === T.SEA).length >= 3;
+    const d = Math.hypot(i + 0.5 - x, j + 0.5 - y); if (open && d < bd) { bd = d; best = [i, j]; }
+  }
+  return best;
+}
+function startBoat() {
+  if (sceneName !== 'city' || player.boat) return;
+  const at = seaTileNear(player.x, player.y);
+  if (!at) { toast('There’s no open water close by. Try the marina or a pier.'); return; }
+  cancelActions(); closePie(); closeSheet();
+  const base = cityWorld, bw = Object.create(base);
+  bw.walkable = (i, j) => base.inb(i, j) && base.get(i, j) === T.SEA; bw.edge = null; bw.boating = true;
+  BOAT.dock = [player.x, player.y]; BOAT.world = bw;
+  fadeTo(() => {
+    world = bw; player.x = at[0] + 0.5; player.y = at[1] + 0.5; player.path = []; player.onArrive = null; player.boat = true; player.pose = null; lastNear = '';
+    document.body.classList.add('boating'); SND.sfx('splash'); toast('Steer with the stick or tap the water. Tap 🎣 to fish!'); bumpStat('boats');
+  });
+}
+function endBoat() {
+  if (!player.boat) return;
+  fadeTo(() => {
+    world = cityWorld; player.boat = false; player.pose = null; player.path = []; lastNear = '';
+    const d = BOAT.dock || C.stop.stand; player.x = d[0]; player.y = d[1];
+    document.body.classList.remove('boating');
+  });
+}
+function castLine() {
+  if (!player.boat || GAME.isOpen()) return;
+  player.arms = 'hold'; player.say('🎣', 1.5); SND.sfx('splash');
+  GAME.fish(res => {
+    player.arms = null;
+    if (res && res.caught) {
+      const f = res.caught;
+      S.progress.inventory.fish = (S.progress.inventory.fish || 0) + 1;
+      setCoins(S.coins + f.coins, true); bumpStat('fish');
+      S.progress.catches = S.progress.catches || {}; S.progress.catches[f.name] = (S.progress.catches[f.name] || 0) + 1;
+      S.progress.needs.fun = Math.min(100, S.progress.needs.fun + 14);
+      player.say(f.icon, 2.5); SND.sfx('coin'); toast(`You caught a ${f.name}! +${f.coins} ✦ and a fish for your bag.`);
+      saveProgress(); checkAchievements();
+    } else if (res && !res.quit) player.say('💦', 1.6);
+  }, skillLv('fitness'));
+}
+function drawRowboat(sx, sy, z) {
+  const bob = Math.sin(time * 1.6) * 2 * z;
+  ctx.save(); ctx.translate(sx, sy + bob); ctx.scale(z, z);
+  ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.beginPath(); ctx.ellipse(0, 8, 44, 11, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#C98A4B'; ctx.strokeStyle = '#7A5236'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-40, -6); ctx.lineTo(40, -6); ctx.quadraticCurveTo(36, 10, 20, 10); ctx.lineTo(-24, 10); ctx.quadraticCurveTo(-38, 8, -40, -6); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#F0587A'; ctx.fillRect(-36, -3, 72, 4);
+  ctx.restore();
+}
+
+// ---------- inside places: cafés, shops, the arcade... ----------
+const ROOMS = {};
+let ROOM = null;
+const kitFor = o => o && o.kind === 'venue' ? KIT_OF[kindKey(o)] || null : null;
+function getRoom(v) {
+  const key = C.id + ':' + v.id;
+  if (!ROOMS[key]) { const rw = buildInterior(v, kitFor(v), kindKey(v)); ROOMS[key] = { world: rw, ...makeRoomThings(rw), npcs: [] }; }
+  return ROOMS[key];
+}
+function hashStr(t) { let x = 7; for (const ch of t) x = (x * 31 + ch.charCodeAt(0)) >>> 0; return x; }
+function cloneNpc(n, x, y) {
+  const w = new Walker(x, y, n.species, n.outfit, { speed: 1.3, seed: n.seed, name: n.name });
+  w.data = n.data; w.orig = n; w.needs = n.needs; w.traits = n.traits; w.doing = n.doing; w.busy = 0; w.home = n.home;
+  return w;
+}
+function visitorNpc(seed, x, y, title) {
+  const species = Object.keys(A.SPECIES)[seed % Object.keys(A.SPECIES).length];
+  const w = new Walker(x, y, species, A.randomLook(seed * 7 + 3), { speed: 1.3, seed, name: title });
+  w.data = { name: title, line: '' }; w.generic = true; w.needs = {}; w.traits = []; w.doing = title; w.busy = 0;
+  return w;
+}
+function enterVenue(v) {
+  cancelActions(); closePie();
+  if (!kitFor(v)) return;
+  ROOM = getRoom(v);
+  const rw = ROOM.world;
+  // who's here: the worker behind the counter, and any neighbour who came in
+  const people = [];
+  const worker = cityNpcs.find(n => n.task && n.task.kind === 'work' && n.task.place === v.id);
+  const sp = rw.staffSpots[0];
+  if (sp) {
+    const st = worker ? cloneNpc(worker, sp[0], sp[1]) : visitorNpc(hashStr(v.id), sp[0], sp[1], STAFF_TITLE[rw.kit] || 'Helper');
+    st.staff = true; st.spot = sp; st.doing = `Working at ${v.name}`; people.push(st);
+  }
+  const free = rw.seats.slice().sort(() => Math.random() - 0.5);
+  const inside = cityNpcs.filter(n => n !== worker && n.task && n.task.place === v.id);
+  for (const n of inside) { const seat = free.shift(); if (!seat) break; const c = cloneNpc(n, seat.use[0], seat.use[1]); seatAt(c, seat); people.push(c); }
+  const extra = Math.max(0, Math.min(free.length, 2 + (hashStr(v.id + dayOf(S.progress.clock)) % 2)) - inside.length);
+  for (let k = 0; k < extra; k++) { const seat = free.shift(); if (!seat) break; const c = visitorNpc(hashStr(v.id) + k * 17 + 5, seat.use[0], seat.use[1], 'Visitor'); seatAt(c, seat); people.push(c); }
+  ROOM.npcs = people;
+  fadeTo(() => { setScene('venue', ...rw.insideDoor); player.face(player.x - 1, player.y - 1); toast(`Welcome to ${v.name}!`); markVisited(v); });
+}
+function seatAt(c, seat) { c.seat = seat; seat.taken = c; c.x = seat.use[0]; c.y = seat.use[1]; c.pose = seat.virtual ? null : 'sit'; if (seat.look) c.face(...seat.look); c.stay = 30 + Math.random() * 60; c.emoteT = 1 + Math.random() * 4; }
+function markVisited(v) { S.progress.places = S.progress.places || {}; if (!S.progress.places[v.id]) { S.progress.places[v.id] = 1; saveProgress(); checkAchievements(); } }
+// Life inside: the worker serves and waves, customers eat, chat and come and go.
+function interiorThink(n, dt) {
+  if (n.busy > 0) { n.busy -= dt; n.face(player.x, player.y); return; }
+  n.emoteT = (n.emoteT || 3) - dt;
+  const kit = ROOM.world.kit;
+  if (n.staff) {
+    if (n.path.length) return;
+    if (Math.hypot(n.x - n.spot[0], n.y - n.spot[1]) > 0.3) { const p = findPath(world, n.x, n.y, n.spot[0], n.spot[1]); if (p) n.go(p); return; }
+    if (Math.hypot(player.x - n.x, player.y - n.y) < 3) n.face(player.x, player.y);
+    if (n.emoteT <= 0) { n.emoteT = 4 + Math.random() * 4; n.say(({ cafe: ['☕', '😊', '🥐'], shop: ['🛒', '😊', '👋'], arcade: ['🕹️', '🏆', '😄'], restaurant: ['🍜', '🔥', '😋'], library: ['🤫', '📚'], museum: ['🤖', '🦖', '✨'], cinema: ['🍿', '🎬'], gym: ['💪', '👟'], office: ['💻', '💡'], lab: ['🧪', '🔬'], workshop: ['🎨', '✂️'] }[kit] || ['😊'])[Math.floor(Math.random() * 2.99)], 2); }
+    return;
+  }
+  if (n.leaving) { if (!n.path.length && !n.onArrive) n.gone = true; return; }
+  if (n.seat) {
+    n.stay -= dt;
+    if (n.emoteT <= 0) { n.emoteT = 3 + Math.random() * 4; n.say(({ cafe: ['😋', '☕', '💬', '😂'], restaurant: ['😋', '🍜', '🥟', '💬'], library: ['📖', '🤓', '💡'], museum: ['😮', '📸'], cinema: ['😂', '😮', '🍿'], office: ['⌨️', '💡'], lab: ['💥', '🤓'], workshop: ['🎨', '✨'] }[kit] || ['😊', '💬'])[Math.floor(Math.random() * 3.99) % 4] || '😊', 1.8); }
+    if (n.stay <= 0 && !n.orig) { // visitors drift off and new ones wander in
+      n.seat.taken = null; n.seat = null; n.pose = null; n.leaving = true;
+      const out = ROOM.world.outsideDoor; const p = findPath(world, n.x, n.y, out[0], out[1]); if (p) n.go(p, () => { n.gone = true; }); else n.gone = true;
+    }
+  }
+}
+function interiorTick(dt) {
+  if (sceneName !== 'venue' || !ROOM) return;
+  for (const n of ROOM.npcs) { interiorThink(n, dt); n.update(dt); }
+  if (ROOM.npcs.some(n => n.gone)) { ROOM.npcs = ROOM.npcs.filter(n => !n.gone); npcs = ROOM.npcs; }
+  ROOM.arriveT = (ROOM.arriveT ?? 8) - dt;
+  if (ROOM.arriveT <= 0) {
+    ROOM.arriveT = 10 + Math.random() * 14;
+    const seat = ROOM.world.seats.find(s => !s.taken && !s.virtual) || ROOM.world.seats.find(s => !s.taken);
+    if (seat && ROOM.npcs.length < 7) {
+      const out = ROOM.world.outsideDoor, c = visitorNpc(Math.floor(Math.random() * 999), out[0], out[1], 'Visitor');
+      seat.taken = c; const p = findPath(world, out[0], out[1], seat.use[0], seat.use[1] + (seat.virtual ? 0 : 0.6));
+      if (p) { c.go(p, () => seatAt(c, seat)); c.say('👋', 1.5); ROOM.npcs.push(c); npcs = ROOM.npcs; } else seat.taken = null;
+    }
+  }
+}
+function staffReact(def) {
+  if (sceneName !== 'venue' || !ROOM) return;
+  const st = ROOM.npcs.find(n => n.staff); if (!st) return;
+  st.face(player.x, player.y); st.say(def.emotes ? def.emotes[0] : '😊', 2); st.wave = 1;
+}
+
 // ---------- towns ----------
 const CITIES = {};
 function getCity(id) {
@@ -239,13 +421,15 @@ let sceneName = 'city';
 function setScene(name, x, y) {
   sceneName = name;
   if (name === 'home') { world = homeWorld; things = homeThings; flats = homeFlats; npcs = []; }
+  else if (name === 'venue') { world = ROOM.world; things = ROOM.things; flats = ROOM.flats; npcs = ROOM.npcs; }
   else { world = cityWorld; things = cityThings; flats = cityFlats; npcs = cityNpcs; }
   player.x = x; player.y = y; player.path = []; player.onArrive = null; player.using = null; player.pose = null;
+  if (player.boat) { player.boat = false; document.body.classList.remove('boating'); }
   marker = null; cam.free = false; cam.tz = 0; cam.manual = false;
-  if (name === 'home') { cam.zoom = mobile() ? 0.4 : 0.62; const p = A.P(HOME_O[0] + 6.5, HOME_O[1] + 6, 30); cam.x = p[0]; cam.y = p[1]; }
+  if (name === 'home' || name === 'venue') { cam.zoom = mobile() ? (name === 'venue' ? 0.46 : 0.4) : 0.66; const rc = roomCenter(); const p = A.P(rc[0], rc[1], 30); cam.x = p[0]; cam.y = p[1]; }
   else { cam.zoom = mobile() ? 0.56 : 0.72; const p = A.P(player.x, player.y, 34); cam.x = p[0]; cam.y = p[1]; }
   radarMap = buildRadarMap(); update.lastDistrict = null; lastNear = '';
-  document.body.classList.toggle('indoors', name === 'home');
+  document.body.classList.toggle('indoors', name === 'home' || name === 'venue');
 }
 function fadeTo(fn) {
   SND.sfx('door');
@@ -260,6 +444,7 @@ function enterHome(o) {
 }
 function leaveHome() {
   cancelActions(); closePie();
+  if (sceneName === 'venue') { const v = ROOM.world.venue, dt0 = v.doorTile || [v.i + v.w, v.j + v.d]; fadeTo(() => { setScene('city', dt0[0] + 0.5, dt0[1] + 0.5); player.face(player.x + 1, player.y + 1); }); return; }
   const hd = S.progress.homeDoor && S.progress.homeDoor.city === C.id ? S.progress.homeDoor : null;
   const [x, y] = hd ? [hd.x, hd.y] : myHome ? [myHome.doorTile[0] + 0.5, myHome.doorTile[1] + 0.5] : C.stop.stand;
   fadeTo(() => { setScene('city', x, y); player.face(player.x + 1, player.y + 1); });
@@ -646,7 +831,7 @@ function drawDaylight(z) {
       if (sx < -200 || sx > W + 200 || sy < -200 || sy > H + 200) continue;
       F.lampGlow(ctx, sx, sy, 150 * z, 0.32 * k);
     }
-    if (world.interior) for (const w of homeWorld.walls) if (w.win) { const [sx, sy] = w.axis === 'i' ? toScreen(HOME_O[0] + w.k + 0.5, HOME_O[1] + w.at, 70) : toScreen(HOME_O[0] + w.at, HOME_O[1] + w.k + 0.5, 70); F.lampGlow(ctx, sx, sy, 90 * z, 0.12 * k); }
+    if (world.interior) for (const w of world.walls) if (w.win) { const [sx, sy] = w.axis === 'i' ? toScreen(HOME_O[0] + w.k + 0.5, HOME_O[1] + w.at, 70) : toScreen(HOME_O[0] + w.at, HOME_O[1] + w.k + 0.5, 70); F.lampGlow(ctx, sx, sy, 90 * z, 0.12 * k); }
     ctx.globalCompositeOperation = 'source-over';
   }
   ctx.restore();
@@ -677,7 +862,8 @@ function drawThing(t, z) {
     const c = t.char;
     if (c.pose === 'inside') return;
     const [sx, sy] = toScreen(c.x, c.y);
-    ctx.save(); ctx.translate(sx, sy); ctx.scale(z * 1.15, z * 1.15);
+    if (c.boat) drawRowboat(sx, sy, z * 1.15);
+    ctx.save(); ctx.translate(sx, sy - (c.boat ? 8 * z : 0) + (c.boat ? Math.sin(time * 1.6) * 2 * z : 0)); ctx.scale(z * 1.15, z * 1.15);
     if (c.pose === 'sleep') { ctx.translate(0, -24); ctx.rotate(c.flip ? 1.25 : -1.25); ctx.translate(0, 26); }
     A.drawAnimal(ctx, c.species, c.outfit, { t: time, walk: c.walk, moving: c.moving, dir: c.pose === 'sleep' || c.faceFront ? 'front' : c.dir, flip: c.flip, seed: c.seed, wave: c.wave > 0, happy: c.wave > 0 || !!c.emote, pose: c.pose === 'sleep' ? 'stand' : c.pose, asleep: c.pose === 'sleep', shadow: c.pose !== 'sleep', arms: c.arms, prop: c.prop, override: c.override, blanket: c.pose === 'sleep' ? c.blanket : null, shake: c.shake > 0 ? Math.min(1, c.shake) : 0, saved: c.saved });
     ctx.restore();
@@ -694,8 +880,26 @@ function drawThing(t, z) {
   else if (t.live === 'clock') A.drawClockHands(ctx, sx, sy, z, new Date());
   else if (t.live === 'sunwheel') A.drawSunwheel(ctx, sx, sy, z, time);
   else if (t.live === 'windmill') A.drawWindmillBlades(ctx, sx, sy, z, time);
+  if (t.balc && t.balc.length && z > 0.3) drawBalconyPeople(t, sx, sy, z);
   if (t.furn) F.drawFurnitureLive(ctx, t.o, sx, sy, z, time, activeObject() === t.o || (t.o.type === 'tv' && act && act.phase === 'do' && act.step.tv) || (t.o.type === 'stove' && act && act.phase === 'do' && act.step.objType === 'stove'));
   t.sx = sx; t.sy = sy;
+}
+
+// Neighbours out on their balconies: waving in the day, a few night owls after dark.
+const SPECIES_LIST = Object.keys(A.SPECIES);
+function drawBalconyPeople(t, sx, sy, z) {
+  const h = hourOf(S.progress.clock), night = h < 6 || h >= 21, slot = Math.floor(S.progress.clock / 90);
+  t.balc.forEach((b, k) => {
+    const seed = hashStr((t.o.id || t.o.name || '') + k);
+    const here = ((seed + slot * 7) % 10) < (night ? 1 : 4);
+    if (!here) return;
+    const look = t.balcLooks[k] || (t.balcLooks[k] = A.randomLook(seed));
+    const [px, py] = A.P(b[0], b[1], b[2]);
+    ctx.save(); ctx.translate(sx + px * z, sy + py * z); ctx.scale(z * 0.72, z * 0.72);
+    const waving = ((time + seed % 9) % 7) < 1.3;
+    A.drawAnimal(ctx, SPECIES_LIST[seed % SPECIES_LIST.length], look, { t: time, dir: 'front', flip: seed % 2 === 0, seed, wave: waving, happy: waving, shadow: false });
+    ctx.restore();
+  });
 }
 
 // Steam and bubbles in the shower, droplets when shaking dry.
@@ -783,7 +987,7 @@ function update(dt) {
   // direct walking from the stick or keyboard (screen directions turned into grid directions)
   const running = S.run || keys.has('run');
   const tired = S.progress.needs.energy < 10 ? 0.7 : 1;
-  player.speed = BASE_SPEED * (running ? 1.7 : 1) * tired * (1 + 0.02 * skillLv('fitness')) * (player.jogging ? 1.5 : 1);
+  player.speed = BASE_SPEED * (player.boat ? 1.7 : 1) * (running ? 1.7 : 1) * tired * (1 + 0.02 * skillLv('fitness')) * (player.jogging ? 1.5 : 1);
   let sx = 0, sy = 0, mag = 0;
   if (keys.has('up')) sy -= 1; if (keys.has('down')) sy += 1; if (keys.has('left')) sx -= 1; if (keys.has('right')) sx += 1;
   if (sx || sy) { const m = Math.hypot(sx, sy); sx /= m; sy /= m; mag = 1; }
@@ -806,6 +1010,7 @@ function update(dt) {
   if (player.moving) { const st = Math.floor(player.walk / 3.14); if (st !== update.lastStep) { update.lastStep = st; SND.sfx('step'); if (st % 8 === 0) addXP('fitness', 1); } }
   if (!onboardingOpen) autonomy(dt);
   for (const n of cityNpcs) { npcThink(n, simDt, gm); n.update(simDt); }
+  interiorTick(simDt);
   updateHudClock();
   // camera
   const onboarding = !$('onboarding').classList.contains('hidden');
@@ -814,7 +1019,7 @@ function update(dt) {
   else if (world.interior) {
     // overview of the cottage, but a close-up on you while you're busy with something
     const busy = (act && act.phase === 'do') || player.shake > 0;
-    const c = A.P(HOME_O[0] + 6.5, HOME_O[1] + 6, 30), p = A.P(player.x, player.y, 36), w = busy ? 1 : 0.4;
+    const rc = roomCenter(), c = A.P(rc[0], rc[1], 30), p = A.P(player.x, player.y, 36), w = busy ? 1 : 0.4;
     target = [c[0] * (1 - w) + p[0] * w, c[1] * (1 - w) + p[1] * w];
     if (!cam.manual && !cam.tz) { const want = busy ? (mobile() ? 0.66 : 0.9) : (mobile() ? 0.4 : 0.62); cam.zoom += (want - cam.zoom) * (S.settings.reduced ? 1 : 1 - Math.exp(-dt * 2.5)); }
   }
@@ -831,11 +1036,11 @@ function update(dt) {
   }
   // district chip
   const square = player.x >= 19 && player.x < 25 && player.y >= 19 && player.y < 25;
-  const d = world.interior ? 'home' : square ? 'square' : C.districtAt(player.x, player.y);
+  const d = world.venueRoom ? 'venue' : world.interior ? 'home' : square ? 'square' : C.districtAt(player.x, player.y);
   if (d + C.id !== update.lastDistrict) {
     update.lastDistrict = d + C.id;
-    $('district-name').textContent = d === 'home' ? (S.progress.homeDoor?.name || 'Your cottage') : square ? (C.id === 'willowvale' ? 'Town Square' : C.meta.name) : C.districts[d].name;
-    $('district-name').style.background = d === 'home' ? '#C98A1E' : square ? A.darken(C.meta.color, 0.1) : A.darken(C.districts[d].color, 0.15);
+    $('district-name').textContent = d === 'venue' ? world.venue.name : d === 'home' ? (S.progress.homeDoor?.name || 'Your cottage') : square ? (C.id === 'willowvale' ? 'Town Square' : C.meta.name) : C.districts[d].name;
+    $('district-name').style.background = d === 'venue' ? A.darken(world.venue.color || '#C98A1E', 0.1) : d === 'home' ? '#C98A1E' : square ? A.darken(C.meta.color, 0.1) : A.darken(C.districts[d].color, 0.15);
   }
   drawRadar();
 }
@@ -906,6 +1111,7 @@ function hitThing(sx, sy) {
   return null;
 }
 function tap(sx, sy) {
+  if (player.boat) { const [wx, wy] = toWorld(sx, sy); const ti = Math.floor(wx), tj = Math.floor(wy); if (world.walkable(ti, tj)) { walkTo(ti + 0.5, tj + 0.5); } else toast('Tap the water to steer, or ⚓ to go back to shore.'); return; }
   if (!$('onboarding').classList.contains('hidden')) return;
   hideHint();
   const hit = hitThing(sx, sy);
@@ -913,7 +1119,9 @@ function tap(sx, sy) {
   if (hit) { showPie({ o: hit.o }, sx, sy); return; }
   const [x, y] = toWorld(sx, sy), ti = Math.floor(x), tj = Math.floor(y);
   // flat things you can still use: the front door mat and benches
-  if (world.interior && homeDoor && ti === homeDoor.i && tj === homeDoor.j) { showPie({ o: homeDoor }, sx, sy); return; }
+  if (world.interior && world.doorObj && ti === world.doorObj.i && tj === world.doorObj.j) { showPie({ o: world.doorObj }, sx, sy); return; }
+  const mat = world.interior && flats.find(f => f.tap && f.furn && ti >= f.furn.i && ti < f.furn.i + f.furn.w && tj >= f.furn.j && tj < f.furn.j + f.furn.d);
+  if (mat) { showPie({ o: mat.furn }, sx, sy); return; }
   const bench = !world.interior && flats.find(f => f.d.kind === 'bench' && f.d.i === ti && f.d.j === tj);
   if (bench) { showPie({ o: bench.d }, sx, sy); return; }
   const flatObj = !world.interior && flats.find(f => f.obj && !f.obj.deco && ti >= f.obj.i && ti < f.obj.i + f.obj.w && tj >= f.obj.j && tj < f.obj.j + f.obj.d);
@@ -942,14 +1150,14 @@ function approachOf(o, wd = world) {
   return s ? [s[0] + 0.5, s[1] + 0.5] : [player.x, player.y];
 }
 function kindKey(o) {
-  if (o.kind === 'furn') return o.door ? 'door' : o.type;
+  if (o.kind === 'furn') return o.door ? 'door' : o.acts || o.type;
   if (o.kind === 'venue') return o.acts || o.id;
   if (o.kind === 'landmark') return o.deco ? null : o.acts || null;
   if (o.home && homeIsMine(o)) return 'myhome';
   if (o.kind === 'shop') return o.label === 'Bakery' ? 'cafe' : null;
   return o.kind;
 }
-function displayName(o) { return o.name || o.label || ({ fountain: 'Fountain', bench: 'Bench', board: 'Property board', clock: 'Town Clock', busstop: 'Island bus stop' }[o.kind]) || 'Here'; }
+function displayName(o) { return o.name || o.label || ({ boathire: 'Boat hire', fountain: 'Fountain', bench: 'Bench', board: 'Property board', clock: 'Town Clock', busstop: 'Island bus stop' }[o.kind]) || 'Here'; }
 
 // Lists and other screens use this to send you somewhere and pop the menu on arrival.
 function visitThing(o) {
@@ -971,7 +1179,7 @@ function findNearby() {
     if (d < bd) { bd = d; best = { o }; }
   }
   if (!world.interior) for (const f of flats) if (f.obj && !f.obj.deco) { const o = f.obj; const inside = player.x >= o.i && player.x < o.i + o.w && player.y >= o.j && player.y < o.j + o.d; const d = inside ? 0.5 : Math.hypot(o.stand[0] - player.x, o.stand[1] - player.y); if (d < bd) { bd = d; best = { o }; } }
-  if (world.interior && homeDoor) { const d = Math.hypot(homeDoor.stand[0] - player.x, homeDoor.stand[1] - player.y); if (d < bd) best = { o: homeDoor }; }
+  if (world.interior && world.doorObj) { const dO = world.doorObj; const d = Math.hypot(dO.stand[0] - player.x, dO.stand[1] - player.y); if (d < bd) best = { o: dO }; }
   return best;
 }
 function interactNearby() {
@@ -987,6 +1195,10 @@ let actDefault = null, lastNear = '';
 function updateNearby() {
   const btn = $('act-button');
   if (actDefault === null) actDefault = $('act-icon').innerHTML;
+  if (player.boat) {
+    if (lastNear === 'boat') return; lastNear = 'boat';
+    btn.disabled = false; btn.classList.add('ready'); $('act-icon').innerHTML = '<span>🎣</span>'; $('act-label').textContent = 'Fish'; btn.setAttribute('aria-label', 'Cast your fishing line'); return;
+  }
   const best = (player.moving && player.path.length > 1) || act ? null : findNearby();
   const key = best ? (best.n ? 'n:' + best.n.name : 'o:' + displayName(best.o) + best.o.i + best.o.j) : '';
   if (key === lastNear) return;
@@ -1005,7 +1217,11 @@ let pieTarget = null;
 function showPie(target, sx, sy) {
   const o = target.o, n = target.npc;
   const opts = [];
-  const defs = n ? actionsFor('neighbour') : actionsFor(kindKey(o));
+  let defs = n ? (n.generic ? [] : actionsFor('neighbour')) : actionsFor(kindKey(o));
+  if (o && o.kind === 'furn' && o.venue) defs = defs.filter(d => !d.special && (!o.only || o.only.includes(d.id)) && !(o.use && d.job));
+  if (o && o.kind === 'furn' && o.game) defs = [{ id: 'play', label: `Play ${GAMES[o.game].name}`, icon: GAMES[o.game].icon, special: 'game', coins: -1 }];
+  if (n && n.generic) opts.push({ icon: '👋', label: 'Say hi', run: () => { n.busy = 3; n.face(player.x, player.y); n.say(['👋', '😊', '💛'][Math.floor(Math.random() * 3)], 2); player.say('👋', 1.5); SND.sfx('chat'); } });
+  if (o && o.kind === 'venue' && kitFor(o) && sceneName === 'city') opts.push({ icon: '🚪', label: 'Go inside', run: () => { const d = approachOf(o); const go = () => enterVenue(o); if (near(...d, 1.3)) go(); else walkTo(...d, go); } });
   for (const def of defs) {
     let disabled = '', note = '';
     if (def.coins < 0 && S.coins < -def.coins) { disabled = 'Not enough coins'; }
@@ -1015,7 +1231,7 @@ function showPie(target, sx, sy) {
     if (def.needSkill) for (const [k, lv] of Object.entries(def.needSkill)) if (skillLv(k) < lv) disabled = `Needs ${SKILLS.find(x => x.k === k).label} ${lv}`;
     opts.push({ icon: def.icon, label: def.label, note, disabled, run: () => queueAction(def, n ? { npc: n } : { o }) });
   }
-  if (n) { opts.unshift({ icon: '💬', label: 'Emoji chat', run: () => meetThen(n, () => showEmojiChat(n)) }); opts.push({ icon: '🎁', label: 'Gifts & friendship', run: () => { n.busy = 4; showNeighbour(n); } }); }
+  if (n && !n.generic) { opts.unshift({ icon: '💬', label: 'Emoji chat', run: () => meetThen(n, () => showEmojiChat(n)) }); opts.push({ icon: '🎁', label: 'Gifts & friendship', run: () => { n.busy = 4; showNeighbour(n); } }); }
   else if (o.kind === 'venue') opts.push({ icon: '⭐', label: visitedToday(o.id) ? 'Today’s activity ✓' : `Today: ${o.activity.title}`, run: () => visitThenSheet(o, () => showVenue(o)) });
   else if (o.home) opts.push({ icon: '🏠', label: homeIsMine(o) ? 'Your home' : 'See the listing', run: () => showHome(o) });
   else if (o.kind === 'busstop') opts.push({ icon: '🛍️', label: 'Coin shop', run: () => showShop() });
@@ -1063,6 +1279,14 @@ function queueAction(def, target) {
   if (def.special === 'leave') { leaveHome(); return; }
   if (def.special === 'wardrobe') { const d = approachOf(target.o); const go = () => { player.face(...(target.o.look || d)); showWardrobe(); }; if (near(...d, 1.3)) go(); else walkTo(...d, go); return; }
   if (def.special === 'enter') { const go = () => enterHome(target.o); const d = approachOf(target.o); if (near(...d, 1.3)) go(); else walkTo(...d, go); return; }
+  if (def.special === 'game') { const d = approachOf(target.o); const go = () => { player.face(...(target.o.look || d)); if (S.coins < 1) { toast('A game costs ✦ 1.'); return; } setCoins(S.coins - 1, true); GAME.play(target.o.game, res => gameDone(target.o.game, res), (S.progress.highscores || {})[target.o.game] || 0); }; if (near(...d, 1.3)) go(); else walkTo(...d, go); return; }
+  if (target && target.o && target.o.kind === 'furn' && target.o.venue && !def.steps) {
+    const sitting = !!target.o.use && target.o.type !== 'treadmill';
+    const arms = def.arms || { eat: 'eat', tea: 'hold', read: 'read', games: 'type', experiment: 'stir', craft: 'chop', cookclass: 'stir' }[def.id] || null;
+    const prop = def.prop || { eat: 'bowl', tea: 'bowl', read: 'book' }[def.id] || null;
+    def = { ...def, pose: def.pose === 'inside' || def.pose === 'stand' ? (sitting ? 'sit' : 'stand') : def.pose, arms, prop };
+  }
+  if (def.special === 'boat') { const d = approachOf(target.o); const go = () => startBoat(); if (near(...d, 1.6)) go(); else walkTo(...d, go); return; }
   if (def.special === 'travel') { const go = () => showIsland(); const d = approachOf(target.o); if (near(...d, 1.3)) go(); else walkTo(...d, go); return; }
   if (def.coins < 0 && S.coins < -def.coins) { toast('Not enough coins for that.'); return; }
   if (def.job) { const why = jobBlocked(def.career); if (why) { toast(why); return; } }
@@ -1136,6 +1360,7 @@ function beginDoing() {
   if (step.pose === 'sit' && !(o && o.use) && o && o.kind !== 'bench') player.pose = null;
   if (step.pose === 'sit' && o && o.kind === 'bench') { player.x = o.i + 0.5; player.y = o.j + 0.5; player.pose = 'sit'; }
   const def = act.item.def;
+  staffReact(def);
   player.arms = step.arms || null; player.prop = step.prop || null;
   player.override = step.outfit || def.outfit || null; player.saved = S.profile?.sleepLook ? { sleep: S.profile.sleepLook } : null;
   player.blanket = step.blanket || null; player.faceFront = !!step.faceFront;
@@ -1188,6 +1413,8 @@ function finishStep() {
   if (!last) { endStep(false); act.k++; startStep(); return; }
   endStep(false);
   if (def.coins) setCoins(S.coins + def.coins, true);
+  if (def.give) { S.progress.inventory[def.give] = (S.progress.inventory[def.give] || 0) + 1; toast(`You got a ${ITEMS[def.give].icon} ${itemName(def.give, 1)}!`); }
+  if (def.id === 'claw') { if (Math.random() < 0.4) { S.progress.inventory.crafts = (S.progress.inventory.crafts || 0) + 1; toast('You won a 🧸 prize!'); player.say('🧸', 2); } else toast('So close! The claw slipped.'); }
   if (def.job) finishShift(def.career || 'tram', item.startMood);
   if (def.id === 'craft' && skillLv('creativity') > 0) { setCoins(S.coins + 2 * skillLv('creativity'), true); toast(`Someone bought your craft for ${2 * skillLv('creativity')} ✦!`); }
   if (def.special === 'mail') { const notes = ['A postcard from Nori: “The gulls say hi.”', 'A coupon for one free honey bun.', 'Your library card is ready!', 'A drawing from Dot of the Sunwheel.']; toast(notes[Math.floor(Math.random() * notes.length)]); if (Math.random() < 0.4) setCoins(S.coins + 3, true); }
@@ -2131,7 +2358,8 @@ document.querySelectorAll('.dock-item').forEach(b => b.onclick = () => {
 $('profile-button').onclick = () => (S.sheet === 'needs' ? closeSheet() : showNeeds());
 $('radar-button').onclick = showDistricts;
 $('pause-button').onclick = () => (S.sheet === 'pause' ? closeSheet() : showSettings());
-$('act-button').onclick = interactNearby;
+$('act-button').onclick = () => (player.boat ? castLine() : interactNearby());
+$('boat-exit').onclick = () => endBoat();
 $('speed-button').onclick = cycleSpeed;
 $('run-button').onclick = toggleRun;
 $('cam-button').onclick = cameraButton;
@@ -2248,4 +2476,4 @@ $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 700);
 
 // Small read-only hook for automated play-testing.
-window.__willowvale = { state: S, screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { S.progress.clock = m; }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
+window.__willowvale = { state: S, screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { S.progress.clock = m; }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };

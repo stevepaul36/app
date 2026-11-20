@@ -151,7 +151,7 @@ const STYLE = {
   skyscraper(ctx, o) { towerDraw(ctx, o, true); },
   office(ctx, o) {
     ground(ctx, o, '#D7DEE8');
-    const x0 = 0.12, y0 = 0.12, w = o.w - 0.24, d = o.d - 0.24, h = 230;
+    const x0 = 0.12, y0 = 0.12, w = o.w - 0.24, d = o.d - 0.24, h = 360;
     const f = box(ctx, x0, y0, 0, w, d, h, '#BFD3EA');
     const df = doorFace(o, f), of = otherFace(o, f);
     glassGrid(ctx, df, 5, 9, '#6FA8E8', '#E6EEF8', 11); glassGrid(ctx, of, 5, 9, '#5A92D6', '#E6EEF8', 12);
@@ -353,6 +353,8 @@ const STYLE = {
     for (const u of [0.28, 0.72]) { rectOn(ctx, df, u - 0.12, 0.58, u + 0.12, 0.84, '#5A3A22', null); for (let k = 0; k < 3; k++) rectOn(ctx, df, u - 0.1 + k * 0.08, 0.6, u - 0.04 + k * 0.08, 0.82, '#F5E6C8', null, 0.008); }
     rectOn(ctx, df, 0, 0.47, 1, 0.53, '#C0303A', null, 0.05);
     windowOn(ctx, of, 0.5, 0.7, 0.2, 0.24, { frame: '#C0303A', cross: false });
+    poly(ctx, [fp(df, 0.15, 0.54, 0.12), fp(df, 0.85, 0.54, 0.12), fp(df, 0.85, 0.66, 0.12), fp(df, 0.15, 0.66, 0.12)], 'rgba(192,48,58,.25)', '#C0303A', 1.5);
+    for (let k = 1; k < 8; k++) { const a1 = fp(df, 0.15 + k * 0.0875, 0.54, 0.12), a2 = fp(df, 0.15 + k * 0.0875, 0.66, 0.12); poly(ctx, [a1, a2], null, '#C0303A', 1.2); }
     eaveRoof(ctx, x0, y0, h, w, d, 30, darken(sh, 0.1));
     for (const u of [0.2, 0.8]) lanternAt(ctx, fp(df, u, 0.44, 0.22), 6);
     if (o.icon) signOn(ctx, df, 0.5, 0.95, o.icon, sh, o.sign || o.type);
@@ -542,22 +544,201 @@ const STYLE = {
   },
 };
 
+export const towerFloors = o => o.floors || (o.style === 'skyscraper' ? 12 + ((o.seed || 0) * 5 + (o.i || 0) * 3 + (o.j || 0)) % 11 : o.style === 'condo' ? 6 + (o.look || 0) % 3 : 9 + ((o.look || 0) * 2 + (o.i || 0)) % 6);
+const FHT = 30;
+const HOMES2 = {
+  // A grand palace with arches, domes and a long balcony (Marigold Bazaar)
+  palace(ctx, o) {
+    ground(ctx, o, '#E8C9A0');
+    const x0 = 0.2, y0 = 0.2, w = o.w - 0.4, d = o.d - 0.4, h = 120;
+    const wall = '#F7E3B5', trim = '#C9672E';
+    const f = box(ctx, x0, y0, 0, w, d, h, wall);
+    const df = doorFace(o, f), of = otherFace(o, f);
+    for (let c = 0; c < 5; c++) archWindow(ctx, df, 0.1 + c * 0.2, 0.22, 0.07, 0.24, '#FFFFFF', c === 2 ? '#8E3FB8' : '#5BC0EB');
+    for (let c = 0; c < 5; c++) archWindow(ctx, df, 0.1 + c * 0.2, 0.72, 0.06, 0.18, '#FFFFFF', '#5BC0EB');
+    for (let c = 0; c < 4; c++) archWindow(ctx, of, 0.15 + c * 0.23, 0.5, 0.07, 0.3, '#FFFFFF', '#5BC0EB');
+    // long balcony
+    rectOn(ctx, df, 0.05, 0.5, 0.95, 0.54, '#FFFFFF', null, 0.13);
+    poly(ctx, [fp(df, 0.05, 0.5, 0.13), fp(df, 0.95, 0.5, 0.13), fp(df, 0.95, 0.58, 0.13), fp(df, 0.05, 0.58, 0.13)], 'rgba(255,255,255,.8)', trim, 1.2);
+    doorOn(ctx, df, 0.5, 0.12, 0.3, trim);
+    box(ctx, x0 - 0.04, y0 - 0.04, h, w + 0.08, d + 0.08, 9, '#FFFFFF');
+    // corner towers with domes and a big central dome
+    for (const [a, b] of [[0, 0], [w, 0], [0, d], [w, d]]) { box(ctx, x0 + a - 0.22, y0 + b - 0.22, 0, 0.44, 0.44, h + 30, wall); dome(ctx, x0 + a, y0 + b, h + 30, 18, '#F29A1D'); }
+    dome(ctx, x0 + w / 2, y0 + d / 2, h + 9, 42, '#FFF4E0', '#F2C14E');
+    for (const [a, b] of [[w * 0.25, d / 2], [w * 0.75, d / 2]]) chhatri(ctx, x0 + a, y0 + b, h + 9, 0.6, '#E86A9A');
+    // flags
+    for (const a of [0, w]) { const [fx, fy] = P(x0 + a, y0, h + 82); ctx.strokeStyle = '#7A5236'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx, fy - 24); ctx.stroke(); ctx.fillStyle = '#E8582A'; ctx.beginPath(); ctx.moveTo(fx, fy - 24); ctx.lineTo(fx + 16, fy - 19); ctx.lineTo(fx, fy - 14); ctx.fill(); }
+  },
+  // A round village hut with mud walls, painted patterns and a thatched cone roof
+  hut(ctx, o) {
+    ground(ctx, o, '#D9B58A');
+    const cx = o.w / 2, cy = o.d / 2, r = 0.62, h = 46;
+    const [x, y] = P(cx, cy, 0), [, yt] = P(cx, cy, h), R = r * 64 * 1.42;
+    ctx.fillStyle = '#C98A5A'; ctx.strokeStyle = '#8C5A3C'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(x, y, R, R * 0.5, 0, 0, Math.PI); ctx.lineTo(x - R, yt); ctx.ellipse(x, yt, R, R * 0.5, 0, Math.PI, 0, true); ctx.closePath(); ctx.fill(); ctx.stroke();
+    // white painted patterns
+    ctx.strokeStyle = '#FFF4E0'; ctx.lineWidth = 2;
+    for (let k = 0; k < 7; k++) { const a = Math.PI * (0.15 + k * 0.11); const px = x - Math.cos(a) * R * 0.95, py = y + Math.sin(a) * R * 0.45 - h * 0.55; ctx.beginPath(); ctx.moveTo(px - 4, py); ctx.lineTo(px, py - 6); ctx.lineTo(px + 4, py); ctx.lineTo(px, py + 6); ctx.closePath(); ctx.stroke(); }
+    ctx.fillStyle = '#5A3A22'; const [dx, dy] = P(cx + (o.door === 'i' ? r : 0), cy + (o.door === 'i' ? 0 : r), 0); roundRect(ctx, dx - 7, dy - 30, 14, 30, 6); ctx.fill();
+    // thatched cone roof
+    ctx.fillStyle = '#D9B05A'; ctx.strokeStyle = '#A6803A';
+    ctx.beginPath(); ctx.moveTo(x - R * 1.25, yt + 6); ctx.quadraticCurveTo(x, yt + R * 0.5 + 12, x + R * 1.25, yt + 6); ctx.lineTo(x, yt - 60); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#B98D3E'; ctx.lineWidth = 1; for (let k = -5; k <= 5; k++) { ctx.beginPath(); ctx.moveTo(x, yt - 58); ctx.lineTo(x + k * R * 0.23, yt + 8 + (5 - Math.abs(k)) * 2); ctx.stroke(); }
+    // little fence and a pot
+    for (let k = 0; k < 6; k++) { const [px, py] = P(0.1 + k * (o.w - 0.2) / 5, o.d - 0.08, 0); ctx.fillStyle = '#8C5A3C'; ctx.fillRect(px - 1.5, py - 14, 3, 14); }
+    const [kx, ky] = P(0.3, o.d - 0.4, 0); ctx.fillStyle = '#B9643A'; ctx.beginPath(); ctx.ellipse(kx, ky - 7, 8, 8, 0, 0, 7); ctx.fill();
+  },
+  // A thatched country farmhouse with a deep steep roof (Sakura Hill)
+  minka(ctx, o) {
+    ground(ctx, o, '#DCD3C2');
+    const x0 = 0.2, y0 = 0.2, w = o.w - 0.4, d = o.d - 0.4, h = 44;
+    const f = box(ctx, x0, y0, 0, w, d, h, '#F6EFE2', { top: false });
+    const df = doorFace(o, f), of = otherFace(o, f);
+    for (let k = 0; k <= 8; k++) rectOn(ctx, df, k / 8 - 0.012, 0, k / 8 + 0.012, 1, '#6B4A2E', null, 0.006);
+    rectOn(ctx, df, 0.4, 0, 0.6, 0.8, '#3A2A1E', null, 0.01);
+    for (let k = 0; k <= 5; k++) rectOn(ctx, of, k / 5 - 0.015, 0, k / 5 + 0.015, 1, '#6B4A2E', null, 0.006);
+    // engawa porch
+    box(ctx, o.door === 'i' ? x0 + w : x0, o.door === 'i' ? y0 : y0 + d, 0, o.door === 'i' ? 0.18 : w, o.door === 'i' ? d : 0.18, 8, '#A07850');
+    hipRoof(ctx, x0, y0, h, w, d, 58, '#C9A866', 0.32);
+    const along = o.door === 'i' ? 'j' : 'i';
+    gableRoof(ctx, x0 + (along === 'i' ? w * 0.3 : 0), y0 + (along === 'j' ? d * 0.3 : 0), h + 40, along === 'i' ? w * 0.4 : w, along === 'j' ? d * 0.4 : d, 18, '#3F4A5A', along, 0.08, '#C9A866');
+  },
+  // A courtyard house: walls all round, a red gate, and roofs around a little garden (Lantern Quarter)
+  courtyard(ctx, o) {
+    ground(ctx, o, '#D7D2CA');
+    const wallC = '#C9C2B8';
+    // garden in the middle
+    poly(ctx, [[0.9, 0.9, 1], [o.w - 0.9, 0.9, 1], [o.w - 0.9, o.d - 0.9, 1], [0.9, o.d - 0.9, 1]], '#9CCB7A');
+    const [tx, ty] = P(o.w / 2, o.d / 2, 0); blob(ctx, tx, ty - 22, 14, '#4FAE5A'); blob(ctx, tx + 8, ty - 32, 10, '#F7A8C4');
+    // back and side halls
+    for (const [x, y, w, d] of [[0.15, 0.15, o.w - 0.3, 0.7], [0.15, 0.15, 0.7, o.d - 0.3]]) { const f = box(ctx, x, y, 0, w, d, 46, '#F4EDE2', { top: false }); for (const ff of [f.j, f.i]) { columns(ctx, ff, [0.05, 0.95], 1, '#C0303A'); windowOn(ctx, ff, 0.5, 0.55, 0.4, 0.4, { frame: '#C0303A' }); } eaveRoof(ctx, x, y, 46, w, d, 18, '#3F4A5A', 0.18); }
+    // front and right walls with a gate
+    box(ctx, 0.15, o.d - 0.35, 0, o.w - 0.3, 0.2, 34, wallC); box(ctx, o.w - 0.35, 0.85, 0, 0.2, o.d - 1.2, 34, wallC);
+    const gf = o.door === 'i' ? faceI(o.w - 0.35, 0.85, 0, 0.2, o.d - 1.2, 34) : faceJ(0.15, o.d - 0.35, 0, o.w - 0.3, 0.2, 34);
+    rectOn(ctx, gf, 0.4, 0, 0.6, 0.9, '#C0303A', '#7A1A20', 0.01);
+    for (const u of [0.46, 0.54]) dot(ctx, fp(gf, u, 0.45, 0.02), 2, '#F2C14E');
+    poly(ctx, [fp(gf, 0.34, 1.0, 0.02), fp(gf, 0.66, 1.0, 0.02), fp(gf, 0.6, 1.3, 0.02), fp(gf, 0.4, 1.3, 0.02)], '#3F4A5A');
+    lanternAt(ctx, fp(gf, 0.3, 0.9, 0.08), 5); lanternAt(ctx, fp(gf, 0.7, 0.9, 0.08), 5);
+  },
+  // A wide one-storey family home with a porch and swing (Maple Row)
+  bungalow(ctx, o) {
+    const cols = ['#FFF1D6', '#E3EEF8', '#EAF4DE', '#FBE3E8'][(o.look || 0) % 4], roof = ['#8C4A3C', '#3F5F8F', '#4F7F4A', '#7A4A7A'][(o.look || 0) % 4];
+    ground(ctx, o, '#BFE3A0');
+    const x0 = 0.2, y0 = 0.2, w = o.w - 0.4, d = o.d - 0.5, h = 52;
+    const f = box(ctx, x0, y0, 0, w, d, h, cols, { top: false });
+    const df = doorFace(o, f), of = otherFace(o, f);
+    for (const u of [0.18, 0.82]) windowOn(ctx, df, u, 0.55, 0.16, 0.42, { shutter: roof, flowers: true });
+    doorOn(ctx, df, 0.5, 0.12, 0.72, roof);
+    windowOn(ctx, of, 0.5, 0.55, 0.3, 0.42, { shutter: roof });
+    // porch with posts
+    const px = o.door === 'i' ? x0 + w : x0, py = o.door === 'i' ? y0 : y0 + d, pw = o.door === 'i' ? 0.32 : w, pd = o.door === 'i' ? d : 0.32;
+    box(ctx, px, py, 0, pw, pd, 6, '#C98A4B');
+    for (const t of [0.05, 0.95]) { const [qx, qy] = o.door === 'i' ? [px + pw - 0.04, py + t * pd] : [px + t * pw, py + pd - 0.04]; box(ctx, qx - 0.03, qy - 0.03, 6, 0.06, 0.06, 40, '#FFFFFF'); }
+    gableRoof(ctx, x0, y0, h, w + (o.door === 'i' ? 0.3 : 0), d + (o.door === 'i' ? 0 : 0.3), 32, roof, o.door === 'i' ? 'j' : 'i', 0.12, cols);
+    // mailbox and a little garden
+    const [mx, my] = P(o.door === 'i' ? o.w - 0.08 : 0.15, o.door === 'i' ? 0.15 : o.d - 0.08, 0); ctx.fillStyle = '#7A5236'; ctx.fillRect(mx - 2, my - 26, 4, 26); ctx.fillStyle = '#2E9BD6'; roundRect(ctx, mx - 8, my - 34, 16, 10, 4); ctx.fill();
+  },
+  // A treehouse! A little cabin up in a big tree with a rope ladder (Maple Row)
+  treehouse(ctx, o) {
+    ground(ctx, o, '#BFE3A0');
+    const cx = o.w / 2, cy = o.d / 2;
+    const [x, y] = P(cx, cy, 0);
+    ctx.fillStyle = '#8C5A3C'; ctx.strokeStyle = '#5E3A26'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x - 18, y); ctx.quadraticCurveTo(x - 8, y - 60, x - 14, y - 120); ctx.lineTo(x + 14, y - 120); ctx.quadraticCurveTo(x + 8, y - 60, x + 18, y); ctx.closePath(); ctx.fill(); ctx.stroke();
+    for (const s2 of [-1, 1]) { ctx.beginPath(); ctx.moveTo(x, y - 90); ctx.lineTo(x + s2 * 46, y - 128); ctx.lineWidth = 6; ctx.stroke(); }
+    const r = rng(o.i * 7 + o.j);
+    canopy(ctx, [[x, y - 200, 50], [x - 50, y - 176, 38], [x + 50, y - 174, 38], [x - 20, y - 230, 34], [x + 26, y - 226, 34]], ['#E8823A', '#D9533A', '#4FAE5A'][(o.look || 0) % 3], r);
+    // platform and cabin
+    box(ctx, cx - 0.62, cy - 0.62, 108, 1.24, 1.24, 6, '#A36B47');
+    const f = box(ctx, cx - 0.42, cy - 0.42, 114, 0.84, 0.84, 38, '#F2C98F', { top: false });
+    windowOn(ctx, doorFace(o, f), 0.3, 0.55, 0.22, 0.4, { cross: true }); doorOn(ctx, doorFace(o, f), 0.72, 0.12, 0.7, '#3FA86A');
+    gableRoof(ctx, cx - 0.42, cy - 0.42, 152, 0.84, 0.84, 24, '#3FA86A', 'i', 0.1, '#F2C98F');
+    // rope ladder and a flag
+    const [lx, ly] = P(cx + 0.55, cy + 0.55, 108); ctx.strokeStyle = '#C9A866'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(lx - 5, ly); ctx.lineTo(lx - 5, ly + 100); ctx.moveTo(lx + 5, ly); ctx.lineTo(lx + 5, ly + 100); for (let k = 1; k < 9; k++) { ctx.moveTo(lx - 5, ly + k * 11); ctx.lineTo(lx + 5, ly + k * 11); } ctx.stroke();
+    const [fx, fy] = P(cx - 0.42, cy - 0.42, 176); ctx.strokeStyle = '#5E3A26'; ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx, fy - 22); ctx.stroke(); ctx.fillStyle = '#FFC83D'; ctx.beginPath(); ctx.moveTo(fx, fy - 22); ctx.lineTo(fx + 14, fy - 18); ctx.lineTo(fx, fy - 14); ctx.fill();
+  },
+  // A geodesic dome home (Lumen Labs)
+  domehouse(ctx, o) {
+    ground(ctx, o, '#CFEBC0');
+    const cx = o.w / 2, cy = o.d / 2;
+    box(ctx, cx - 0.75, cy - 0.75, 0, 1.5, 1.5, 6, '#E6EEF8');
+    const [x, y] = P(cx, cy, 6), R = 70;
+    const g = ctx.createRadialGradient(x - 20, y - 60, 6, x, y - 30, R * 1.1); g.addColorStop(0, '#FFFFFF'); g.addColorStop(1, ['#BFE8F5', '#E3D8FA', '#D2F2E4'][(o.look || 0) % 3]);
+    ctx.fillStyle = g; ctx.strokeStyle = '#9FB3C8'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(x, y, R, R * 0.5, 0, 0, Math.PI); ctx.ellipse(x, y, R, R * 1.05, 0, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(120,150,180,.55)'; ctx.lineWidth = 1;
+    for (let k = 1; k < 4; k++) { ctx.beginPath(); ctx.ellipse(x, y - k * 18, R * Math.sqrt(1 - (k * 18 / (R * 1.05)) ** 2), R * 0.5 * Math.sqrt(1 - (k * 18 / (R * 1.05)) ** 2), 0, 0, Math.PI); ctx.stroke(); }
+    for (let k = -3; k <= 3; k++) { ctx.beginPath(); ctx.moveTo(x + k * R / 3.4, y + Math.sqrt(Math.max(0, 1 - (k / 3.4) ** 2)) * R * 0.5); ctx.quadraticCurveTo(x + k * R / 5, y - R * 0.7, x, y - R * 1.05); ctx.stroke(); }
+    ctx.fillStyle = '#3F6FD8'; roundRect(ctx, x + (o.door === 'i' ? 24 : -10), y + 4, 20, 30, 8); ctx.fill();
+    blob(ctx, x - 20, y - 40, 10, 'rgba(255,255,255,.7)');
+    const [sx2, sy2] = P(cx + 0.5, cy - 0.6, 6); ctx.fillStyle = '#2B4A8F'; ctx.save(); ctx.translate(sx2, sy2 - 20); ctx.rotate(-0.4); ctx.fillRect(-14, -8, 28, 16); ctx.restore();
+  },
+  // A mid-rise with balconies everywhere (Skyhaven)
+  condo(ctx, o) { towerDraw(ctx, o, false); },
+};
+
 function towerDraw(ctx, o, filler) {
   const pal = [['#9FC6EE', '#3F6FD8'], ['#B4E2DE', '#2BB3A3'], ['#CDBDF2', '#8E7CE0'], ['#F6C9A8', '#E8823A'], ['#BFD0E6', '#5A6F8F']];
   const [glass, acc] = pal[((o.look || 0) + (o.seed || 0)) % pal.length];
   ground(ctx, o, '#D7DEE8');
-  const floors = filler ? 7 + ((o.seed || 0) * 3 + (o.i || 0)) % 5 : 5 + (o.look || 0) % 3;
-  const FH = 32, x0 = 0.12, y0 = 0.12, w = o.w - 0.24, d = o.d - 0.24, h = floors * FH;
-  const f = box(ctx, x0, y0, 0, w, d, h, '#E6EEF8');
+  const floors = towerFloors(o);
+  const FH = FHT, x0 = 0.12, y0 = 0.12, w = o.w - 0.24, d = o.d - 0.24, h = floors * FH;
+  // supertall towers step back near the top
+  const setback = filler && floors > 15 ? Math.floor(floors * 0.7) : floors;
+  const h1 = setback * FH;
+  const f = box(ctx, x0, y0, 0, w, d, h1, '#E6EEF8');
   const df = doorFace(o, f), of = otherFace(o, f);
-  for (const ff of [df, of]) glassGrid(ctx, { ...ff, o: [ff.o[0], ff.o[1], ff.o[2] + FH], h: h - FH }, Math.max(3, Math.round((ff.U[0] ? w : d) * 3)), floors - 1, glass, '#F4F8FC', (o.i || 1) * 31 + (o.j || 1));
-  rectOn(ctx, df, 0, 0, 1, FH / h, '#2B3A55', null, 0.004);
-  rectOn(ctx, df, 0.35, 0, 0.65, FH / h * 0.85, '#8FD3F5', null, 0.008);
-  rectOn(ctx, df, 0, FH / h, 1, FH / h + 0.01, acc, null, 0.008);
-  box(ctx, x0 - 0.03, y0 - 0.03, h, w + 0.06, d + 0.06, 6, acc);
-  if (filler && (o.seed || 0) % 2 === 0) { const [ax, ay] = P(x0 + w / 2, y0 + d / 2, h + 6); ctx.strokeStyle = '#7A8798'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax, ay - 40); ctx.stroke(); blob(ctx, ax, ay - 42, 3, '#F0587A'); }
-  else { box(ctx, x0 + w * 0.25, y0 + d * 0.25, h + 6, w * 0.5, d * 0.5, 4, '#7A8798'); const [hx, hy] = P(x0 + w / 2, y0 + d / 2, h + 10); ctx.fillStyle = '#FFFFFF'; ctx.font = '800 14px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(filler ? 'H' : '', hx, hy + 5); }
-  if (!filler) { const pl = [x0 + w * 0.2, y0 + d * 0.75, h + 6]; const [px, py] = P(...pl); blob(ctx, px, py - 6, 8, '#4FAE5A'); blob(ctx, px + 8, py - 3, 6, '#5FC07E'); }
+  for (const ff of [df, of]) glassGrid(ctx, { ...ff, o: [ff.o[0], ff.o[1], ff.o[2] + FH], h: h1 - FH }, Math.max(3, Math.round((ff.U[0] ? w : d) * 3)), setback - 1, glass, '#F4F8FC', (o.i || 1) * 31 + (o.j || 1));
+  rectOn(ctx, df, 0, 0, 1, FH / h1, '#2B3A55', null, 0.004);
+  rectOn(ctx, df, 0.35, 0, 0.65, FH / h1 * 0.85, '#8FD3F5', null, 0.008);
+  rectOn(ctx, df, 0, FH / h1, 1, FH / h1 + 0.01, acc, null, 0.008);
+  if (!filler) for (const b of balconyGeom(o, df, setback, FH, h1)) drawBalcony(ctx, b, acc);
+  let top = h1;
+  if (setback < floors) {
+    const s2 = 0.18, f2 = box(ctx, x0 + s2, y0 + s2, h1, w - s2 * 2, d - s2 * 2, h - h1, '#E6EEF8');
+    for (const ff of [f2.j, f2.i]) glassGrid(ctx, ff, 3, floors - setback, glass, '#F4F8FC', (o.i || 1) * 17);
+    box(ctx, x0 - 0.03, y0 - 0.03, h1, w + 0.06, d + 0.06, 4, acc);
+    top = h;
+    box(ctx, x0 + s2 - 0.03, y0 + s2 - 0.03, top, w - s2 * 2 + 0.06, d - s2 * 2 + 0.06, 5, acc);
+  } else box(ctx, x0 - 0.03, y0 - 0.03, top, w + 0.06, d + 0.06, 6, acc);
+  if (filler) { const [ax, ay] = P(x0 + w / 2, y0 + d / 2, top + 6); ctx.strokeStyle = '#7A8798'; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax, ay - 50 - floors); ctx.stroke(); blob(ctx, ax, ay - 52 - floors, 3.5, '#F0587A'); }
+  else { box(ctx, x0 + w * 0.25, y0 + d * 0.25, top + 6, w * 0.5, d * 0.5, 4, '#7A8798'); const pl = [x0 + w * 0.2, y0 + d * 0.75, top + 6]; const [px, py] = P(...pl); blob(ctx, px, py - 6, 8, '#4FAE5A'); blob(ctx, px + 8, py - 3, 6, '#5FC07E'); }
+}
+// Balconies on the street side: where they are, and who might be standing on them.
+function balconyGeom(o, f, floors, FH, h, every = 1) {
+  const out = [], cols = Math.max(2, Math.round((f.U[0] ? o.w : o.d) * 1.2));
+  for (let fl = 1; fl < floors; fl += every) for (let c = 0; c < cols; c++) {
+    if ((fl + c) % 2) continue;
+    const u = (c + 0.5) / cols, v = (fl * FH + 3) / h;
+    out.push({ f, u, v, half: 0.3 / cols });
+  }
+  return out;
+}
+function drawBalcony(ctx, b, acc) {
+  const { f, u, v, half } = b;
+  const b0 = fp(f, u - half, v), b1 = fp(f, u + half, v), o2 = [f.out[0] * 0.17, f.out[1] * 0.17];
+  const q = p => [p[0] + o2[0], p[1] + o2[1], p[2]];
+  poly(ctx, [b0, b1, q(b1), q(b0)], '#FFFFFF', '#00000025', 1);
+  poly(ctx, [q(b0), q(b1), [...q(b1).slice(0, 2), b1[2] + 12], [...q(b0).slice(0, 2), b0[2] + 12]], 'rgba(220,240,255,.7)', '#00000030', 1);
+  poly(ctx, [[...q(b0).slice(0, 2), b0[2] + 12], [...q(b1).slice(0, 2), b1[2] + 12]], null, acc, 2);
+}
+export function balconyPoints(o) {
+  if (!o.home && o.kind !== 'apartment') return [];
+  const pts = [];
+  const add = (f, u, v, h, out = 0.09) => { const p = fp(f, u, v); pts.push([p[0] + f.out[0] * out, p[1] + f.out[1] * out, p[2] + 2]); };
+  const faceOf = (x0, y0, w, d, h) => (o.door === 'i' ? faceI(x0, y0, 0, w, d, h) : faceJ(x0, y0, 0, w, d, h));
+  if (o.style === 'tower' || o.style === 'condo') {
+    const floors = towerFloors(o), h = floors * FHT, f = faceOf(0.12, 0.12, o.w - 0.24, o.d - 0.24, h);
+    for (const b of balconyGeom(o, f, floors, FHT, h)) add(f, b.u, b.v, h);
+  } else if (o.style === 'haveli') { const f = faceOf(0.15, 0.15, o.w - 0.3, o.d - 0.3, 96); add(f, 0.5, 0.64, 96, 0.14); }
+  else if (o.style === 'shophouse') { const f = faceOf(0.15, 0.15, o.w - 0.3, o.d - 0.3, 82); add(f, 0.5, 0.54, 82, 0.12); }
+  else if (o.style === 'palace') { const f = faceOf(0.2, 0.2, o.w - 0.4, o.d - 0.4, 120); for (const u of [0.2, 0.5, 0.8]) add(f, u, 0.52, 120, 0.13); }
+  else if (!o.style && o.kind === 'apartment') {
+    const floors = 4 + ((o.look || 0) % 2), FH = 40, h = floors * FH, f = faceOf(0.12, 0.12, o.w - 0.24, o.d - 0.24, h);
+    const cols = Math.max(2, Math.round((f.U[0] ? o.w : o.d) * 1.6));
+    for (let fl = 1; fl < floors; fl++) for (let c = 0; c < cols; c++) if ((c + fl) % 2 === 0) add(f, (c + 0.5) / cols, (fl * FH + 4) / h, h, 0.08);
+  }
+  return pts;
 }
 
 // Two red posts and two cross beams: a gate that marks a special garden.
@@ -582,19 +763,20 @@ function stoneLantern(ctx, pt) {
   blob(ctx, x, y - 52, 3, '#A9B0B8');
 }
 
-const TALL = { school: 200, pool: 120, townhouse: 150, tower: 300, skyscraper: 420, office: 280, arcade: 150, mall: 190, cinema: 210, monorail: 190, gym: 140, observatory: 230, lab: 170, museum: 180, greenhouse: 170, labhouse: 140, shophouse: 170, teahouse: 200, nightmarket: 120, moongarden: 110, machiya: 140, onsen: 130, shrine: 140, haveli: 200, chai: 110, bazaar: 140, pavilion: 160 };
+const TALL = { palace: 260, hut: 140, minka: 160, courtyard: 130, bungalow: 130, treehouse: 300, domehouse: 160, condo: 300, school: 200, pool: 120, townhouse: 150, tower: 300, skyscraper: 420, office: 420, arcade: 150, mall: 190, cinema: 210, monorail: 190, gym: 140, observatory: 230, lab: 170, museum: 180, greenhouse: 170, labhouse: 140, shophouse: 170, teahouse: 200, nightmarket: 120, moongarden: 110, machiya: 140, onsen: 130, shrine: 140, haveli: 200, chai: 110, bazaar: 140, pavilion: 160 };
 // How tall each style is (for the name tag) and how long its shadow is.
 export function styleMeta(o) {
   const s = o.style;
-  const top = { school: 190, pool: 70, townhouse: 125, tower: 5 * 32 + 30, skyscraper: 330, office: 255, arcade: 110, mall: 150, cinema: 160, monorail: 150, gym: 105, observatory: 200, lab: 135, museum: 135, greenhouse: 150, labhouse: 110, shophouse: 125, teahouse: 160, nightmarket: 85, moongarden: 85, machiya: 105, onsen: 100, shrine: 100, haveli: 150, chai: 80, bazaar: 75, pavilion: 130 }[s] || 140;
-  const floors = s === 'tower' ? 5 + (o.look || 0) % 3 : 0;
-  return { top: s === 'tower' ? floors * 32 + 26 : top, shadow: s === 'pool' || s === 'nightmarket' || s === 'bazaar' || s === 'moongarden' ? 30 : Math.min(260, top * 0.9) };
+  const top = { palace: 200, hut: 110, minka: 130, courtyard: 105, bungalow: 110, treehouse: 270, domehouse: 140, school: 190, pool: 70, townhouse: 125, tower: 5 * 32 + 30, skyscraper: 330, office: 385, arcade: 110, mall: 150, cinema: 160, monorail: 150, gym: 105, observatory: 200, lab: 135, museum: 135, greenhouse: 150, labhouse: 110, shophouse: 125, teahouse: 160, nightmarket: 85, moongarden: 85, machiya: 105, onsen: 100, shrine: 100, haveli: 150, chai: 80, bazaar: 75, pavilion: 130 }[s] || 140;
+  const tw = s === 'tower' || s === 'skyscraper' || s === 'condo';
+  return { top: tw ? towerFloors(o) * FHT + 26 : top, shadow: s === 'pool' || s === 'nightmarket' || s === 'bazaar' || s === 'moongarden' ? 30 : Math.min(260, top * 0.9) };
 }
 export function cityBuildingSprite(o) {
-  const fn = STYLE[o.style];
-  const tall = TALL[o.style] || 220;
+  const fn = STYLE[o.style] || HOMES2[o.style];
+  const tw = o.style === 'tower' || o.style === 'skyscraper' || o.style === 'condo';
+  const tall = tw ? towerFloors(o) * FHT + 110 : TALL[o.style] || 220;
   const [a, b, c, d] = bounds(o.w, o.d, tall);
-  return new Sprite(a, b - (o.style === 'skyscraper' ? 60 : 0), c, d, ctx => { if (fn) fn(ctx, o); else drawVenue(ctx, o); });
+  return new Sprite(a - 30, b, c + 30, d, ctx => { if (fn) fn(ctx, o); else drawVenue(ctx, o); });
 }
 
 // ---------- landmarks ----------
@@ -734,6 +916,20 @@ export function flatSprite(o) {
       const [ax, ay] = P(...b0), [bx, by] = P(...b1); ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo((ax + bx) / 2, (ay + by) / 2 - 26, bx, by); ctx.stroke();
       ctx.strokeStyle = '#F6EFE2'; ctx.lineWidth = 3; ctx.stroke();
     }
+  });
+}
+
+// ---------- boat hire hut ----------
+export function boatHireSprite() {
+  const [a, b, c, d] = bounds(1, 1, 110);
+  return new Sprite(a - 20, b, c + 20, d, ctx => {
+    const f = box(ctx, 0.12, 0.12, 0, 0.76, 0.76, 44, '#F6EBD9', { top: false });
+    for (let k = 0; k < 5; k++) rectOn(ctx, f.j, 0, k * 0.2, 1, k * 0.2 + 0.08, '#2E9BD6', null);
+    rectOn(ctx, f.j, 0.3, 0, 0.7, 0.6, '#7A5236', null, 0.01);
+    gableRoof(ctx, 0.12, 0.12, 44, 0.76, 0.76, 22, '#F0587A', 'i', 0.12, '#F6EBD9');
+    const [x, y] = P(0.95, 0.5, 0); ctx.strokeStyle = '#8C5A30'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 10, y - 4); ctx.lineTo(x + 6, y - 50); ctx.moveTo(x + 2, y - 2); ctx.lineTo(x + 14, y - 46); ctx.stroke();
+    ctx.fillStyle = '#C98A4B'; ctx.beginPath(); ctx.ellipse(x + 5, y - 50, 4, 8, 0.3, 0, 7); ctx.ellipse(x + 15, y - 46, 4, 8, 0.3, 0, 7); ctx.fill();
+    const [lx, ly] = P(0.15, 0.95, 0); ctx.fillStyle = '#F2C14E'; ctx.beginPath(); ctx.arc(lx, ly - 12, 9, 0, 7); ctx.fill(); ctx.strokeStyle = '#F0587A'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(lx, ly - 12, 6, 0, 7); ctx.stroke();
   });
 }
 
