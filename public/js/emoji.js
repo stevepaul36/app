@@ -21,11 +21,15 @@ export const ACHIEVEMENTS = [
   { id: 'fish', label: 'Catch a fish', emojis: ['🎣', '🐟'], test: s => s.fish >= 1 },
   { id: 'rich', label: 'Save up 100 coins', emojis: ['💎', '👑'], test: s => s.coins >= 100 },
   { id: 'days', label: 'Reach day 3', emojis: ['🎂', '🌟'], test: s => s.day >= 3 },
+  { id: 'chef', label: 'Reach cooking level 5', emojis: ['🧑‍🍳', '🍰'], test: s => s.cooking >= 5 },
+  { id: 'sporty', label: 'Reach fitness level 5', emojis: ['🏅', '⚽'], test: s => s.fitness >= 5 },
+  { id: 'promoted', label: 'Get a promotion at work', emojis: ['🎖️', '🧭'], test: s => s.jobLevel >= 1 },
+  { id: 'storyteller', label: 'Reach charisma level 3', emojis: ['🗣️', '✨'], test: s => s.charisma >= 3 },
 ];
 export const ALL_EMOJIS = [...STARTER, ...ACHIEVEMENTS.flatMap(a => a.emojis)];
 
 // Each neighbour shares a signature emoji once you reach 3 hearts with them.
-export const SIGNATURE = { Pip: '🥕', Marlow: '🍯', Juniper: '🚋', Biscuit: '🪙', Nori: '🐚', Wren: '🎨', Clover: '🌾', Hazel: '🌅', Tumble: '📖', Sable: '🍏', Dot: '🎈', Bramble: '🌱' };
+export const SIGNATURE = { Pip: '🥕', Marlow: '🍯', Juniper: '🎟️', Biscuit: '🪙', Nori: '🐚', Wren: '🎨', Clover: '🌾', Hazel: '🌅', Tumble: '📖', Sable: '🍏', Dot: '🎈', Bramble: '🌱' };
 
 // Families of emojis, so a neighbour can answer in kind.
 const FAMILY = {

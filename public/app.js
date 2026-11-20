@@ -5,7 +5,7 @@ import * as F from './js/furniture.js';
 import { buildHome, O as HOME_O } from './js/home.js';
 import * as SND from './js/audio.js';
 import { STARTER, ACHIEVEMENTS, SIGNATURE, replyTo, unlockedSet } from './js/emoji.js';
-import { NEEDS, freshNeeds, mood, moodLabel, moodColor, needColor, SPEEDS, GAME_MIN_PER_SEC, clockText, dayOf, hourOf, skyTint, isNight, actionsFor } from './js/sim.js';
+import { NEEDS, freshNeeds, mood, moodLabel, moodColor, needColor, SPEEDS, GAME_MIN_PER_SEC, clockText, dayOf, hourOf, skyTint, isNight, actionsFor, TRAITS, SKILLS, SKILL_MAX, xpForLevel, CAREER, friendLevel } from './js/sim.js';
 
 const IS_NATIVE = location.protocol === 'capacitor:' || !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
 const API_BASE = IS_NATIVE ? (safeGet('willowvale_server') || 'https://willowvale-animal-town.onrender.com') : '';
@@ -49,6 +49,9 @@ S.progress.stats = Object.assign({}, S.progress.stats || {});
 S.progress.achievements = S.progress.achievements || [];
 S.progress.places = S.progress.places || {};
 S.progress.owned = S.progress.owned || [];
+S.progress.skills = Object.assign(Object.fromEntries(SKILLS.map(k => [k.k, { lv: 0, xp: 0 }])), S.progress.skills || {});
+S.progress.job = Object.assign({ level: 0, good: 0, lastDay: 0 }, S.progress.job || {});
+const skillLv = k => S.progress.skills[k]?.lv || 0;
 // Profiles saved before the wardrobe used an outfit number; turn it into a full look.
 if (S.profile && !S.profile.look) S.profile.look = A.normLook(S.profile.outfit ?? 0);
 const cleanName = v => String(v || '').replace(/[^\p{L} '-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 14);
@@ -161,7 +164,10 @@ const player = new Walker(...playerStart, S.profile?.species || 'fox', S.profile
 let npcs = NEIGHBOURS.map((n, k) => {
   const spot = nearestWalkable(cityWorld, n.home[0], n.home[1]) || [22, 22];
   const w = new Walker(spot[0] + 0.5, spot[1] + 0.5, n.species, A.randomLook(k * 31 + 5), { speed: 1.5 + (k % 3) * 0.2, seed: k * 3 + 1, name: n.name });
-  w.data = n; w.home = spot; w.busy = 0;
+  w.data = n; w.home = spot; w.busy = 0; w.traits = n.traits || [];
+  w.needs = { hunger: 55 + (k * 7) % 40, energy: 60 + (k * 11) % 35, fun: 45 + (k * 13) % 45, social: 40 + (k * 5) % 50, hygiene: 60 + (k * 3) % 35, comfort: 55 + (k * 9) % 40 };
+  w.task = null; w.doing = 'Out for a walk';
+  if (n.traits?.includes('Athletic')) w.speed *= TRAITS.Athletic.speed;
   return w;
 });
 const cityNpcs = npcs;
@@ -187,22 +193,125 @@ function leaveHome() {
   cancelActions(); closePie();
   fadeTo(() => { setScene('city', myHome.doorTile[0] + 0.5, myHome.doorTile[1] + 0.5); player.face(player.x + 1, player.y + 1); });
 }
-function npcThink(n, dt) {
-  if (n.busy > 0) { n.busy -= dt; n.face(player.x, player.y); return; }
-  if (n.path.length) return;
-  n.wait -= dt;
-  if (Math.hypot(player.x - n.x, player.y - n.y) < 2.2) { n.face(player.x, player.y); if (!n.greeted) { n.greeted = true; n.say(['👋', '☀️', '💛', '🎵'][n.seed % 4]); } }
-  else n.greeted = false;
-  if (n.wait > 0) return;
-  n.wait = 2 + Math.random() * 5;
-  if (Math.random() < 0.3) { n.say(['🎵', '☀️', '🌼', '🍯', '💬', '✨'][Math.floor(Math.random() * 6)]); return; }
-  for (let k = 0; k < 6; k++) {
-    const ti = n.home[0] + Math.floor((Math.random() - 0.5) * 12), tj = n.home[1] + Math.floor((Math.random() - 0.5) * 12);
-    if (!world.walkable(ti, tj)) continue;
-    const p = findPath(world, n.x, n.y, ti + 0.5, tj + 0.5);
-    if (p && p.length < 18) { n.go(p.slice(1)); return; }
-  }
+// ---------- neighbours live their own lives ----------
+// Each neighbour has the same six needs as you and picks what to do the way Sims do: every place and
+// object advertises what it fixes, the neighbour scores each offer against their needs and traits,
+// nearer offers score higher, and they choose among the best few. At night they go home to sleep.
+const NPC_KINDS = new Set(['cafe', 'market', 'community', 'theatre', 'library', 'marina', 'clinic', 'sunwheel', 'windmill', 'fountain', 'bench']);
+const PLACE_WORDS = { cafe: 'At the café', market: 'At the market', community: 'At a workshop', theatre: 'At the theatre', library: 'At the library', marina: 'Fishing at the marina', clinic: 'Freshening up at the clinic', sunwheel: 'On the Sunwheel', windmill: 'By the windmill', fountain: 'At the fountain', bench: 'Resting on a bench' };
+const benchTaken = new Set();
+const sleepHours = n => { for (const t of n.traits) if (TRAITS[t]?.sleep) return TRAITS[t].sleep; return [22, 6]; };
+const asleepAt = (n, h) => { const [a, b] = sleepHours(n); return a > b ? (h >= a || h < b) : (h >= a && h < b); };
+const traitMult = (n, id) => n.traits.reduce((m, t) => m * (TRAITS[t]?.likes?.[id] ?? 1), 1);
+function npcVisible(n) { return n.pose !== 'inside'; }
+function npcEnd(n) {
+  const t = n.task; if (!t) return;
+  if (t.bench) benchTaken.delete(t.bench);
+  if (t.partner && t.partner.task && t.partner.task.partner === n) { const p = t.partner; p.task = null; p.pose = null; p.wait = 1 + Math.random() * 2; }
+  n.task = null; n.pose = null; n.arms = null; n.path = []; n.onArrive = null; n.wait = 1 + Math.random() * 3; n.doing = 'Out for a walk';
 }
+function npcStart(n, task) {
+  n.task = task; n.doing = task.label;
+  const p = findPath(cityWorld, n.x, n.y, task.dest[0], task.dest[1]);
+  if (!p) { npcEnd(n); return; }
+  task.phase = 'walk';
+  n.go(p.slice(1), () => {
+    if (n.task !== task) return;
+    task.phase = 'do'; task.t = 0; task.emoteT = 1 + Math.random() * 2;
+    if (task.pose === 'inside') n.pose = 'inside';
+    else if (task.pose === 'sit') { n.x = task.seat[0]; n.y = task.seat[1]; n.pose = 'sit'; }
+    else if (task.look) n.face(...task.look);
+    if (task.kind === 'chat') { const q = task.partner; if (!q.task || q.task.partner !== n) { npcEnd(n); return; } q.task.phase = 'do'; q.task.t = 0; n.face(q.x, q.y); q.face(n.x, n.y); }
+    if (task.arms) n.arms = task.arms;
+  });
+}
+function npcDecide(n) {
+  const h = hourOf(S.progress.clock);
+  if (asleepAt(n, h)) {
+    const wake = sleepHours(n)[1] * 60, now = S.progress.clock % 1440;
+    npcStart(n, { kind: 'sleep', label: 'Asleep at home', dest: [n.home[0] + 0.5, n.home[1] + 0.5], pose: 'inside', mins: ((wake - now) + 1440) % 1440 || 60, gain: { energy: 95, hygiene: 40, hunger: 35, comfort: 30 } });
+    return;
+  }
+  const picks = [];
+  const add = (score, task) => picks.push({ score: score * (0.75 + Math.random() * 0.5), task });
+  const scoreGain = gain => Object.entries(gain || {}).reduce((sum, [k, v]) => sum + v * Math.pow((100 - n.needs[k]) / 100, 2) * 2, 0);
+  for (const t of cityThings) {
+    const o = t.o; if (!t.interactive || !o) continue;
+    const key = kindKey(o); if (!NPC_KINDS.has(key)) continue;
+    const dest = approachOf(o, cityWorld), d = Math.hypot(dest[0] - n.x, dest[1] - n.y);
+    for (const def of actionsFor(key)) {
+      if (def.special || def.job || def.hearts || def.needSkill) continue;
+      add(scoreGain(def.gain) * traitMult(n, def.id) / (1 + d / 14), { kind: 'act', label: PLACE_WORDS[key] || 'Out and about', dest, pose: def.pose === 'stand' ? 'stand' : 'inside', mins: def.mins, gain: def.gain, emotes: def.emotes, arms: def.arms, look: [o.i + (o.w || 1) / 2, o.j + (o.d || 1) / 2], place: o.kind === 'venue' ? o.id : o.kind });
+    }
+  }
+  for (const f of cityFlats) {
+    if (f.d.kind !== 'bench') continue;
+    const key = f.d.i + ',' + f.d.j; if (benchTaken.has(key)) continue;
+    const d = Math.hypot(f.x - n.x, f.y - n.y), def = actionsFor('bench')[0];
+    add(scoreGain(def.gain) * traitMult(n, 'sit') / (1 + d / 14), { kind: 'act', label: PLACE_WORDS.bench, dest: [f.x, f.y], seat: [f.x, f.y], pose: 'sit', bench: key, mins: def.mins, gain: def.gain, emotes: ['☀️', '😌', '🐦'] });
+  }
+  for (const q of cityNpcs) {
+    if (q === n || q.task || q.busy > 0 || asleepAt(q, h)) continue;
+    const d = Math.hypot(q.x - n.x, q.y - n.y); if (d > 16) continue;
+    add(scoreGain({ social: 30, fun: 6 }) * traitMult(n, 'chat') / (1 + d / 14), { kind: 'chat', label: `Chatting with ${q.name}`, partner: q, mins: 20, gain: { social: 30, fun: 6 }, emotes: ['💬', '😄', '🌼', '🎵', '😂'] });
+  }
+  add(3 + Math.random() * 3, { kind: 'wander', label: 'Out for a walk' });
+  picks.sort((a, b) => b.score - a.score);
+  const top = picks.slice(0, 3), pick = top[Math.floor(Math.random() * top.length)].task;
+  if (pick.kind === 'wander') {
+    for (let k = 0; k < 6; k++) {
+      const ti = n.home[0] + Math.floor((Math.random() - 0.5) * 14), tj = n.home[1] + Math.floor((Math.random() - 0.5) * 14);
+      if (!cityWorld.walkable(ti, tj)) continue;
+      const p = findPath(cityWorld, n.x, n.y, ti + 0.5, tj + 0.5);
+      if (p && p.length < 20) { n.go(p.slice(1)); n.wait = 2 + Math.random() * 4; n.doing = 'Out for a walk'; return; }
+    }
+    n.wait = 2; return;
+  }
+  if (pick.kind === 'chat') {
+    const q = pick.partner, qi = Math.floor(q.x), qj = Math.floor(q.y);
+    const side = [[qi + 1, qj - 1], [qi - 1, qj + 1], [qi + 1, qj], [qi, qj + 1]].find(([a, b]) => cityWorld.walkable(a, b));
+    if (!side) { n.wait = 2; return; }
+    pick.dest = [side[0] + 0.5, side[1] + 0.5];
+    q.path = []; q.onArrive = null; q.task = { kind: 'chat', label: `Chatting with ${n.name}`, partner: n, phase: 'wait', mins: 20, gain: pick.gain, emotes: pick.emotes }; q.doing = q.task.label;
+  }
+  if (pick.bench) benchTaken.add(pick.bench);
+  npcStart(n, pick);
+}
+function npcThink(n, dt, gm) {
+  // needs keep moving wherever you are
+  const sleeping = n.task && n.task.kind === 'sleep' && n.task.phase === 'do';
+  for (const nd of NEEDS) {
+    let rate = nd.decay * n.traits.reduce((m, t) => m * (TRAITS[t]?.decay?.[nd.k] ?? 1), 1);
+    if (sleeping) rate *= 0.3;
+    n.needs[nd.k] = Math.max(0, n.needs[nd.k] - rate * gm / 60);
+  }
+  if (n.busy > 0) {
+    if (n.task) npcEnd(n);
+    n.busy -= dt; if (sceneName === 'city') n.face(player.x, player.y); n.doing = `With ${S.profile?.name || 'you'}`;
+    return;
+  }
+  const t = n.task;
+  if (t) {
+    if (t.phase === 'do') {
+      const part = Math.min(gm, t.mins - t.t); t.t += part;
+      for (const [k, v] of Object.entries(t.gain || {})) n.needs[k] = Math.min(100, n.needs[k] + v * part / t.mins);
+      t.emoteT -= dt;
+      if (t.emoteT <= 0 && t.emotes && n.pose !== 'inside') { t.emoteT = 2.2 + Math.random() * 2; n.say(t.emotes[Math.floor(Math.random() * t.emotes.length)], 1.8); }
+      if (t.kind === 'chat' && t.partner && (!t.partner.task || t.partner.task.partner !== n)) { npcEnd(n); return; }
+      if (t.t >= t.mins - 0.001) npcEnd(n);
+    } else if (t.phase === 'wait') { if (!t.partner.task || t.partner.task.partner !== n) npcEnd(n); }
+    else if (!n.path.length && !n.onArrive) npcEnd(n);
+    return;
+  }
+  if (n.path.length) return;
+  if (sceneName === 'city' && Math.hypot(player.x - n.x, player.y - n.y) < 2.2) { n.face(player.x, player.y); if (!n.greeted) { n.greeted = true; n.say(['👋', '☀️', '💛', '🎵'][n.seed % 4]); } }
+  else n.greeted = false;
+  n.wait -= dt;
+  if (n.wait > 0) return;
+  npcDecide(n);
+}
+// How many neighbours are inside each place right now (shown on the place's name tag).
+function insideCount(place) { let c = 0; for (const n of cityNpcs) if (n.pose === 'inside' && n.task && n.task.place === place) c++; return c; }
 
 // Butterflies and birds for life in the air.
 const butterflies = Array.from({ length: 8 }, (_, k) => ({ cx: [14, 17, 8, 12, 27, 5, 18, 30][k] + 0.5, cy: [12, 19, 27, 32, 8, 35, 36, 14][k] + 0.5, seed: k * 1.7, col: ['#FFC83D', '#F0587A', '#FFFFFF', '#8E7CE0'][k % 4] }));
@@ -490,6 +599,8 @@ function drawThing(t, z) {
 // Steam and bubbles in the shower, droplets when shaking dry.
 function drawFx(z) {
   const showering = act && act.phase === 'do' && act.step.pose === 'shower';
+  const burning = act && act.phase === 'do' && act.step.burnable && act.item.burnt;
+  if (burning) { const [bx, by] = toScreen(player.x - 0.6, player.y - 1, 40); for (let k = 0; k < 5; k++) { const ph = (time * 0.6 + k / 5) % 1; ctx.fillStyle = `rgba(90,90,100,${0.35 * (1 - ph)})`; ctx.beginPath(); ctx.arc(bx + Math.sin(k * 2 + time) * 10 * z, by - ph * 60 * z, (6 + ph * 10) * z, 0, 7); ctx.fill(); } }
   if (!showering && !(player.shake > 0)) return;
   const [sx, sy] = toScreen(player.x, player.y);
   ctx.save();
@@ -526,7 +637,7 @@ function drawLabels(z) {
   for (const t of drawn) {
     const o = t.o; if (!o || !t.top) continue;
     let text = null, icon = '', col = '#26395A';
-    if (o.kind === 'venue') { text = o.name.replace(/^The /, ''); icon = o.icon; col = o.color; }
+    if (o.kind === 'venue') { const c = insideCount(o.id); text = o.name.replace(/^The /, '') + (c ? `  👥 ${c}` : ''); icon = o.icon; col = o.color; }
     else if (o.home && S.sheet === 'homes') { const p = propFor(o.id); text = p && p.status !== 'available' ? (p.status === 'owned' ? 'Owned' : 'Rented') : `✦ ${o.rent}/day`; icon = '🏠'; col = '#3FA86A'; }
     else if (o.kind === 'sunwheel') { text = 'Sunwheel'; icon = '🎡'; col = '#F0587A'; }
     else if (o.kind === 'myhome') { text = 'Your home'; icon = '🏡'; col = '#F2A93B'; }
@@ -566,7 +677,7 @@ function update(dt) {
   // direct walking from the stick or keyboard (screen directions turned into grid directions)
   const running = S.run || keys.has('run');
   const tired = S.progress.needs.energy < 10 ? 0.7 : 1;
-  player.speed = BASE_SPEED * (running ? 1.7 : 1) * tired;
+  player.speed = BASE_SPEED * (running ? 1.7 : 1) * tired * (1 + 0.02 * skillLv('fitness'));
   let sx = 0, sy = 0, mag = 0;
   if (keys.has('up')) sy -= 1; if (keys.has('down')) sy += 1; if (keys.has('left')) sx -= 1; if (keys.has('right')) sx += 1;
   if (sx || sy) { const m = Math.hypot(sx, sy); sx /= m; sy /= m; mag = 1; }
@@ -586,9 +697,9 @@ function update(dt) {
   } else player.update(simDt);
   updateNearby();
   if (player.shake > 0) { player.shake -= dt; if (player.shake <= 0) { player.shake = 0; player.override = null; player.faceFront = false; } }
-  if (player.moving) { const st = Math.floor(player.walk / 3.14); if (st !== update.lastStep) { update.lastStep = st; SND.sfx('step'); } }
+  if (player.moving) { const st = Math.floor(player.walk / 3.14); if (st !== update.lastStep) { update.lastStep = st; SND.sfx('step'); if (st % 8 === 0) addXP('fitness', 1); } }
   if (!onboardingOpen) autonomy(dt);
-  for (const n of npcs) { npcThink(n, simDt); n.update(simDt); }
+  for (const n of cityNpcs) { npcThink(n, simDt, gm); n.update(simDt); }
   updateHudClock();
   // camera
   const onboarding = !$('onboarding').classList.contains('hidden');
@@ -677,7 +788,7 @@ function hitThing(sx, sy) {
   for (let k = drawn.length - 1; k >= 0; k--) {
     const t = drawn[k];
     if (t.char) {
-      if (t.char === player) continue;
+      if (t.char === player || t.char.pose === 'inside') continue;
       const [cx, cy] = toScreen(t.char.x, t.char.y);
       if (Math.abs(sx - cx) < 24 * cam.zoom + 8 && sy < cy + 8 && sy > cy - 82 * cam.zoom - 8) return t;
       continue;
@@ -715,11 +826,11 @@ function walkTo(x, y, onArrive) {
 function near(x, y, r = 1.6) { return Math.hypot(player.x - x, player.y - y) <= r; }
 
 // Where you stand to use something.
-function approachOf(o) {
+function approachOf(o, wd = world) {
   if (o.stand) return o.stand;
   if (o.doorTile) return [o.doorTile[0] + 0.5, o.doorTile[1] + 0.5];
   if (o.kind === 'bench') return [o.i + 0.5, o.j + 0.5];
-  const s = nearestWalkable(world, o.i + (o.w || 1), o.j + (o.d || 1));
+  const s = nearestWalkable(wd, o.i + (o.w || 1), o.j + (o.d || 1));
   return s ? [s[0] + 0.5, s[1] + 0.5] : [player.x, player.y];
 }
 function kindKey(o) {
@@ -742,7 +853,7 @@ function goMeet(n) {
 }
 function findNearby() {
   let best = null, bd = 2.2;
-  for (const n of npcs) { const d = Math.hypot(n.x - player.x, n.y - player.y); if (d < bd) { bd = d; best = { n }; } }
+  for (const n of npcs) { if (!npcVisible(n)) continue; const d = Math.hypot(n.x - player.x, n.y - player.y); if (d < bd) { bd = d; best = { n }; } }
   for (const t of things) {
     const o = t.o; if (!t.interactive || !o) continue;
     if (!o.doorTile && !o.stand) continue;
@@ -789,6 +900,8 @@ function showPie(target, sx, sy) {
     if (def.coins < 0 && S.coins < -def.coins) { disabled = 'Not enough coins'; }
     if (n && def.hearts && friendship(n.name).hearts < def.hearts) { disabled = `Needs ${def.hearts} hearts`; }
     if (def.coins) note = (def.coins > 0 ? '+' : '') + def.coins + ' ✦';
+    if (def.job) { note = `+${CAREER[S.progress.job.level].pay} ✦`; disabled = jobBlocked() ? (hourOf(S.progress.clock) < 7 || hourOf(S.progress.clock) >= 18 ? 'Open 7 AM–6 PM' : 'Done for today') : ''; }
+    if (def.needSkill) for (const [k, lv] of Object.entries(def.needSkill)) if (skillLv(k) < lv) disabled = `Needs ${SKILLS.find(x => x.k === k).label} ${lv}`;
     opts.push({ icon: def.icon, label: def.label, note, disabled, run: () => queueAction(def, n ? { npc: n } : { o }) });
   }
   if (n) { opts.unshift({ icon: '💬', label: 'Emoji chat', run: () => meetThen(n, () => showEmojiChat(n)) }); opts.push({ icon: '🎁', label: 'Gifts & friendship', run: () => { n.busy = 4; showNeighbour(n); } }); }
@@ -839,6 +952,8 @@ function queueAction(def, target) {
   if (def.special === 'wardrobe') { const d = approachOf(target.o); const go = () => { player.face(...(target.o.look || d)); showWardrobe(); }; if (near(...d, 1.3)) go(); else walkTo(...d, go); return; }
   if (def.special === 'enter') { const go = () => enterHome(); const d = approachOf(target.o); if (near(...d, 1.3)) go(); else walkTo(...d, go); return; }
   if (def.coins < 0 && S.coins < -def.coins) { toast('Not enough coins for that.'); return; }
+  if (def.job) { const why = jobBlocked(); if (why) { toast(why); return; } }
+  if (def.needSkill) for (const [k, lv] of Object.entries(def.needSkill)) if (skillLv(k) < lv) { toast(`You need ${SKILLS.find(x => x.k === k).label.toLowerCase()} level ${lv} for that.`); return; }
   if (queue.length >= 4) { toast('Your to-do list is full.'); return; }
   queue.push({ def, target, label: def.label, icon: def.icon, steps: stepsOf(def, target) });
   renderQueue();
@@ -912,6 +1027,8 @@ function beginDoing() {
   player.override = step.outfit || def.outfit || null; player.saved = S.profile?.sleepLook ? { sleep: S.profile.sleepLook } : null;
   player.blanket = step.blanket || null; player.faceFront = !!step.faceFront;
   if (step.loop) SND.startLoop(step.loop);
+  if (act.item.def.job && act.item.startMood == null) act.item.startMood = mood(S.progress.needs);
+  if (step.burnable && skillLv('cooking') < 2 && Math.random() < 0.35) { act.item.burnt = true; setTimeout(() => { if (act && act.step === step) { player.say('💨', 2); toast('Oops, a little burnt! Cooking gets better with practice.'); } }, 2500); }
   if (step.start) SND.sfx(step.start);
   if (step.pose === 'inside') SND.sfx('door');
 }
@@ -931,7 +1048,9 @@ function tickAction(gm, dt) {
   const step = act.step, mins = step.mins || 1, part = Math.min(gm, mins - act.t);
   act.t += part;
   const N2 = S.progress.needs;
-  for (const [k, v] of Object.entries(step.gain || {})) N2[k] = Math.min(100, N2[k] + v * part / mins);
+  const mealMult = step.meal ? (act.item.burnt ? 0.5 : 1 + 0.04 * skillLv('cooking')) : 1;
+  for (const [k, v] of Object.entries(step.gain || {})) N2[k] = Math.min(100, N2[k] + v * part / mins * (k === 'hunger' ? mealMult : 1));
+  if (step.skill) addXP(step.skill, part * 0.4);
   for (const [k, v] of Object.entries(step.cost || {})) N2[k] = Math.max(0, N2[k] - v * part / mins);
   act.emoteT -= dt;
   if (act.emoteT <= 0 && step.emotes) {
@@ -948,6 +1067,8 @@ function finishStep() {
   if (!last) { endStep(false); act.k++; startStep(); return; }
   endStep(false);
   if (def.coins) setCoins(S.coins + def.coins, true);
+  if (def.job) finishShift(item.startMood);
+  if (def.id === 'craft' && skillLv('creativity') > 0) { setCoins(S.coins + 2 * skillLv('creativity'), true); toast(`Someone bought your craft for ${2 * skillLv('creativity')} ✦!`); }
   if (def.special === 'mail') { const notes = ['A postcard from Nori: “The gulls say hi.”', 'A coupon for one free honey bun.', 'Your library card is ready!', 'A drawing from Dot of the Sunwheel.']; toast(notes[Math.floor(Math.random() * notes.length)]); if (Math.random() < 0.4) setCoins(S.coins + 3, true); }
   if (def.friend && act.target.npc) befriend(act.target.npc, def.friend);
   if (def.id === 'fish') addItem('fish', 1);
@@ -960,11 +1081,24 @@ function finishStep() {
   queue.shift(); act = null; renderQueue(); startNext();
 }
 function befriend(n, kind) {
-  const f = friendship(n.name); const day = today();
-  if (kind === 'chat' && f.day !== day) { f.day = day; f.hearts = Math.min(3, (f.hearts || 0) + (f.hearts < 3 ? 1 : 0)); S.progress.daily[day + ':hello'] = (S.progress.daily[day + ':hello'] || 0) + 1; }
-  if (kind === 'joke' && f.joke !== day) { f.joke = day; f.hearts = Math.min(4, (f.hearts || 0) + (f.hearts < 4 ? 1 : 0)); }
-  if (kind === 'hug' && f.hug !== day) { f.hug = day; f.hearts = Math.min(5, (f.hearts || 0) + 1); }
+  const f = friendship(n.name); const day = today(), before = f.hearts || 0;
+  const chatCap = skillLv('charisma') >= 3 ? 4 : 3;
+  if (!f.mem || !f.mem.length) addMemory(n.name, 'We met for the first time', f);
+  if (kind === 'chat' && f.day !== day) { f.day = day; f.hearts = Math.min(chatCap, before + (before < chatCap ? 1 : 0)); S.progress.daily[day + ':hello'] = (S.progress.daily[day + ':hello'] || 0) + 1; }
+  if (kind === 'joke' && f.joke !== day) { f.joke = day; f.hearts = Math.min(4, (f.hearts || 0) + (f.hearts < 4 ? 1 : 0)); addMemory(n.name, 'You told a joke that made me laugh', f); }
+  if (kind === 'story' && f.story !== day) { f.story = day; f.hearts = Math.min(5, (f.hearts || 0) + (f.hearts < 5 ? 1 : 0)); addMemory(n.name, 'You told me a wonderful story', f); }
+  if (kind === 'hug' && f.hug !== day) { f.hug = day; f.hearts = Math.min(5, (f.hearts || 0) + 1); addMemory(n.name, 'We had a big hug', f); }
+  if (kind === 'emoji' && !f.emoji) { f.emoji = 1; addMemory(n.name, 'We chatted in emojis', f); }
+  const after = f.hearts || 0;
+  if (before < 3 && after >= 3) addMemory(n.name, 'We became friends', f);
+  if (before < 5 && after >= 5) addMemory(n.name, 'We became best friends!', f);
   S.progress.friends[n.name] = f; n.say('💛', 2); saveProgress(); checkGoals(); checkAchievements();
+}
+function addMemory(name, text, f = friendship(name)) {
+  f.mem = (f.mem || []).filter(m => m.text !== text);
+  f.mem.unshift({ day: dayOf(S.progress.clock), text });
+  f.mem = f.mem.slice(0, 8);
+  S.progress.friends[name] = f;
 }
 function renderQueue() {
   const el = $('queue'); el.innerHTML = '';
@@ -1000,6 +1134,7 @@ function tickNeeds(gm, curDef) {
     if (curDef && curDef.gain && curDef.gain[nd.k]) rate = 0;
     if (nd.k === 'comfort' && player.pose === 'sit') rate = 0;
     if (nd.k === 'energy' && player.pose === 'sleep') rate = 0;
+    if (nd.k === 'energy') rate *= 1 - 0.03 * skillLv('fitness');
     N2[nd.k] = Math.max(0, N2[nd.k] - rate * hrs);
     if (N2[nd.k] < 22 && !warned[nd.k]) { warned[nd.k] = true; toast(`${nd.icon} ${nd.low} ${nd.fix}`); player.say(nd.icon, 3); }
     if (N2[nd.k] > 40) warned[nd.k] = false;
@@ -1198,7 +1333,7 @@ function showFriends() {
   body.append(h('<p class="lead">Say hello every day and bring neighbours what they love to fill their hearts.</p>'));
   for (const n of cityNpcs) {
     const f = friendship(n.name), wants = ITEMS[n.data.wants];
-    const el = h(`<article class="card friend-card"><div class="card-art round"></div><div class="card-main"><div class="card-top"><h3>${esc(n.name)}</h3>${hearts(f.hearts)}</div><p class="card-sub">${esc(A.SPECIES[n.species].label)} · ${esc(DISTRICTS[districtAt(n.x, n.y)].name)} · loves ${wants.icon}</p><div class="card-actions"><button class="btn btn-small btn-ghost">Find ${esc(n.name)}</button></div></div></article>`);
+    const el = h(`<article class="card friend-card"><div class="card-art round"></div><div class="card-main"><div class="card-top"><h3>${esc(n.name)}</h3>${hearts(f.hearts)}</div><p class="card-sub">${esc(friendLevel(f.hearts || 0))} · ${n.traits.map(t => TRAITS[t]?.icon || '').join(' ')} · loves ${wants.icon}</p><p class="card-sub doing">${esc(n.doing || 'Out for a walk')}</p><div class="card-actions"><button class="btn btn-small btn-ghost">Find ${esc(n.name)}</button></div></div></article>`);
     el.querySelector('.card-art').append(portrait(n.species, n.outfit, 60));
     el.querySelector('button').onclick = () => { closeSheet(); goMeet(n); };
     body.append(el);
@@ -1208,7 +1343,9 @@ function showNeighbour(n) {
   const f = friendship(n.name), wants = n.data.wants, have = S.progress.inventory[wants] || 0, met = f.day === today();
   const el = h(`<div class="neighbour">
     <div class="neighbour-hero"><div class="portrait-wrap"></div><div class="bubble"><p>“${esc(n.data.line)}”</p></div></div>
-    <div class="friend-row"><span>Friendship</span>${hearts(f.hearts)}</div>
+    <div class="friend-row"><span>${esc(friendLevel(f.hearts || 0))}</span>${hearts(f.hearts)}</div>
+    <div class="trait-row">${n.traits.map(t => `<span class="chip">${TRAITS[t]?.icon || ''} ${esc(t)}</span>`).join('')}<span class="chip chip-sun">${moodLabel(mood(n.needs))} mood</span><span class="chip">📍 ${esc(n.doing || 'Out for a walk')}</span></div>
+    ${(f.mem || []).length ? `<h4 class="group-title">Things ${esc(n.name)} remembers</h4><ul class="log">${f.mem.map(m => `<li><b>${esc(m.text)}</b><span>Day ${m.day}</span></li>`).join('')}</ul>` : ''}
     <div class="actions-col">
       <button class="btn btn-primary btn-wide" data-a="hello" ${met ? 'disabled' : ''}>${met ? 'You said hello today ✓' : 'Say hello'}</button>
       <button class="btn btn-sun btn-wide" data-a="give" ${have < 1 || f.gift === today() ? 'disabled' : ''}>${f.gift === today() ? 'Gift given today ✓' : `Give 1 ${ITEMS[wants].icon} ${itemName(wants, 1)} · +10 ✦`}</button>
@@ -1223,7 +1360,7 @@ function showNeighbour(n) {
   el.querySelector('[data-a=give]').onclick = () => {
     if ((S.progress.inventory[wants] || 0) < 1) return;
     addItem(wants, -1);
-    bump(n.name, c => { c.gift = today(); c.hearts = Math.min(5, (c.hearts || 0) + 1); });
+    bump(n.name, c => { c.gift = today(); c.hearts = Math.min(5, (c.hearts || 0) + 1); addMemory(n.name, `You gave me a ${ITEMS[wants].icon} ${itemName(wants, 1)}`, c); });
     n.say('😊', 3); setCoins(S.coins + 10, true); S.progress.daily[today() + ':gift'] = 1; saveProgress(); checkGoals(); showNeighbour(n);
   };
   openSheet('neighbour:' + n.name, A.SPECIES[n.species].label + ' · neighbour', n.name, el, { tab: 'friends' });
@@ -1243,6 +1380,10 @@ function showJournal() {
     <div class="bag">${Object.entries(ITEMS).map(([k, it]) => `<div class="bag-item"><span>${it.icon}</span><b>${inv[k] || 0}</b><small>${esc(it.many)}</small></div>`).join('')}</div>
     <h4 class="group-title">Today’s goals <small>+15 ✦ each</small></h4>
     ${GOALS.map(g => { const c = Math.min(g.need, g.count()); return `<div class="goal ${c >= g.need ? 'met' : ''}"><div class="goal-top"><span>${esc(g.text)}</span><b>${c}/${g.need}</b></div><div class="bar"><i style="width:${c / g.need * 100}%"></i></div></div>`; }).join('')}
+    <h4 class="group-title">Skills</h4>
+    <div class="skills">${SKILLS.map(sk => { const s2 = S.progress.skills[sk.k]; const pct = s2.lv >= SKILL_MAX ? 100 : Math.round(s2.xp / xpForLevel(s2.lv) * 100); return `<div class="skill" title="${esc(sk.perk)}"><span class="skill-icon">${sk.icon}</span><div class="need-main"><div class="need-top"><b>${esc(sk.label)}</b><span>Level ${s2.lv}</span></div><div class="need-bar"><i style="width:${pct}%;background:var(--sky)"></i></div><small>${esc(sk.perk)}</small></div></div>`; }).join('')}</div>
+    <h4 class="group-title">Career</h4>
+    <div class="career"><span class="career-icon">${CAREER[S.progress.job.level].icon}</span><div><b>${esc(CAREER[S.progress.job.level].title)}</b><small>${CAREER[S.progress.job.level].pay} ✦ a shift at the Tram Station, 7 AM–6 PM. ${S.progress.job.level < CAREER.length - 1 ? `Next: ${esc(CAREER[S.progress.job.level + 1].title)} after ${(skillLv('logic') >= 3 ? 2 : 3) - S.progress.job.good} more good shift(s).` : 'Top of the ladder!'}</small></div></div>
     <h4 class="group-title">Emoji collection <small>${unlockedSet(S.progress).size} of ${STARTER.length + ACHIEVEMENTS.length * 2 + Object.keys(SIGNATURE).length}</small></h4>
     <div class="stickers">${STARTER.map(e => `<span class="sticker" title="Starter">${e}</span>`).join('')}${ACHIEVEMENTS.map(a => { const got = S.progress.achievements.includes(a.id); return a.emojis.map(e => `<span class="sticker ${got ? '' : 'locked'}" title="${esc(got ? a.label : 'Locked: ' + a.label)}">${got ? e : '🔒'}</span>`).join(''); }).join('')}${Object.entries(SIGNATURE).map(([nm, e]) => { const got = (S.progress.friends[nm]?.hearts || 0) >= 3; return `<span class="sticker ${got ? '' : 'locked'}" title="${esc(got ? nm + '’s emoji' : 'Reach 3 hearts with ' + nm)}">${got ? e : '🔒'}</span>`; }).join('')}</div>
     <h4 class="group-title">Next to unlock</h4>
@@ -1406,24 +1547,66 @@ async function restoreSession() {
   catch { S.token = ''; try { localStorage.removeItem('willowvale_token'); } catch { /* ignore */ } }
 }
 
+// ---------- career ----------
+function jobBlocked() {
+  const h = hourOf(S.progress.clock);
+  if (h < 7 || h >= 18) return 'Shifts run from 7 AM to 6 PM. Come back in the morning.';
+  if (S.progress.job.lastDay === dayOf(S.progress.clock)) return 'You’ve already worked today. Have some fun!';
+  return null;
+}
+function finishShift(startMood = mood(S.progress.needs)) {
+  const job = S.progress.job, rank = CAREER[job.level];
+  job.lastDay = dayOf(S.progress.clock);
+  setCoins(S.coins + rank.pay, true);
+  const good = startMood >= 45;
+  if (good) job.good++;
+  const needed = skillLv('logic') >= 3 ? 2 : 3;
+  let label = good ? `Great shift! ${job.good} of ${needed} toward a promotion.` : 'A tiring shift. Arrive happier to impress your boss.';
+  if (job.good >= needed && job.level < CAREER.length - 1) {
+    job.level++; job.good = 0;
+    celebrations.push({ title: 'Promoted!', emojis: [CAREER[job.level].icon], label: `You’re now a ${CAREER[job.level].title}. Pay is ${CAREER[job.level].pay} ✦ a shift.` });
+    label = 'You got promoted!';
+  }
+  celebrations.unshift({ title: 'Payslip', emojis: ['💰'], label: `+${rank.pay} ✦ as ${rank.title}. ${label}` });
+  saveProgress(); nextCelebration(); checkAchievements();
+}
+
+// ---------- skills ----------
+function addXP(k, amt) {
+  const sk = S.progress.skills[k]; if (!sk || sk.lv >= SKILL_MAX) return;
+  sk.xp += amt;
+  while (sk.lv < SKILL_MAX && sk.xp >= xpForLevel(sk.lv)) {
+    sk.xp -= xpForLevel(sk.lv); sk.lv++;
+    const info = SKILLS.find(x => x.k === k);
+    celebrations.push({ title: 'Skill up!', emojis: [info.icon], label: `${info.label} is now level ${sk.lv}` });
+    if (!$('unlock').classList.contains('hidden')) {} else setTimeout(nextCelebration, 0);
+    checkAchievements();
+  }
+  saveProgress();
+}
+
 // ---------- achievements & unlockable emojis ----------
 function bumpStat(k, n = 1) { S.progress.stats[k] = (S.progress.stats[k] || 0) + n; saveProgress(); }
 function statsView() {
   const st = { ...S.progress.stats }, fr = Object.values(S.progress.friends || {});
   st.friends = fr.filter(f => (f.hearts || 0) >= 2).length; st.bestFriends = fr.filter(f => (f.hearts || 0) >= 5).length;
   st.coins = S.coins; st.day = dayOf(S.progress.clock); st.places = Object.keys(S.progress.places || {}).length;
+  for (const sk of SKILLS) st[sk.k] = skillLv(sk.k);
+  st.jobLevel = S.progress.job.level;
   return st;
 }
 const celebrations = [];
 function checkAchievements() {
   const st = statsView(), got = S.progress.achievements;
-  for (const a of ACHIEVEMENTS) if (!got.includes(a.id) && a.test(st)) { got.push(a.id); celebrations.push({ emojis: a.emojis, label: a.label }); }
+  for (const a of ACHIEVEMENTS) if (!got.includes(a.id) && a.test(st)) { got.push(a.id); celebrations.push({ title: 'New emojis unlocked!', emojis: a.emojis, label: a.label }); }
   for (const [nm, e] of Object.entries(SIGNATURE)) { const k = 'sig:' + nm; if (!got.includes(k) && (S.progress.friends[nm]?.hearts || 0) >= 3) { got.push(k); celebrations.push({ emojis: [e], label: `${nm} shared their own emoji with you` }); } }
   saveProgress();
   if (celebrations.length && $('unlock').classList.contains('hidden')) nextCelebration();
 }
 function nextCelebration() {
+  if (!$('unlock').classList.contains('hidden')) return;
   const c = celebrations.shift(); if (!c) return;
+  $('unlock-title').textContent = c.title || 'New emojis unlocked!';
   $('unlock-emojis').textContent = c.emojis.join(' '); $('unlock-label').textContent = c.label;
   $('unlock').classList.remove('hidden'); SND.sfx('unlock'); player.say(c.emojis[0], 2.5);
   setTimeout(() => { $('unlock').classList.add('hidden'); setTimeout(nextCelebration, 400); }, 3200);
@@ -1469,6 +1652,7 @@ function showEmojiChat(n) {
     S.progress.needs.social = Math.min(100, S.progress.needs.social + 5);
     bumpStat('chats');
     if (friendship(n.name).day !== today()) befriend(n, 'chat');
+    befriend(n, 'emoji');
     setTimeout(() => {
       const r = replyTo(msg, n.name); log.push({ me: false, e: r });
       if (S.sheet === 'echat:' + n.name) renderLog();
@@ -1562,7 +1746,7 @@ function autonomy(dt) {
     for (const def of actionsFor(key)) consider(def, { o: t.o }, d);
   }
   for (const f of flats) if (f.d.kind === 'bench') for (const def of actionsFor('bench')) consider(def, { o: f.d }, Math.hypot(f.x - player.x, f.y - player.y));
-  for (const nn of npcs) for (const def of actionsFor('neighbour')) if (!def.hearts) consider(def, { npc: nn }, Math.hypot(nn.x - player.x, nn.y - player.y));
+  for (const nn of npcs) if (npcVisible(nn) && !(nn.task && nn.task.kind === 'sleep')) for (const def of actionsFor('neighbour')) if (!def.hearts && !def.needSkill) consider(def, { npc: nn }, Math.hypot(nn.x - player.x, nn.y - player.y));
   if (best && best.sc > 4) { toastQuiet(`${S.profile.name} decided to ${best.def.label.toLowerCase()}.`); queueAction(best.def, best.target); }
 }
 
@@ -1645,7 +1829,7 @@ function drawRadar() {
   g.drawImage(radarMap.c, size / 2 - (px * RS + radarMap.ox) * k, size / 2 - py * RS * k, radarMap.c.width * k, radarMap.c.height * k);
   if (!world.interior) for (const v of VENUES) { const [x, y] = toR(v.i + v.w / 2, v.j + v.d / 2); g.fillStyle = '#fff'; g.beginPath(); g.arc(x, y, 4.2, 0, 7); g.fill(); g.fillStyle = v.color; g.beginPath(); g.arc(x, y, 2.9, 0, 7); g.fill(); }
   g.fillStyle = '#26395A';
-  for (const n of npcs) { const [x, y] = toR(n.x, n.y); g.beginPath(); g.arc(x, y, 1.8, 0, 7); g.fill(); }
+  for (const n of npcs) { if (!npcVisible(n)) continue; const [x, y] = toR(n.x, n.y); g.beginPath(); g.arc(x, y, 1.8, 0, 7); g.fill(); }
   if (marker) { const [x, y] = toR(marker.x, marker.y); g.strokeStyle = '#FFC83D'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.stroke(); }
   // you: an arrow pointing the way you face
   const ang = { front: player.flip ? Math.PI * 0.25 : Math.PI * 0.75, back: player.flip ? -Math.PI * 0.25 : -Math.PI * 0.75 }[player.dir];
@@ -1694,4 +1878,4 @@ $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 700);
 
 // Small read-only hook for automated play-testing.
-window.__willowvale = { state: S, screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type)); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
+window.__willowvale = { state: S, screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.job), setClock: m => { S.progress.clock = m; }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };

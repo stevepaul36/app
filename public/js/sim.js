@@ -46,13 +46,13 @@ export const ACTIONS = {
   ],
   bookshelf: [{ id: 'read', label: 'Read a book', icon: '📖', stat: 'reads', steps: [
     { obj: 'bookshelf', mins: 3, pose: 'stand', arms: 'hold', emotes: ['🔎'] },
-    { obj: 'armchair', mins: 45, pose: 'sit', arms: 'read', prop: 'book', tick: 'page', gain: { fun: 32, comfort: 10 }, emotes: ['📖', '🤔', '😮'] },
+    { obj: 'armchair', mins: 45, pose: 'sit', arms: 'read', prop: 'book', tick: 'page', skill: 'logic', gain: { fun: 32, comfort: 10 }, emotes: ['📖', '🤔', '😮'] },
   ] }],
   shower: [{ id: 'shower', label: 'Take a shower', icon: '🚿', mins: 20, pose: 'shower', outfit: 'towel', arms: 'scrub', prop: 'sponge', loop: 'water', faceFront: true, after: 'shake', stat: 'showers', gain: { hygiene: 90, comfort: 8 }, emotes: ['🫧', '🎵', '🎶'] }],
   wardrobe: [{ id: 'dress', label: 'Change outfit', icon: '👗', special: 'wardrobe' }],
   sink: [
     { id: 'wash', label: 'Wash up', icon: '🧼', mins: 8, pose: 'stand', arms: 'scrub', prop: 'sponge', loop: 'water', gain: { hygiene: 25 }, emotes: ['🫧'] },
-    { id: 'mirror', label: 'Practise a speech', icon: '🪞', mins: 15, pose: 'stand', gain: { social: 10, fun: 4 }, emotes: ['💬', '😄'] },
+    { id: 'mirror', label: 'Practise a speech', icon: '🪞', mins: 15, pose: 'stand', skill: 'charisma', gain: { social: 10, fun: 4 }, emotes: ['💬', '😄'] },
   ],
   fridge: [
     { id: 'snack', label: 'Grab a snack', icon: '🥪', steps: [
@@ -61,15 +61,15 @@ export const ACTIONS = {
     ] },
     { id: 'cook', label: 'Cook a meal', icon: '🍳', stat: 'meals', steps: [
       { obj: 'fridge', mins: 5, pose: 'stand', arms: 'hold', emotes: ['🥕'] },
-      { obj: 'counter', mins: 10, pose: 'stand', arms: 'chop', prop: 'knife', tick: 'chop', emotes: ['🔪', '🥕'] },
-      { obj: 'stove', mins: 25, pose: 'stand', arms: 'stir', prop: 'bowl', loop: 'sizzle', gain: { fun: 5 }, emotes: ['🍳', '🔥', '🍳'] },
-      { obj: 'chair', mins: 25, pose: 'sit', arms: 'eat', prop: 'fork', gain: { hunger: 78, comfort: 10 }, emotes: ['🍲', '😋'] },
+      { obj: 'counter', mins: 10, pose: 'stand', arms: 'chop', prop: 'knife', tick: 'chop', skill: 'cooking', emotes: ['🔪', '🥕'] },
+      { obj: 'stove', mins: 25, pose: 'stand', arms: 'stir', prop: 'bowl', loop: 'sizzle', skill: 'cooking', burnable: true, gain: { fun: 5 }, emotes: ['🍳', '🔥', '🍳'] },
+      { obj: 'chair', mins: 25, pose: 'sit', arms: 'eat', prop: 'fork', meal: true, gain: { hunger: 78, comfort: 10 }, emotes: ['🍲', '😋'] },
     ] },
   ],
   stove: [{ ref: 'fridge', id: 'cook' }],
   table: [{ ref: 'fridge', id: 'cook' }],
   chair: [{ id: 'sit', label: 'Sit down', icon: '🪑', mins: 20, pose: 'sit', gain: { comfort: 25 }, emotes: ['😌'] }],
-  radio: [{ id: 'dance', label: 'Dance to the radio', icon: '💃', mins: 30, pose: 'dance', stat: 'dances', gain: { fun: 36, social: 4 }, cost: { energy: 8, hygiene: 6 }, emotes: ['🎵', '🎶', '✨'] }],
+  radio: [{ id: 'dance', label: 'Dance to the radio', icon: '💃', mins: 30, pose: 'dance', stat: 'dances', skill: 'fitness', gain: { fun: 36, social: 4 }, cost: { energy: 8, hygiene: 6 }, emotes: ['🎵', '🎶', '✨'] }],
   tv: [{ ref: 'sofa', id: 'tv' }],
   sofa: [
     { id: 'tv', label: 'Watch TV', icon: '📺', mins: 60, pose: 'sit', arms: 'remote', prop: 'remote', loop: 'tv', stat: 'tv', gain: { fun: 50, comfort: 25 }, emotes: ['📺', '😂', '😮', '🍿'], tv: true },
@@ -81,8 +81,8 @@ export const ACTIONS = {
     { ref: 'bookshelf', id: 'read' },
   ],
   desk: [
-    { id: 'games', label: 'Play computer games', icon: '🎮', mins: 60, pose: 'sit', arms: 'type', tick: 'type', gain: { fun: 55 }, cost: { comfort: 4 }, emotes: ['🎮', '😆', '🏆'] },
-    { id: 'chat', label: 'Video call a friend', icon: '💻', mins: 40, pose: 'sit', arms: 'type', tick: 'type', gain: { social: 28 }, emotes: ['💬', '😊', '👋'] },
+    { id: 'games', label: 'Play computer games', icon: '🎮', mins: 60, pose: 'sit', arms: 'type', tick: 'type', skill: 'logic', gain: { fun: 55 }, cost: { comfort: 4 }, emotes: ['🎮', '😆', '🏆'] },
+    { id: 'chat', label: 'Video call a friend', icon: '💻', mins: 40, pose: 'sit', arms: 'type', tick: 'type', skill: 'charisma', gain: { social: 28 }, emotes: ['💬', '😊', '👋'] },
   ],
   plant: [{ id: 'water', label: 'Water the plant', icon: '🪴', mins: 5, pose: 'stand', gain: { fun: 4 }, emotes: ['💧'] }],
   door: [{ id: 'leave', label: 'Go to town', icon: '🏘️', special: 'leave' }],
@@ -97,20 +97,55 @@ export const ACTIONS = {
     { id: 'tea', label: 'Have tea', icon: '🍵', mins: 20, pose: 'inside', gain: { energy: 12, fun: 8, social: 6 }, coins: -3, emotes: ['🍵'] },
   ],
   market: [{ id: 'browse', label: 'Browse the stalls', icon: '🧺', mins: 25, pose: 'inside', gain: { fun: 14, social: 6 }, emotes: ['🍎', '🧺'] }],
-  community: [{ id: 'craft', label: 'Join a workshop', icon: '🎨', mins: 45, pose: 'inside', gain: { fun: 30, social: 18 }, emotes: ['🎨', '✂️'] }],
-  theatre: [{ id: 'show', label: 'Watch a show', icon: '🎭', mins: 90, pose: 'inside', gain: { fun: 70, social: 10 }, coins: -8, fast: 3, emotes: ['🎭', '👏', '😂'] }],
-  library: [{ id: 'read', label: 'Read quietly', icon: '📚', mins: 45, pose: 'inside', gain: { fun: 30, comfort: 10 }, emotes: ['📚', '🤓'] }],
-  station: [{ id: 'work', label: 'Work a shift (+40 ✦)', icon: '💼', mins: 240, pose: 'inside', stat: 'works', gain: {}, cost: { energy: 22, fun: 18, hygiene: 10 }, coins: 40, fast: 8, emotes: ['💼', '🚋'] }],
+  community: [{ id: 'craft', label: 'Join a workshop', icon: '🎨', mins: 45, pose: 'inside', skill: 'creativity', gain: { fun: 30, social: 18 }, emotes: ['🎨', '✂️'] }],
+  theatre: [{ id: 'show', label: 'Watch a show', icon: '🎭', mins: 90, pose: 'inside', skill: 'creativity', gain: { fun: 70, social: 10 }, coins: -8, fast: 3, emotes: ['🎭', '👏', '😂'] }],
+  library: [{ id: 'read', label: 'Read quietly', icon: '📚', mins: 45, pose: 'inside', skill: 'logic', gain: { fun: 30, comfort: 10 }, emotes: ['📚', '🤓'] }],
+  station: [{ id: 'work', label: 'Work a shift', icon: '💼', mins: 240, pose: 'inside', stat: 'works', job: true, gain: {}, cost: { energy: 22, fun: 18, hygiene: 10 }, fast: 8, emotes: ['💼', '🚋'] }],
   marina: [{ id: 'fish', label: 'Go fishing', icon: '🎣', mins: 40, pose: 'stand', stat: 'fish', arms: 'hold', gain: { fun: 26, comfort: 6 }, emotes: ['🎣', '🌊', '🐟'] }],
   clinic: [{ id: 'freshen', label: 'Freshen up', icon: '🧼', mins: 15, pose: 'inside', gain: { hygiene: 45, comfort: 10 }, emotes: ['🧼'] }],
   sunwheel: [{ id: 'ride', label: 'Ride the Sunwheel', icon: '🎡', mins: 20, pose: 'inside', stat: 'rides', gain: { fun: 34 }, coins: -2, emotes: ['🎡', '😆'] }],
   windmill: [{ id: 'admire', label: 'Admire the view', icon: '🌾', mins: 10, pose: 'stand', gain: { fun: 8, comfort: 6 }, emotes: ['😊'] }],
   neighbour: [
-    { id: 'chat', label: 'Chat', icon: '💬', mins: 25, pose: 'chat', gain: { social: 30, fun: 6 }, emotes: ['💬', '😄', '🌼', '☀️', '🎵'], friend: 'chat' },
-    { id: 'joke', label: 'Tell a joke', icon: '😂', mins: 10, pose: 'chat', start: 'laugh', gain: { social: 15, fun: 10 }, emotes: ['😂', '🤣'], friend: 'joke' },
+    { id: 'chat', label: 'Chat', icon: '💬', mins: 25, pose: 'chat', skill: 'charisma', gain: { social: 30, fun: 6 }, emotes: ['💬', '😄', '🌼', '☀️', '🎵'], friend: 'chat' },
+    { id: 'story', label: 'Tell a story', icon: '📖', mins: 20, pose: 'chat', skill: 'charisma', needSkill: { charisma: 2 }, gain: { social: 26, fun: 12 }, emotes: ['📖', '😮', '🐉', '👏'], friend: 'story' },
+    { id: 'joke', label: 'Tell a joke', icon: '😂', mins: 10, pose: 'chat', start: 'laugh', skill: 'charisma', gain: { social: 15, fun: 10 }, emotes: ['😂', '🤣'], friend: 'joke' },
     { id: 'hug', label: 'Hug', icon: '🤗', mins: 5, pose: 'chat', gain: { social: 22, comfort: 6 }, emotes: ['🤗', '💛'], friend: 'hug', hearts: 2 },
   ],
 };
 export function actionsFor(kind) {
   return (ACTIONS[kind] || []).map(a => a.ref ? ACTIONS[a.ref].find(x => x.id === a.id) : a).filter(Boolean);
 }
+
+// ---------- Phase 2: traits, skills, career ----------
+// Traits change which actions a neighbour picks (weights multiply the score of matching action ids).
+export const TRAITS = {
+  'Foodie': { icon: '🍰', likes: { eat: 1.8, tea: 1.4, browse: 1.3 } },
+  'Bookworm': { icon: '📚', likes: { read: 1.9 } },
+  'Night Owl': { icon: '🦉', sleep: [1, 9] },
+  'Early Bird': { icon: '🐦', sleep: [21, 5] },
+  'Neat': { icon: '🧼', likes: { freshen: 1.8 }, decay: { hygiene: 1.4 } },
+  'Social Butterfly': { icon: '🦋', likes: { chat: 1.8 }, decay: { social: 1.3 } },
+  'Shy': { icon: '🙈', likes: { chat: 0.5, read: 1.3 } },
+  'Athletic': { icon: '🏃', speed: 1.25, likes: { admire: 1.4 } },
+  'Artist': { icon: '🎨', likes: { craft: 1.9, show: 1.3 } },
+  'Music Lover': { icon: '🎵', likes: { show: 1.8 } },
+  'Outdoorsy': { icon: '🌳', likes: { sit: 1.5, fish: 1.7, wish: 1.4, admire: 1.6 } },
+  'Playful': { icon: '🎈', likes: { ride: 1.9, wish: 1.4 } },
+};
+export const SKILLS = [
+  { k: 'cooking', label: 'Cooking', icon: '🍳', perk: 'Tastier meals, and no more burnt food from level 2' },
+  { k: 'fitness', label: 'Fitness', icon: '🏃', perk: 'Walk faster and get tired more slowly' },
+  { k: 'creativity', label: 'Creativity', icon: '🎨', perk: 'Workshops pay you for what you make' },
+  { k: 'charisma', label: 'Charisma', icon: '🗣️', perk: 'Tell stories at level 2; friendships grow faster at level 3' },
+  { k: 'logic', label: 'Logic', icon: '🧠', perk: 'Promotions come sooner at level 3' },
+];
+export const SKILL_MAX = 10;
+export const xpForLevel = lv => 20 + lv * 12; // XP needed to go from lv to lv + 1
+export const CAREER = [
+  { title: 'Ticket helper', pay: 40, icon: '🎫' },
+  { title: 'Conductor', pay: 55, icon: '🧢' },
+  { title: 'Tram driver', pay: 75, icon: '🚋' },
+  { title: 'Station master', pay: 100, icon: '🎖️' },
+];
+export const FRIEND_LEVELS = [[0, 'Stranger'], [1, 'Acquaintance'], [3, 'Friend'], [5, 'Best friend']];
+export const friendLevel = h => FRIEND_LEVELS.filter(([n]) => h >= n).pop()[1];
