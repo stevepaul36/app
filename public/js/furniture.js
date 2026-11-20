@@ -9,7 +9,7 @@ function spriteFor(w, d, top, draw) {
   return new Sprite(Math.min(...pts.map(p => p[0])) - 20, Math.min(...pts.map(p => p[1])) - 20, Math.max(...pts.map(p => p[0])) + 20, Math.max(...pts.map(p => p[1])) + 20, draw);
 }
 
-const WALLPAPER = { bed: '#E6DDFB', bath: '#D6EEF7', kitchen: '#E3F3E6', living: '#FFF1D9' };
+const WALLPAPER = { bed: '#E6DDFB', bath: '#D6EEF7', kitchen: '#E3F3E6', living: '#FFF1D9', cafe: '#FBE3C8', shop: '#E3F3E6', arcade: '#3A2F6B', restaurant: '#FFE1C7', library: '#EADCC6', museum: '#ECE6F6', cinema: '#5A2A4A', gym: '#DDEEF8', office: '#E6EEF8', lab: '#E0F4F1', workshop: '#FFF1D9' };
 
 // One tile of wall. Back walls are full height; partitions and front walls are cut down so you can see in.
 export function wallSprite(w) {
@@ -33,11 +33,134 @@ export function wallSprite(w) {
 export function furnitureSprite(f, part) {
   const t = f.type;
   if (t === 'sofa' && part) return spriteFor(f.w, f.d, 60, ctx => couch(ctx, f.w, '#F0587A', part));
-  const tall = { wardrobe: 120, bed: 60, bookshelf: 110, shower: 110, fridge: 110, sink: 100, tv: 80, sofa: 50, armchair: 50, desk: 80, plant: 80, floorlamp: 110, radio: 50, nightstand: 60, mailbox: 50 }[t] || 50;
+  const tall = { barcounter: 90, pastrycase: 60, menuboard: 130, cafetable: 50, cafechair: 50, shelf: 110, shelf2: 70, till: 70, arcadecab: 110, claw: 120, prizes: 80, stool: 40, exhibit: 110, screen: 130, seat: 50, popcorn: 90, treadmill: 70, weights: 70, mat: 10, officedesk: 80, labbench: 80, crafttable: 60, wardrobe: 120, bed: 60, bookshelf: 110, shower: 110, fridge: 110, sink: 100, tv: 80, sofa: 50, armchair: 50, desk: 80, plant: 80, floorlamp: 110, radio: 50, nightstand: 60, mailbox: 50 }[t] || 50;
   return spriteFor(f.w, f.d, tall, ctx => DRAW[t] && DRAW[t](ctx, f));
 }
 
 const DRAW = {
+  barcounter(ctx, f) {
+    const fc = box(ctx, 0.02, 0.12, 0, f.w - 0.04, 0.76, 38, '#8C5A3C');
+    box(ctx, 0, 0.08, 38, f.w, 0.84, 5, '#F2E6D6');
+    for (let k = 0; k < f.w * 2; k++) rectOn(ctx, fc.j, (k + 0.15) / (f.w * 2), 0.15, (k + 0.85) / (f.w * 2), 0.85, '#A36B47', '#00000018');
+    if (f.machine) {
+      box(ctx, 0.25, 0.25, 43, 0.5, 0.4, 30, '#C9D3DE'); const m = faceJ(0.25, 0.25, 43, 0.5, 0.4, 30);
+      rectOn(ctx, m, 0.15, 0.25, 0.85, 0.75, '#34476B', null); for (const u of [0.3, 0.7]) { const [x, y] = P(...fp(m, u, 0.2, 0.03)); ctx.fillStyle = '#FFFFFF'; ctx.fillRect(x - 3, y - 5, 6, 6); }
+      const [rx, ry] = P(f.w - 0.5, 0.45, 43); ctx.fillStyle = '#26304A'; roundRect(ctx, rx - 10, ry - 16, 20, 14, 3); ctx.fill(); ctx.fillStyle = '#7CE07A'; ctx.fillRect(rx - 7, ry - 14, 14, 5);
+    }
+    if (f.steam) for (let k = 1; k < f.w; k += 2) { const [x, y] = P(k + 0.3, 0.45, 43); ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.ellipse(x, y, 11, 5, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#F2A93B'; ctx.beginPath(); ctx.ellipse(x, y - 1, 8, 3, 0, 0, 7); ctx.fill(); }
+  },
+  pastrycase(ctx) {
+    box(ctx, 0.05, 0.12, 0, 0.9, 0.76, 34, '#8C5A3C');
+    box(ctx, 0.08, 0.15, 34, 0.84, 0.7, 24, '#CFEAF5', { topColor: '#E6F6FC' });
+    const f = faceJ(0.08, 0.15, 34, 0.84, 0.7, 24);
+    for (let k = 0; k < 4; k++) { const [x, y] = P(...fp(f, 0.15 + k * 0.23, 0.35, 0.02)); ctx.fillStyle = ['#F2A93B', '#F7A8C4', '#C98A4B', '#FFE07A'][k]; ctx.beginPath(); ctx.ellipse(x, y, 6, 4, 0, 0, 7); ctx.fill(); }
+  },
+  menuboard(ctx, f) {
+    box(ctx, 0.1, 0.02, 60, f.w - 0.2, 0.08, 56, '#2B3A33');
+    const fc = faceJ(0.1, 0.02, 60, f.w - 0.2, 0.08, 56);
+    for (let k = 0; k < 4; k++) rectOn(ctx, fc, 0.12, 0.18 + k * 0.18, 0.62 - (k % 2) * 0.15, 0.24 + k * 0.18, '#FFFFFFcc', null, 0.01);
+    for (let k = 0; k < 4; k++) rectOn(ctx, fc, 0.75, 0.18 + k * 0.18, 0.88, 0.24 + k * 0.18, '#FFE07A', null, 0.01);
+  },
+  cafetable(ctx) {
+    const [x, y] = P(0.5, 0.5, 0); ctx.fillStyle = '#5A4636'; ctx.fillRect(x - 2, y - 30, 4, 30); ctx.beginPath(); ctx.ellipse(x, y, 10, 4, 0, 0, 7); ctx.fill();
+    const [tx, ty] = P(0.5, 0.5, 30); ctx.fillStyle = '#F2E6D6'; ctx.strokeStyle = '#B9A48A'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(tx, ty, 30, 15, 0, 0, 7); ctx.fill(); ctx.stroke();
+    blob(ctx, tx - 8, ty - 2, 4.5, '#FFFFFF'); blob(ctx, tx + 9, ty + 1, 4.5, '#FFFFFF'); blob(ctx, tx + 1, ty - 7, 3.5, '#F7A8C4');
+  },
+  cafechair(ctx, f) { DRAW.chair(ctx, f); },
+  shelf(ctx, f) {
+    const fc = box(ctx, 0.05, 0.05, 0, 0.9, 0.4, 96, '#E8EEF4');
+    const cols = [['#F0587A', '#FFC83D', '#3FA86A'], ['#2E9BD6', '#F2A93B', '#8E7CE0'], ['#7CE07A', '#F7A8C4', '#FFE07A'], ['#E8823A', '#5BC0EB', '#C94BD8']][(f.variant || 0) % 4];
+    for (let r = 0; r < 4; r++) { rectOn(ctx, fc.j, 0.04, r * 0.24 + 0.05, 0.96, r * 0.24 + 0.07, '#A0AEC0', null); for (let k = 0; k < 5; k++) rectOn(ctx, fc.j, 0.08 + k * 0.18, r * 0.24 + 0.07, 0.2 + k * 0.18, r * 0.24 + 0.2 - (k % 2) * 0.03, cols[(k + r) % 3], '#00000018', 0.01); }
+  },
+  shelf2(ctx, f) {
+    const fc = box(ctx, 0.08, 0.15, 0, f.w - 0.16, 0.7, 52, '#E8EEF4');
+    const cols = ['#F0587A', '#FFC83D', '#3FA86A', '#2E9BD6', '#F2A93B', '#8E7CE0'];
+    for (let r = 0; r < 2; r++) for (let k = 0; k < f.w * 3; k++) rectOn(ctx, fc.j, 0.04 + k / (f.w * 3), 0.1 + r * 0.45, 0.04 + (k + 0.7) / (f.w * 3), 0.38 + r * 0.45, cols[(k + r + (f.variant || 0)) % cols.length], '#00000018', 0.01);
+    for (let k = 0; k < f.w * 2; k++) { const [x, y] = P(0.3 + k * 0.5, 0.5, 52); blob(ctx, x, y - 5, 5, cols[(k + 3) % cols.length]); }
+  },
+  till(ctx, f) {
+    const fc = box(ctx, 0.04, 0.12, 0, f.w - 0.08, 0.76, 38, '#F4F7FA');
+    box(ctx, 0.02, 0.1, 38, f.w - 0.04, 0.8, 4, '#3FA86A');
+    rectOn(ctx, fc.j, 0.05, 0.2, 0.95, 0.8, '#E3F3E6', '#00000018');
+    const [x, y] = P(0.5, 0.45, 42); ctx.fillStyle = '#26304A'; roundRect(ctx, x - 12, y - 18, 24, 16, 3); ctx.fill(); ctx.fillStyle = '#7CE07A'; ctx.fillRect(x - 9, y - 16, 18, 6);
+    if (f.books) for (let k = 0; k < 3; k++) { const [bx, by] = P(1.3, 0.45, 42 + k * 5); ctx.fillStyle = ['#F0587A', '#2E9BD6', '#FFC83D'][k]; ctx.fillRect(bx - 12, by - 4, 24, 5); }
+  },
+  arcadecab(ctx, f) {
+    const col = f.game === 'hop' ? '#3FA86A' : '#3F6FD8';
+    const side = f.side;
+    const fc = side ? box(ctx, 0.1, 0.15, 0, 0.55, 0.7, 96, col) : box(ctx, 0.15, 0.1, 0, 0.7, 0.55, 96, col);
+    const face = side ? fc.i : fc.j;
+    rectOn(ctx, face, 0.1, 0.5, 0.9, 0.85, '#1F1A3F', null);
+    rectOn(ctx, face, 0.15, 0.55, 0.85, 0.8, f.game === 'hop' ? '#9FE6A0' : '#9FD8F5', null, 0.01);
+    rectOn(ctx, face, 0.05, 0.36, 0.95, 0.44, '#26304A', null, 0.03);
+    const [jx, jy] = P(...fp(face, 0.35, 0.42, 0.05)); ctx.fillStyle = '#26304A'; ctx.fillRect(jx - 1.5, jy - 9, 3, 9); blob(ctx, jx, jy - 10, 3.5, '#F0587A');
+    for (const u of [0.6, 0.75]) { const [bx, by] = P(...fp(face, u, 0.41, 0.05)); blob(ctx, bx, by, 2.6, u < 0.7 ? '#FFC83D' : '#7CE07A'); }
+    rectOn(ctx, face, 0.05, 0.88, 0.95, 0.98, '#FFC83D', null, 0.01);
+  },
+  claw(ctx) {
+    const fc = box(ctx, 0.12, 0.12, 0, 0.76, 0.76, 40, '#F0587A');
+    box(ctx, 0.12, 0.12, 40, 0.76, 0.76, 60, '#D8F0FA', { topColor: '#F0587A' });
+    const f = faceJ(0.12, 0.12, 40, 0.76, 0.76, 60);
+    for (let k = 0; k < 6; k++) { const [x, y] = P(...fp(f, 0.15 + (k % 3) * 0.3, 0.12 + Math.floor(k / 3) * 0.12, -0.3)); blob(ctx, x, y, 6, ['#FFC83D', '#8E7CE0', '#7CE07A', '#5BC0EB', '#F7A8C4', '#E8823A'][k]); }
+    const [cx, cy] = P(0.5, 0.5, 92); ctx.strokeStyle = '#7A8798'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(cx, cy - 6); ctx.lineTo(cx, cy + 10); ctx.moveTo(cx - 6, cy + 16); ctx.lineTo(cx, cy + 10); ctx.lineTo(cx + 6, cy + 16); ctx.stroke();
+    rectOn(ctx, fc.j, 0.2, 0.3, 0.8, 0.7, '#FFE07A', null);
+  },
+  prizes(ctx, f) {
+    DRAW.till(ctx, f);
+    for (let k = 0; k < 5; k++) { const [x, y] = P(0.3 + k * 0.35, 0.5, 42); ctx.font = '13px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(['🧸', '🎈', '⭐', '🦄', '🎁'][k], x, y - 2); }
+  },
+  stool(ctx) {
+    const [x, y] = P(0.5, 0.5, 0); ctx.fillStyle = '#7A8798'; ctx.fillRect(x - 1.5, y - 26, 3, 26); ctx.beginPath(); ctx.ellipse(x, y, 8, 3, 0, 0, 7); ctx.fill();
+    const [tx, ty] = P(0.5, 0.5, 26); ctx.fillStyle = '#F0587A'; ctx.beginPath(); ctx.ellipse(tx, ty, 11, 5.5, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#C0304A'; ctx.fillRect(tx - 11, ty, 22, 3);
+  },
+  exhibit(ctx, f) {
+    box(ctx, 0.15, 0.15, 0, 0.7, 0.7, 26, '#FFFFFF');
+    const [x, y] = P(0.5, 0.5, 26);
+    if (f.variant === 'robot') { ctx.fillStyle = '#C9D3DE'; roundRect(ctx, x - 12, y - 34, 24, 26, 5); ctx.fill(); roundRect(ctx, x - 10, y - 54, 20, 18, 5); ctx.fill(); ctx.fillStyle = '#5BC0EB'; ctx.fillRect(x - 6, y - 48, 4, 4); ctx.fillRect(x + 2, y - 48, 4, 4); blob(ctx, x, y - 60, 3, '#F0587A'); }
+    else if (f.variant === 'dino') { ctx.strokeStyle = '#F2E6D6'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x - 22, y - 8); ctx.quadraticCurveTo(x - 4, y - 40, x + 10, y - 30); ctx.lineTo(x + 20, y - 46); ctx.stroke(); for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.moveTo(x - 14 + k * 7, y - 22 - k * 3); ctx.lineTo(x - 14 + k * 7, y - 6); ctx.stroke(); } }
+    else { blob(ctx, x, y - 30, 14, '#F2A93B'); ctx.strokeStyle = '#C9B5F5'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 30, 24, 6, -0.3, 0, 7); ctx.stroke(); blob(ctx, x + 20, y - 46, 5, '#5BC0EB'); }
+  },
+  screen(ctx, f) {
+    box(ctx, 0.1, 0.02, 30, f.w - 0.2, 0.1, 90, '#1A1530');
+    const fc = faceJ(0.1, 0.02, 30, f.w - 0.2, 0.1, 90); rectOn(ctx, fc, 0.03, 0.05, 0.97, 0.95, '#F4F7FA', null, 0.01);
+    box(ctx, -0.05, 0.0, 0, 0.3, 0.3, 120, '#C0304A'); box(ctx, f.w - 0.25, 0.0, 0, 0.3, 0.3, 120, '#C0304A');
+  },
+  seat(ctx) {
+    box(ctx, 0.12, 0.15, 0, 0.76, 0.6, 18, '#C0304A');
+    box(ctx, 0.12, 0.7, 0, 0.76, 0.2, 44, '#D9485F');
+    box(ctx, 0.06, 0.15, 0, 0.08, 0.75, 26, '#8C2A3A'); box(ctx, 0.86, 0.15, 0, 0.08, 0.75, 26, '#8C2A3A');
+  },
+  popcorn(ctx) {
+    box(ctx, 0.15, 0.15, 0, 0.7, 0.7, 36, '#C0304A');
+    box(ctx, 0.18, 0.18, 36, 0.64, 0.64, 40, '#FFF6D8', { topColor: '#C0304A' });
+    const f = faceJ(0.18, 0.18, 36, 0.64, 0.64, 40);
+    for (let k = 0; k < 14; k++) { const [x, y] = P(...fp(f, 0.1 + (k * 37 % 80) / 100, 0.05 + (k * 13 % 40) / 100, -0.2)); blob(ctx, x, y, 3, '#FFFDF4'); }
+  },
+  treadmill(ctx, f) {
+    box(ctx, 0.2, 0.1, 0, 0.6, f.d - 0.2, 10, '#34476B');
+    poly(ctx, [[0.25, 0.2, 10.2], [0.75, 0.2, 10.2], [0.75, f.d - 0.15, 10.2], [0.25, f.d - 0.15, 10.2]], '#26304A');
+    for (const x of [0.22, 0.73]) box(ctx, x, 0.12, 10, 0.05, 0.05, 48, '#A0AEC0');
+    box(ctx, 0.2, 0.08, 58, 0.6, 0.12, 12, '#5BC0EB');
+  },
+  weights(ctx, f) {
+    box(ctx, 0.1, 0.2, 0, f.w - 0.2, 0.5, 30, '#34476B');
+    for (let k = 0; k < 4; k++) { const [x, y] = P(0.35 + k * 0.42, 0.45, 30); ctx.fillStyle = ['#F0587A', '#2E9BD6', '#FFC83D', '#3FA86A'][k]; ctx.fillRect(x - 10, y - 6, 20, 4); blob(ctx, x - 10, y - 4, 5, '#26304A'); blob(ctx, x + 10, y - 4, 5, '#26304A'); }
+  },
+  mat(ctx, f) { poly(ctx, [[0.1, 0.1, 0.5], [f.w - 0.1, 0.1, 0.5], [f.w - 0.1, f.d - 0.1, 0.5], [0.1, f.d - 0.1, 0.5]], '#5BC0EB', '#2E9BD6', 2); poly(ctx, [[f.w / 2, 0.1, 0.6], [f.w / 2, f.d - 0.1, 0.6]], null, '#FFFFFF', 2); },
+  officedesk(ctx, f) {
+    box(ctx, 0.05, 0.15, 0, f.w - 0.1, 0.7, 32, '#F4F7FA');
+    box(ctx, 0.02, 0.12, 32, f.w - 0.04, 0.76, 4, '#C9D3DE');
+    for (const u of [0.25, f.w - 0.75]) { box(ctx, u, 0.3, 36, 0.5, 0.06, 30, '#26304A'); const sc = faceJ(u, 0.3, 36, 0.5, 0.06, 30); rectOn(ctx, sc, 0.07, 0.1, 0.93, 0.9, '#7FC3E8', null, 0.01); rectOn(ctx, sc, 0.15, 0.55, 0.6, 0.8, '#FFFFFF88', null, 0.012); }
+  },
+  labbench(ctx, f) {
+    box(ctx, 0.05, 0.15, 0, f.w - 0.1, 0.7, 32, '#F4FBFB');
+    box(ctx, 0.02, 0.12, 32, f.w - 0.04, 0.76, 4, '#2BB3A3');
+    for (let k = 0; k < 4; k++) { const [x, y] = P(0.3 + k * 0.45, 0.45, 36); ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.strokeStyle = '#A0AEC0'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x - 3, y - 18); ctx.lineTo(x - 3, y - 10); ctx.lineTo(x - 8, y); ctx.lineTo(x + 8, y); ctx.lineTo(x + 3, y - 10); ctx.lineTo(x + 3, y - 18); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = ['#7CE0C8', '#F7A8C4', '#FFE07A', '#C9B5F5'][k]; ctx.beginPath(); ctx.moveTo(x - 6, y - 3); ctx.lineTo(x + 6, y - 3); ctx.lineTo(x + 8, y); ctx.lineTo(x - 8, y); ctx.fill(); }
+  },
+  crafttable(ctx, f) {
+    DRAW.table(ctx, { w: f.w, d: 1 });
+    for (let k = 0; k < 5; k++) { const [x, y] = P(0.3 + k * 0.35, 0.45, 34); ctx.fillStyle = ['#F0587A', '#FFC83D', '#3FA86A', '#2E9BD6', '#8E7CE0'][k]; ctx.fillRect(x - 4, y - 3, 8, 3); }
+  },
   wardrobe(ctx) {
     const fc = box(ctx, 0.05, 0.1, 0, 0.45, 0.8, 104, '#E8B87A');
     box(ctx, 0.02, 0.07, 104, 0.51, 0.86, 6, WOOD_D);
@@ -196,6 +319,26 @@ function couch(ctx, w, color, part) {
 
 // Moving or glowing bits drawn each frame on top of the cached furniture.
 export function drawFurnitureLive(ctx, f, sx, sy, zoom, t, on) {
+  if (f.type === 'arcadecab') {
+    const face = f.side ? faceI(0.1, 0.15, 0, 0.55, 0.7, 96) : faceJ(0.15, 0.1, 0, 0.7, 0.55, 96);
+    const pts = [fp(face, 0.15, 0.55, 0.02), fp(face, 0.85, 0.55, 0.02), fp(face, 0.85, 0.8, 0.02), fp(face, 0.15, 0.8, 0.02)].map(p => P(...p));
+    const cx = pts.reduce((a, p) => a + p[0], 0) / 4, cy = pts.reduce((a, p) => a + p[1], 0) / 4;
+    ctx.save(); ctx.beginPath(); pts.forEach(([x, y], k) => (k ? ctx.lineTo(sx + x * zoom, sy + y * zoom) : ctx.moveTo(sx + x * zoom, sy + y * zoom))); ctx.clip();
+    ctx.fillStyle = f.game === 'hop' ? '#B6F0B0' : '#1F2A5A'; ctx.fillRect(sx + (cx - 30) * zoom, sy + (cy - 30) * zoom, 60 * zoom, 60 * zoom);
+    ctx.font = `${Math.round(10 * zoom)}px sans-serif`; ctx.textAlign = 'center';
+    if (f.game === 'hop') { const ph = (t * 1.6) % 1; ctx.fillText('🐰', sx + cx * zoom, sy + (cy + 4 - Math.sin(ph * Math.PI) * 8) * zoom); }
+    else for (let k = 0; k < 3; k++) { const ph = (t * 0.6 + k / 3) % 1; ctx.fillText('⭐', sx + (cx - 10 + k * 10) * zoom, sy + (cy - 14 + ph * 26) * zoom); }
+    ctx.restore();
+  }
+  if (f.type === 'screen') {
+    const fc = faceJ(0.1, 0.02, 30, f.w - 0.2, 0.1, 90);
+    const cols = ['#9FD8F5', '#FFE07A', '#F7A8C4', '#B6F0B0'], c = cols[Math.floor(t / 2.5) % cols.length];
+    const pts = [fp(fc, 0.05, 0.08, 0.02), fp(fc, 0.95, 0.08, 0.02), fp(fc, 0.95, 0.92, 0.02), fp(fc, 0.05, 0.92, 0.02)].map(p => P(...p));
+    ctx.save(); ctx.globalAlpha = 0.9; ctx.fillStyle = c; ctx.beginPath(); pts.forEach(([x, y], k) => (k ? ctx.lineTo(sx + x * zoom, sy + y * zoom) : ctx.moveTo(sx + x * zoom, sy + y * zoom))); ctx.fill();
+    const [mx, my] = P(...fp(fc, 0.3 + 0.4 * ((Math.sin(t * 0.7) + 1) / 2), 0.4, 0.03));
+    ctx.font = `${Math.round(30 * zoom)}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText(['🐉', '🚀', '🦄', '🐳'][Math.floor(t / 2.5) % 4], sx + mx * zoom, sy + my * zoom);
+    ctx.restore();
+  }
   if (f.type === 'tv' && on) {
     const sc = faceJ(0.25, 0.42, 22, 1.5, 0.08, 56), cols = ['#7FC3E8', '#FFC83D', '#F0587A', '#3FA86A'], c = cols[Math.floor(t * 1.5) % cols.length];
     const pts = [fp(sc, 0.04, 0.08, 0.02), fp(sc, 0.96, 0.08, 0.02), fp(sc, 0.96, 0.94, 0.02), fp(sc, 0.04, 0.94, 0.02)].map(p => P(...p));

@@ -55,7 +55,7 @@ export const RECIPES = {
       { id: 'maple-shop', name: 'Corner Shop', type: 'Shop', icon: '🛒', color: '#F2A93B', size: [2, 2], zone: 'nw', vstyle: { wall: '#FFF1D6', roof: '#F2A93B', floors: 1, roofType: 'gable', awning: ['#F2A93B', '#FFFFFF'] }, acts: 'cornershop', desc: 'Snacks, stickers and the newspaper.', activity: act('Help stack shelves', 'Stacking', 'The shopkeeper gave you a berry for your help.', 'berries', 1, 3) },
       { id: 'maple-bakery', name: 'Hearth Bakery', type: 'Bakery', icon: '🥐', color: '#C9672E', size: [3, 2], zone: 'nw', vstyle: { wall: '#FFE9D2', roof: '#C9672E', floors: 2, roofType: 'gable', awning: ['#C9672E', '#FFFFFF'] }, acts: 'cafe', desc: 'Warm bread at sunrise and cinnamon buns all day.', activity: act('Bake bread', 'Kneading', 'Your loaf rose perfectly.', 'berries', 1, 4) },
     ],
-    homes: { count: 16, kinds: ['house', 'house', 'house', 'townhouse'], rent: [10, 22] },
+    homes: { count: 20, kinds: ['house', 'bungalow', 'house', 'townhouse', 'treehouse', 'bungalow'], rent: [10, 24] },
     fillers: [],
     neighbours: [
       { name: 'Rosie', species: 'bunny', traits: ['Neat', 'Early Bird', 'Athletic'], line: 'I jog round the park before breakfast. Join me!', wants: 'flowers', jogger: true },
@@ -81,8 +81,8 @@ export const RECIPES = {
       { id: 'sky-monorail', name: 'Monorail Station', type: 'Monorail', icon: '🚝', color: '#7A8798', size: [4, 2], zone: 'sw', style: 'monorail', acts: 'monorail', desc: 'A smooth ride above the rooftops.', activity: act('Sky ride', 'Riding', 'You waved at the whole city from the monorail.', 'coins', 0, 4) },
       { id: 'sky-gym', name: 'Pulse Gym', type: 'Gym', icon: '🏋️', color: '#3FA86A', size: [3, 2], zone: 'sw', style: 'gym', acts: 'gym', desc: 'Climbing wall, trampolines and a running machine.', activity: act('Climb the wall', 'Climbing', 'You rang the bell at the top!', 'coins', 0, 5) },
     ],
-    homes: { count: 10, kinds: ['tower', 'tower', 'tower'], rent: [24, 48] },
-    fillers: [{ style: 'skyscraper', size: [2, 2], n: 7 }, { style: 'skyscraper', size: [3, 2], n: 3 }],
+    homes: { count: 14, kinds: ['tower', 'condo', 'tower'], rent: [24, 52] },
+    fillers: [{ style: 'skyscraper', size: [2, 2], n: 9 }, { style: 'skyscraper', size: [3, 3], n: 4 }],
     neighbours: [
       { name: 'Nova', species: 'cat', traits: ['Night Owl', 'Artist', 'Social Butterfly'], line: 'I design the glowing signs on Neon Mile.', wants: 'crafts', work: 'sky-arcade' },
       { name: 'Jett', species: 'fox', traits: ['Athletic', 'Early Bird', 'Playful'], line: 'Fastest route across town? Monorail, every time.', wants: 'fish', jogger: true },
@@ -106,7 +106,7 @@ export const RECIPES = {
       { id: 'lumen-greenhouse', name: 'Glass Greenhouse', type: 'Greenhouse', icon: '🌿', color: '#3FA86A', size: [3, 3], zone: 'sw', style: 'greenhouse', acts: 'greenhouse', desc: 'Giant leaves, tiny cactuses and a pond of lily pads.', activity: act('Plant a seed', 'Planting', 'Your seed sprouted already. Science!', 'flowers', 1, 4) },
       { id: 'lumen-cafe', name: 'Quark Café', type: 'Café', icon: '☕', color: '#F2A93B', size: [2, 2], zone: 'nw', vstyle: { wall: '#F4FBFF', roof: '#2BB3A3', floors: 1, roofType: 'flat', awning: ['#2BB3A3', '#FFFFFF'] }, acts: 'cafe', desc: 'Atom-shaped cookies and fizzy lemonade.', activity: act('Taste test', 'Tasting', 'You tried the new atom cookie. Delicious.', 'berries', 1, 3) },
     ],
-    homes: { count: 12, kinds: ['labhouse', 'labhouse', 'apartment'], rent: [16, 34] },
+    homes: { count: 16, kinds: ['labhouse', 'domehouse', 'apartment', 'labhouse', 'domehouse'], rent: [16, 36] },
     fillers: [{ style: 'turbine', size: [1, 1], n: 4, zone: 'outer', landmark: true }],
     neighbours: [
       { name: 'Quill', species: 'raccoon', traits: ['Bookworm', 'Night Owl', 'Shy'], line: 'I count stars at the observatory. I am up to nine thousand.', wants: 'crafts', work: 'lumen-observatory' },
@@ -131,7 +131,7 @@ export const RECIPES = {
       { id: 'lantern-market', name: 'Night Market', type: 'Market', icon: '🧧', color: '#F2A93B', size: [4, 3], zone: 'sw', style: 'nightmarket', acts: 'nightmarket', desc: 'Lantern-lit stalls of snacks, toys and paper kites.', activity: act('Kite stall', 'Trading', 'You traded a keepsake for a dragon kite.', 'crafts', 1, 6) },
       { id: 'lantern-garden', name: 'Moon Garden', type: 'Garden', icon: '🌕', color: '#8E7CE0', size: [3, 3], zone: 'se', style: 'moongarden', acts: 'garden', desc: 'A round moon gate, koi pond and quiet stone paths.', activity: act('Feed the koi', 'Feeding', 'The koi did a happy splash.', 'flowers', 1, 4) },
     ],
-    homes: { count: 12, kinds: ['shophouse', 'shophouse', 'shophouse'], rent: [14, 30] },
+    homes: { count: 16, kinds: ['shophouse', 'courtyard', 'shophouse', 'shophouse'], rent: [14, 34] },
     fillers: [{ style: 'shophouse', size: [2, 2], n: 5 }, { style: 'paifang', size: [3, 1], n: 1, zone: 'entrance', landmark: true }],
     neighbours: [
       { name: 'Mei', species: 'cat', traits: ['Neat', 'Artist', 'Early Bird'], line: 'I paint the lanterns. Each one has a tiny wish on it.', wants: 'flowers' },
@@ -156,7 +156,7 @@ export const RECIPES = {
       { id: 'sakura-dojo', name: 'Bamboo Dojo', type: 'Dojo', icon: '🥋', color: '#6B4A2E', size: [3, 3], zone: 'sw', style: 'machiya', shade: '#6B4A2E', big: true, acts: 'dojo', desc: 'Practise balance, kicks and bows on soft mats.', activity: act('Belt test', 'Practising', 'You passed your yellow belt test!', 'coins', 0, 6) },
       { id: 'sakura-koi', name: 'Koi Pond', type: 'Pond', icon: '🎏', color: '#2E9BD6', size: [3, 3], zone: 'sw', flat: 'koi', acts: 'koi', desc: 'Bright orange and white koi swimming under a little red bridge.', activity: act('Koi count', 'Counting', 'You counted eleven koi and one shy turtle.', 'fish', 1, 3) },
     ],
-    homes: { count: 12, kinds: ['machiya', 'machiya', 'machiya'], rent: [14, 32] },
+    homes: { count: 16, kinds: ['machiya', 'minka', 'machiya'], rent: [14, 34] },
     fillers: [],
     neighbours: [
       { name: 'Hana', species: 'bunny', traits: ['Artist', 'Outdoorsy', 'Early Bird'], line: 'When the petals fall, I paint each one.', wants: 'flowers' },
@@ -181,7 +181,7 @@ export const RECIPES = {
       { id: 'marigold-pavilion', name: 'Lotus Garden', type: 'Garden', icon: '🪷', color: '#E86A9A', size: [4, 3], zone: 'se', style: 'pavilion', acts: 'garden', desc: 'Domed pavilions, a lotus pond and shady arches.', activity: act('Lotus count', 'Counting', 'You counted twenty lotus flowers.', 'flowers', 1, 4) },
       { id: 'marigold-cinema', name: 'Picture Palace', type: 'Cinema', icon: '🎬', color: '#8E3FB8', size: [3, 3], zone: 'sw', style: 'cinema', palace: true, acts: 'cinema', desc: 'A grand old cinema where everyone dances in the aisles.', activity: act('Dance number', 'Dancing', 'You danced along with the whole audience!', 'coins', 0, 6) },
     ],
-    homes: { count: 12, kinds: ['haveli', 'haveli', 'haveli'], rent: [12, 30] },
+    homes: { count: 18, kinds: ['palace', 'haveli', 'hut', 'haveli', 'hut', 'haveli'], once: ['palace'], rent: [10, 32] },
     fillers: [{ style: 'rickshaw', size: [1, 1], n: 4, zone: 'road', landmark: true }],
     neighbours: [
       { name: 'Priya', species: 'deer', traits: ['Artist', 'Neat', 'Early Bird'], line: 'I draw rangoli every morning. Want to help with the colours?', wants: 'flowers' },
@@ -303,6 +303,12 @@ export function buildCity(id) {
   if (get(23, 4) === T.SAND || get(23, 4) === T.SEA) stop.j = 5;
   for (let y = stop.j; y < stop.j + 1; y++) for (let x = 23; x < 25; x++) set(x, y, R0.ground);
   footprint(stop); stop.doorTile = [22, stop.j]; stop.stand = [22.5, stop.j + 0.5]; objects.push(stop); reserve(stop);
+  // a pier and boat hire at the south end of the main avenue
+  let jS = N - 1; while (jS > 30 && !(get(22, jS) === T.PATH || get(22, jS) === T.SAND || get(22, jS) === T.GRASS)) jS--;
+  for (let j = jS + 1; j < Math.min(N, jS + 4); j++) for (const i of [21, 22]) if (get(i, j) === T.SEA) set(i, j, T.DOCK);
+  for (const i of [21, 22]) if (get(i, jS) !== T.DOCK) set(i, jS, T.PATH);
+  const pier = { kind: 'boathire', i: 23, j: jS - 1, w: 1, d: 1, name: 'Boat hire', icon: '🚣', stand: [22.5, jS + 0.5] };
+  if (!blocked[idx(23, jS - 1)]) { set(23, jS - 1, T.SAND); footprint(pier); pier.doorTile = [22, jS]; objects.push(pier); reserve(pier); }
   const cen = R0.center;
   const centre = { kind: 'landmark', lm: cen.lm, i: 21, j: 21, w: 2, d: 2, name: cen.name, acts: cen.acts, icon: cen.icon, flat: !!cen.flat };
   if (cen.flat) { centre.i = 20; centre.j = 20; centre.w = 4; centre.d = 4; centre.stand = [22, 22]; } else footprint(centre);
@@ -327,13 +333,21 @@ export function buildCity(id) {
   const H = R0.homes, kinds = H.kinds;
   const rentSpan = H.rent;
   for (let k = 0; k < H.count; k++) {
-    const style = kinds[k % kinds.length];
-    const size = style === 'tower' ? [2, 2] : style === 'townhouse' ? [3, 2] : style === 'apartment' ? [2, 2] : [2, 2];
-    const lot = findLot(size[0], size[1], k % 2 ? 'outer' : 'inner', rp) || findLot(size[0], size[1], 'any', rp);
+    let style = kinds[k % kinds.length];
+    if (H.once && H.once.includes(style) && k >= kinds.length) style = kinds[(k + 1) % kinds.length];
+    const SIZE = { palace: [4, 3], courtyard: [3, 3], minka: [3, 2], bungalow: [3, 2], townhouse: [3, 2] };
+    const size = SIZE[style] || [2, 2];
+    const lot = findLot(size[0], size[1], style === 'palace' ? 'outer' : k % 2 ? 'outer' : 'inner', rp) || findLot(size[0], size[1], 'any', rp);
     if (!lot) continue;
-    const kind = style === 'tower' || style === 'apartment' || style === 'townhouse' ? 'apartment' : 'house';
-    const rent = Math.round(rentSpan[0] + (rentSpan[1] - rentSpan[0]) * (k / Math.max(1, H.count - 1)));
-    const o = place({ kind, home: true, style: style === 'house' || style === 'apartment' ? null : style, id: `${id}-home-${k + 1}`, i: lot.i, j: lot.j, w: size[0], d: size[1], look: k % 5, rent, price: rent * 22, name: HOME_NAMES[id][k % HOME_NAMES[id].length], description: HOME_BLURB[id] });
+    const kind = style === 'palace' ? 'villa' : ['tower', 'apartment', 'townhouse', 'condo'].includes(style) ? 'apartment' : 'house';
+    let rent = Math.round(rentSpan[0] + (rentSpan[1] - rentSpan[0]) * ((k * 7) % H.count) / Math.max(1, H.count - 1));
+    if (style === 'palace') rent = rentSpan[1] * 3; else if (style === 'hut') rent = Math.max(6, Math.round(rent * 0.6)); else if (style === 'courtyard' || style === 'minka') rent = Math.round(rent * 1.4);
+    const STYLE_NAMES = { palace: 'Marigold Palace', treehouse: 'Treetop Hideout', hut: null };
+    const HUTS = ['Clay Cottage', 'Mango Grove Hut', 'Sunflower Hut', 'Painted Hut', 'Paddy Field Hut', 'Peacock Hut', 'Banyan Shade Hut'];
+    if (style === 'hut') STYLE_NAMES.hut = HUTS[k % HUTS.length];
+    const name = STYLE_NAMES[style] ? STYLE_NAMES[style] + (style === 'treehouse' && k > 6 ? ' II' : '') : HOME_NAMES[id][k % HOME_NAMES[id].length] + (k >= HOME_NAMES[id].length ? ' II' : '');
+    const blurb = { palace: 'A real palace with domes, towers and a long balcony. Fit for a royal!', hut: 'A cosy round village hut with painted walls and a thatched roof.', treehouse: 'A secret cabin up in a big maple tree, with a rope ladder.', minka: 'A big old farmhouse with a thatched roof and a wooden porch.', courtyard: 'A home built around its own little garden, behind a red gate.', bungalow: 'A wide family home with a porch and a garden.', domehouse: 'A round dome home that glows at night.', condo: 'A city apartment with a balcony on every floor.' }[style] || HOME_BLURB[id];
+    const o = place({ kind, home: true, style: style === 'house' || style === 'apartment' ? null : style, id: `${id}-home-${k + 1}`, i: lot.i, j: lot.j, w: size[0], d: size[1], look: k % 5, rent, price: rent * 22, name, description: blurb });
     homes.push(o);
   }
   for (const f of R0.fillers) for (let k = 0; k < f.n; k++) {

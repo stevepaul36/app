@@ -425,6 +425,21 @@ body.indoors .radar canvas { background: #BDE7C4; }
 body.is-admin #pause-button::after { content: ''; position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; border-radius: 50%; background: #F0587A; box-shadow: 0 0 0 2px #fff; }
 #pause-button { position: relative; }
 
+/* mini-games */
+.game-overlay { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 12px; background: rgba(20,24,52,.6); }
+.game-overlay.hidden { display: none; }
+.game-card { width: min(380px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 26px; background: #FFFFFF; box-shadow: 0 12px 0 rgba(20,24,52,.25); }
+.game-top { display: flex; align-items: center; gap: 10px; }
+.game-top b { font: 800 20px var(--display); }
+.game-top span { margin-left: auto; font-weight: 800; color: var(--ink-2); }
+.game-top .sheet-close { width: 38px; height: 38px; }
+#game-canvas { width: 100%; height: auto; max-height: calc(100vh - 150px); aspect-ratio: 360 / 520; object-fit: contain; border-radius: 18px; touch-action: none; background: #1F2A5A; }
+.game-hint { font-size: 13px; color: var(--ink-2); text-align: center; }
+/* boat */
+.ctl-boat { display: none; width: 54px; height: 54px; right: 104px; bottom: 14px; font-size: 26px; }
+body.boating .ctl-boat { display: grid; }
+body.boating .ctl-run { display: none; }
+
 /* ---------- larger screens ---------- */
 @media (min-width: 820px) {
   .hud { top: 16px; left: 16px; right: 16px; }

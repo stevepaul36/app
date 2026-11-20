@@ -30,6 +30,9 @@ export const ACHIEVEMENTS = [
   { id: 'mover', label: 'Rent a home in another town', emojis: ['🔑', '📦'], test: s => s.rentals >= 1 },
   { id: 'explorer', label: 'Visit all 7 towns', emojis: ['🧭', '🏝️'], test: s => s.cities >= 7 },
   { id: 'jogger', label: 'Go for 3 jogs', emojis: ['👟', '🥇'], test: s => s.jogs >= 3 },
+  { id: 'gamer', label: 'Play 3 arcade games', emojis: ['🎮', '👾'], test: s => s.games >= 3 },
+  { id: 'sailor', label: 'Take a boat out', emojis: ['🚣', '⚓'], test: s => s.boats >= 1 },
+  { id: 'angler', label: 'Catch 5 fish from a boat', emojis: ['🦈', '🌊'], test: s => s.fish >= 5 },
 ];
 export const ALL_EMOJIS = [...STARTER, ...ACHIEVEMENTS.flatMap(a => a.emojis), ...Object.values(CITY_PACKS).flatMap(p => p.emojis)];
 
