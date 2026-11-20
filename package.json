@@ -2,11 +2,11 @@
   "name": "willowvale-animal-town",
   "version": "0.1.0",
   "private": true,
-  "description": "Mobile-first 3D animal-town life simulation with shared online towns.",
+  "description": "Mobile-first illustrated animal-town life simulation with shared online towns.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --input-type=module --check < public/app.js && npm test",
+    "check": "node --check server.js && for f in public/app.js public/js/*.js; do node --input-type=module --check < $f || exit 1; done && npm test",
     "test": "node --test"
   },
   "engines": {
