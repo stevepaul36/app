@@ -12,3 +12,30 @@
 @media(max-width:1000px){.left-rail{width:260px;left:15px}.right-panel{right:15px;width:310px}.place-card{right:340px}.brand{min-width:185px}.district-chip{font-size:10px}}
 @media(max-width:720px){.topbar{padding:10px 12px;gap:8px}.brand{min-width:0;gap:7px}.brand-mark{height:35px;width:35px;border-radius:12px;font-size:21px}.brand strong{font-size:16px}.brand small{font-size:7px;letter-spacing:1.7px}.district-chip{display:none}.wallet{padding:8px 10px;font-size:11px}.wallet small{display:none}.avatar-button,.icon-button{width:34px;height:34px}.left-rail{left:12px;top:67px;bottom:auto;width:calc(100% - 24px);gap:8px}.rail-intro{padding:13px 15px;border-radius:16px;max-width:100%;background:#163f3be8}.rail-intro h1{font-size:24px;margin:6px 0}.rail-intro p{font-size:10px;max-width:280px}.rail-intro>.eyebrow{font-size:7px}.daily-card{display:none}.district-card{display:none}.right-panel{top:auto;bottom:76px;left:8px;right:8px;width:auto;height:min(46dvh,390px);padding:14px;border-radius:18px}.right-panel.closed{transform:translateY(calc(100% + 90px))}.panel-heading h2{font-size:22px}.panel-subtitle{margin:5px 0 10px}.property-list{display:grid;grid-template-columns:1fr 1fr;align-content:start;gap:7px}.property-card{grid-template-columns:54px minmax(0,1fr);gap:8px;padding:8px;border-radius:12px}.property-art{height:65px;font-size:28px}.property-meta h3{font-size:12px}.property-meta p{font-size:8px}.property-bottom{align-items:flex-start;flex-direction:column;gap:5px}.property-action{padding:6px 8px}.place-card{right:10px;left:10px;top:auto;bottom:84px;transform:none;width:auto;padding:13px;display:grid;grid-template-columns:65px 1fr;column-gap:12px}.place-art{grid-row:1/5;height:75px;margin:0;font-size:34px}.place-card .eyebrow{align-self:end}.place-card h2{font-size:17px;margin:4px 0}.place-card p{font-size:9px;margin:0 0 7px}.place-card .primary{padding:8px}.bottom-nav{bottom:8px;width:calc(100% - 14px);justify-content:space-around;gap:0;padding:5px;border-radius:16px}.nav-item{min-width:0;flex:1;padding:8px 5px}.nav-item span{font-size:18px}.nav-item small{font-size:8px}.online-pill{left:12px;bottom:70px;padding:6px 9px;font-size:8px}.interaction-hint{right:10px;bottom:70px;font-size:8px;max-width:57%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.movement{left:10px;bottom:75px}.movement button{width:34px;height:34px}.interact-button{right:12px;bottom:74px;padding:10px 14px}.welcome{padding:24px 21px 19px}.welcome h2{font-size:28px}.welcome p{font-size:11px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+
+/* City v2: richer editorial HUD, stronger depth, and clearer touch controls. */
+:root{--ink:#183a36;--muted:#71857d;--deep:#153f3a;--mint:#e3f1e7;--paper:#fffdf7;--gold:#e8b86a;--line:#dfe8de;--shadow:0 22px 70px #183a3425}
+.topbar{padding:16px 28px;background:linear-gradient(180deg,#fffdf7f5,#f8fbf0d9);box-shadow:0 8px 35px #163f3610}
+.brand-mark{box-shadow:0 8px 18px #214f4230}
+.district-chip,.wallet,.avatar-button,.icon-button{box-shadow:0 8px 26px #214f4210}
+.left-rail{background:linear-gradient(145deg,#fffdf7f0,#f8f8edf0);border:1px solid #ffffffd9;box-shadow:0 24px 70px #1c4a3b20;backdrop-filter:blur(20px)}
+.rail-intro h1{letter-spacing:-.055em;line-height:.99}
+.daily-card{border:1px solid #f0e5cf;box-shadow:0 12px 30px #5b4c2910}
+.district-card{border:1px solid #e7ebe0}
+.district-link{transition:transform .18s ease,background .18s ease,box-shadow .18s ease}
+.district-link:hover{transform:translateX(3px);box-shadow:0 7px 20px #173d3610}
+.right-panel,.place-card,.welcome,.settings{border:1px solid #ffffffd9;box-shadow:0 28px 90px #173d362b;backdrop-filter:blur(22px)}
+.panel-heading h2,.place-card h2,.welcome h2{letter-spacing:-.045em}
+.property-card{border:1px solid #e7e8dd;box-shadow:0 8px 24px #183a340a;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.property-card:hover{transform:translateY(-2px);border-color:#b9d8c4;box-shadow:0 14px 32px #183a3416}
+.property-art{background:linear-gradient(145deg,#e7f2e4,#d0e5d7)}
+.property-action,.primary{box-shadow:0 7px 18px #174e3a20;transition:transform .15s ease,filter .15s ease}
+.property-action:hover,.primary:hover{filter:brightness(1.04);transform:translateY(-1px)}
+.bottom-nav{background:#fffdf7f2;border:1px solid #ffffffd9;box-shadow:0 18px 60px #163c3425;backdrop-filter:blur(24px)}
+.nav-item{transition:transform .16s ease,background .16s ease}
+.nav-item.active{box-shadow:inset 0 0 0 1px #c7dfcd}
+.online-pill{background:#fffdf4ed;border:1px solid #ffffffd9;box-shadow:0 8px 24px #163c3415;backdrop-filter:blur(14px)}
+.interaction-hint{background:#173f38eF;box-shadow:0 8px 22px #153b3320}
+.movement button{box-shadow:0 8px 22px #183a3420;backdrop-filter:blur(14px)}
+@media(max-width:800px){.topbar{padding:calc(10px + env(safe-area-inset-top)) 13px 10px;gap:8px}.brand{min-width:0;gap:7px}.brand small{letter-spacing:.12em}.left-rail{top:78px;left:12px;right:12px;width:auto;max-height:31vh;overflow:auto;padding:13px;border-radius:20px}.rail-intro h1{font-size:clamp(24px,7vw,34px)}.rail-intro p{display:none}.district-card{display:none}.daily-card{margin-top:10px;padding:12px}.daily-card h2{font-size:15px;margin:6px 0}.daily-card p{font-size:12px;margin:4px 0}.right-panel{left:10px;right:10px;bottom:84px;width:auto;max-height:66vh}.property-list{max-height:42vh}.bottom-nav{left:10px;right:10px;bottom:calc(9px + env(safe-area-inset-bottom));padding:7px;gap:3px}.nav-item{min-width:0;padding:8px 4px}.nav-item small{font-size:10px}.online-pill{top:auto;bottom:calc(86px + env(safe-area-inset-bottom));left:12px}.interaction-hint{bottom:calc(139px + env(safe-area-inset-bottom));max-width:65vw;font-size:11px}.movement{left:12px;bottom:calc(88px + env(safe-area-inset-bottom));transform:scale(.88);transform-origin:bottom left}.place-card,.welcome,.settings{left:12px;right:12px;top:50%;bottom:auto;transform:translateY(-50%);width:auto;max-height:78vh;overflow:auto}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
