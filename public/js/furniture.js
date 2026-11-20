@@ -33,11 +33,19 @@ export function wallSprite(w) {
 export function furnitureSprite(f, part) {
   const t = f.type;
   if (t === 'sofa' && part) return spriteFor(f.w, f.d, 60, ctx => couch(ctx, f.w, '#F0587A', part));
-  const tall = { bed: 60, bookshelf: 110, shower: 110, fridge: 110, sink: 100, tv: 80, sofa: 50, armchair: 50, desk: 80, plant: 80, floorlamp: 110, radio: 50, nightstand: 60, mailbox: 50 }[t] || 50;
+  const tall = { wardrobe: 120, bed: 60, bookshelf: 110, shower: 110, fridge: 110, sink: 100, tv: 80, sofa: 50, armchair: 50, desk: 80, plant: 80, floorlamp: 110, radio: 50, nightstand: 60, mailbox: 50 }[t] || 50;
   return spriteFor(f.w, f.d, tall, ctx => DRAW[t] && DRAW[t](ctx, f));
 }
 
 const DRAW = {
+  wardrobe(ctx) {
+    const fc = box(ctx, 0.05, 0.1, 0, 0.45, 0.8, 104, '#E8B87A');
+    box(ctx, 0.02, 0.07, 104, 0.51, 0.86, 6, WOOD_D);
+    const f = fc.i;
+    rectOn(ctx, f, 0.06, 0.06, 0.48, 0.94, '#F2C98F', '#00000022', 0.01); rectOn(ctx, f, 0.52, 0.06, 0.94, 0.94, '#F2C98F', '#00000022', 0.01);
+    rectOn(ctx, f, 0.42, 0.45, 0.46, 0.6, '#8C5A30', null, 0.02); rectOn(ctx, f, 0.54, 0.45, 0.58, 0.6, '#8C5A30', null, 0.02);
+    rectOn(ctx, f, 0.15, 0.72, 0.38, 0.86, '#F0587A', null, 0.015); rectOn(ctx, f, 0.62, 0.72, 0.85, 0.86, '#7FC8DD', null, 0.015);
+  },
   bed(ctx, f) {
     box(ctx, 0.08, 0.05, 0, 1.84, 2.85, 14, WOOD);
     box(ctx, 0.12, 0.08, 14, 1.76, 2.75, 9, WHITE);
