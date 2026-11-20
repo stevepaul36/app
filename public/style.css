@@ -62,3 +62,56 @@
 .online-pill{background:#fffdf1ed;border-color:#ffffffed}
 .interaction-hint{background:#183f59ef}
 @media(max-width:800px){.left-rail{background:#fffdf5f2}.daily-card{background:linear-gradient(135deg,#fff5dc,#f7e8c8)}.bottom-nav{background:#fffdf5f5}}
+
+
+/* Mobile-first usability pass: safe areas, reachable controls, touch stability and landscape support. */
+html,body,#game-shell{min-height:100%;min-height:100dvh}
+body{ -webkit-text-size-adjust:100%; -webkit-tap-highlight-color:transparent; }
+#world{touch-action:pan-x pan-y; -webkit-user-select:none;user-select:none}
+button,.nav-item,.property-action{min-height:40px}
+button:focus-visible{outline:3px solid #f0c36e;outline-offset:2px}
+.mobile-layout .topbar{padding-top:calc(9px + env(safe-area-inset-top));padding-left:calc(11px + env(safe-area-inset-left));padding-right:calc(11px + env(safe-area-inset-right))}
+.mobile-layout .left-rail{top:calc(62px + env(safe-area-inset-top));left:10px;right:10px;width:auto;bottom:auto;max-height:25dvh;overflow:auto;gap:7px;padding:0;border:0;background:transparent;box-shadow:none;pointer-events:none}
+.mobile-layout .left-rail>*{pointer-events:auto}
+.mobile-layout .rail-intro{padding:10px 13px;border-radius:15px;box-shadow:0 10px 28px #173d3620}
+.mobile-layout .rail-intro h1{font-size:clamp(21px,6vw,29px);margin:4px 0}
+.mobile-layout .rail-intro p{display:none}
+.mobile-layout .rail-intro>.eyebrow{font-size:7px}
+.mobile-layout .daily-card,.mobile-layout .district-card{display:none}
+.mobile-layout .bottom-nav{bottom:calc(7px + env(safe-area-inset-bottom));left:calc(8px + env(safe-area-inset-left));right:calc(8px + env(safe-area-inset-right));width:auto;transform:none;justify-content:stretch;gap:3px;padding:5px;border-radius:17px}
+.mobile-layout .nav-item{flex:1;min-width:0;min-height:48px;padding:6px 2px;gap:3px}
+.mobile-layout .nav-item span{font-size:19px}
+.mobile-layout .nav-item small{font-size:clamp(8px,2.3vw,10px)}
+.mobile-layout .movement{left:calc(12px + env(safe-area-inset-left));bottom:calc(74px + env(safe-area-inset-bottom));gap:5px;transform:none}
+.mobile-layout .movement button{width:clamp(43px,12vw,52px);height:clamp(43px,12vw,52px);min-height:44px;border-radius:15px;font-size:17px;touch-action:none;user-select:none;-webkit-user-select:none}
+.mobile-layout .movement>div{gap:5px}
+.mobile-layout .interact-button{right:calc(12px + env(safe-area-inset-right));bottom:calc(77px + env(safe-area-inset-bottom));min-height:46px;padding:12px 17px;font-size:12px}
+.mobile-layout .online-pill{left:calc(10px + env(safe-area-inset-left));bottom:calc(132px + env(safe-area-inset-bottom));font-size:9px}
+.mobile-layout .interaction-hint{right:calc(10px + env(safe-area-inset-right));bottom:calc(132px + env(safe-area-inset-bottom));max-width:55vw;font-size:9px;padding:8px 10px}
+.mobile-layout .right-panel{left:8px;right:8px;top:auto;bottom:calc(70px + env(safe-area-inset-bottom));width:auto;height:auto;max-height:min(54dvh,480px);padding:13px;border-radius:18px}
+.mobile-layout .right-panel.closed{transform:translateY(calc(100% + 100px))}
+.mobile-layout .property-list{overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;max-height:34dvh;grid-template-columns:1fr}
+.mobile-layout .property-card{grid-template-columns:62px minmax(0,1fr);gap:9px;padding:9px}
+.mobile-layout .property-art{height:70px}
+.mobile-layout .property-bottom{align-items:center;flex-direction:row;flex-wrap:wrap}
+.mobile-layout .property-action{min-height:40px;font-size:10px}
+.mobile-layout .place-card,.mobile-layout .welcome,.mobile-layout .settings{left:10px;right:10px;top:50%;bottom:auto;transform:translateY(-50%);width:auto;max-width:none;max-height:calc(82dvh - env(safe-area-inset-top));overflow-y:auto;overscroll-behavior:contain;padding:18px}
+.mobile-layout .settings{top:calc(50% + env(safe-area-inset-top)/2)}
+@media(max-width:380px){.mobile-layout .brand small{display:none}.mobile-layout .brand strong{font-size:15px}.mobile-layout .wallet{padding:7px 8px}.mobile-layout .avatar-button,.mobile-layout .icon-button{width:36px;height:36px}.mobile-layout .interaction-hint{max-width:48vw}.mobile-layout .nav-item small{font-size:8px}}
+@media(max-height:520px) and (orientation:landscape){
+ .mobile-layout .topbar{padding-top:calc(5px + env(safe-area-inset-top));padding-bottom:5px}
+ .mobile-layout .left-rail{top:calc(52px + env(safe-area-inset-top));max-height:45dvh;max-width:220px}
+ .mobile-layout .rail-intro h1{font-size:21px}
+ .mobile-layout .bottom-nav{left:auto;right:8px;top:50%;bottom:auto;width:auto;max-width:64px;transform:translateY(-50%);flex-direction:column;padding:4px}
+ .mobile-layout .nav-item{min-height:44px;flex:none;width:52px}
+ .mobile-layout .nav-item span{font-size:17px}
+ .mobile-layout .nav-item small{font-size:8px}
+ .mobile-layout .movement{left:10px;bottom:calc(10px + env(safe-area-inset-bottom));flex-direction:row;align-items:flex-end}
+ .mobile-layout .movement button{width:43px;height:43px}
+ .mobile-layout .online-pill{left:12px;bottom:calc(60px + env(safe-area-inset-bottom))}
+ .mobile-layout .interaction-hint{right:76px;bottom:calc(12px + env(safe-area-inset-bottom));max-width:42vw}
+ .mobile-layout .interact-button{right:78px;bottom:calc(12px + env(safe-area-inset-bottom))}
+ .mobile-layout .right-panel{right:72px;left:auto;bottom:10px;max-height:calc(100dvh - 70px);width:min(360px,55vw)}
+ .mobile-layout .property-list{max-height:40dvh;grid-template-columns:1fr 1fr}
+}
+@media(prefers-reduced-motion:reduce){.right-panel,.nav-item,.property-card,button{transition:none!important}}
