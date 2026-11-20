@@ -10,7 +10,7 @@ on:
       - 'capacitor.config.json'
       - '.github/workflows/android-apk.yml'
 permissions:
-  contents: read
+  contents: write
   actions: read
 jobs:
   build-debug-apk:
@@ -45,3 +45,14 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+      - name: Publish APK to the android-latest release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk Willowvale.apk
+          gh release delete android-latest --yes --cleanup-tag || true
+          gh release create android-latest Willowvale.apk \
+            --title "Willowvale for Android (latest build)" \
+            --notes "Debug APK built automatically from main at ${GITHUB_SHA}. Install it on Android by allowing installs from your browser. It plays the same game as the web version and connects to the Render server for accounts." \
+            --target "${GITHUB_SHA}"
