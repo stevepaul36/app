@@ -30,7 +30,7 @@ jobs:
           java-version: '21'
       - name: Install dependencies
         run: npm install
-      - name: Validate JavaScript
+      - name: Validate JavaScript and backend smoke tests
         run: npm run check
       - name: Generate Android wrapper
         run: npx cap add android
