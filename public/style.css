@@ -39,3 +39,26 @@
 .movement button{box-shadow:0 8px 22px #183a3420;backdrop-filter:blur(14px)}
 @media(max-width:800px){.topbar{padding:calc(10px + env(safe-area-inset-top)) 13px 10px;gap:8px}.brand{min-width:0;gap:7px}.brand small{letter-spacing:.12em}.left-rail{top:78px;left:12px;right:12px;width:auto;max-height:31vh;overflow:auto;padding:13px;border-radius:20px}.rail-intro h1{font-size:clamp(24px,7vw,34px)}.rail-intro p{display:none}.district-card{display:none}.daily-card{margin-top:10px;padding:12px}.daily-card h2{font-size:15px;margin:6px 0}.daily-card p{font-size:12px;margin:4px 0}.right-panel{left:10px;right:10px;bottom:84px;width:auto;max-height:66vh}.property-list{max-height:42vh}.bottom-nav{left:10px;right:10px;bottom:calc(9px + env(safe-area-inset-bottom));padding:7px;gap:3px}.nav-item{min-width:0;padding:8px 4px}.nav-item small{font-size:10px}.online-pill{top:auto;bottom:calc(86px + env(safe-area-inset-bottom));left:12px}.interaction-hint{bottom:calc(139px + env(safe-area-inset-bottom));max-width:65vw;font-size:11px}.movement{left:12px;bottom:calc(88px + env(safe-area-inset-bottom));transform:scale(.88);transform-origin:bottom left}.place-card,.welcome,.settings{left:12px;right:12px;top:50%;bottom:auto;transform:translateY(-50%);width:auto;max-height:78vh;overflow:auto}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+
+/* Cinematic animal-metropolis art direction. */
+:root{--ink:#183746;--muted:#66828a;--deep:#183f59;--mint:#dff3ec;--paper:#fffaf0;--gold:#f0c36e;--line:#d9e6e5;--shadow:0 24px 70px #163c5330}
+#game-shell{background:linear-gradient(180deg,#b8d9f0 0%,#d6e8e4 46%,#8fbe79 100%)}
+.topbar{background:linear-gradient(180deg,#fffdf4f5,#f4fbf2d9);border-bottom-color:#ffffffd9}
+.brand-mark{background:linear-gradient(145deg,#1b5663,#183b56);color:#ffd78c;border-radius:14px}
+.brand strong{color:#193c4c}
+.district-chip{background:#fffdf0d9;border-color:#fff}
+.left-rail{background:linear-gradient(155deg,#fffdf5f5,#eff8f0ed);border-color:#ffffffed;box-shadow:0 26px 78px #20485824}
+.rail-intro h1{color:#1a4050}
+.rail-intro h1 em{color:#df765f}
+.eyebrow{color:#63818a}
+.daily-card{background:linear-gradient(135deg,#fff5dc,#f7e8c8);border-color:#f1dcb2}
+.daily-card .mini-icon{background:#fffdf4;color:#b66b4d}
+.district-link.active{background:#dff1e9;color:#1c675f;box-shadow:inset 0 0 0 1px #c2e1d6}
+.right-panel,.place-card,.welcome,.settings{background:#fffdf4f2;border-color:#ffffffed;box-shadow:0 28px 90px #173c5330}
+.primary,.property-action{background:linear-gradient(135deg,#205d67,#183f59)}
+.bottom-nav{background:#fffdf4f2;border-color:#ffffffed}
+.nav-item.active{background:#dff2e7;color:#17675d;box-shadow:inset 0 0 0 1px #c5e3d6}
+.online-pill{background:#fffdf1ed;border-color:#ffffffed}
+.interaction-hint{background:#183f59ef}
+@media(max-width:800px){.left-rail{background:#fffdf5f2}.daily-card{background:linear-gradient(135deg,#fff5dc,#f7e8c8)}.bottom-nav{background:#fffdf5f5}}
