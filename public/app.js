@@ -3,12 +3,12 @@ const API_BASE=location.protocol==='capacitor:'?(localStorage.getItem('willowval
 const $=id=>document.getElementById(id);
 const S={token:localStorage.getItem('willowvale_token')||'',coins:35,mode:'explore',filter:'all',sensitivity:1,reduced:false,properties:[],district:'park',activeProperty:null};
 let socket=null,selected=null,selectedVenue=null;
-const canvas=$('world'),scene=new THREE.Scene();scene.background=new THREE.Color('#b9d8bf');scene.fog=new THREE.Fog('#c6dfe2',105,285);
-const camera=new THREE.PerspectiveCamera(42,innerWidth/innerHeight,.1,500);
+const canvas=$('world'),scene=new THREE.Scene();scene.background=new THREE.Color('#b8d9f0');scene.fog=new THREE.Fog('#c5e0e8',125,330);
+const camera=new THREE.PerspectiveCamera(48,innerWidth/innerHeight,.1,600);
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.75));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.08;
-scene.add(new THREE.HemisphereLight('#eff9ff','#738c70',2.05));const sun=new THREE.DirectionalLight('#fff0cf',3.1);sun.position.set(-55,95,65);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-110;sun.shadow.camera.right=110;sun.shadow.camera.top=110;sun.shadow.camera.bottom=-110;scene.add(sun);
+scene.add(new THREE.HemisphereLight('#f4fbff','#6e8b83',2.25));const sun=new THREE.DirectionalLight('#fff0d4',3.4);sun.position.set(-55,95,65);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-110;sun.shadow.camera.right=110;sun.shadow.camera.top=110;sun.shadow.camera.bottom=-110;scene.add(sun);
 const mat=c=>new THREE.MeshStandardMaterial({color:c,roughness:.82,metalness:0});
-const M={grass:mat('#91bb83'),park:mat('#9dc98f'),road:mat('#aab8ad'),asphalt:mat('#758982'),line:mat('#e8e4ca'),sidewalk:mat('#d6d7c3'),cream:mat('#f2e8cf'),white:mat('#f8f2df'),teal:mat('#4e8f87'),deep:mat('#2e5e58'),coral:mat('#d98368'),brick:mat('#b76f5c'),ochre:mat('#d7ad67'),blue:mat('#82b5c4'),lavender:mat('#a9a5c6'),glass:mat('#a7d5d9'),roof:mat('#526b64'),dark:mat('#344c48'),wood:mat('#8a6246'),leaf:mat('#397955'),leaf2:mat('#5f9b68'),leaf3:mat('#85b66f'),water:mat('#64b9c7'),sand:mat('#e7d6ac'),flower:mat('#e6b9a0'),gold:mat('#e8bd67'),soil:mat('#7d694c')};
+const M={grass:mat('#8fbe79'),park:mat('#a4d58d'),road:mat('#bdc7c5'),asphalt:mat('#687e80'),line:mat('#f6e8b7'),sidewalk:mat('#d6d7c3'),cream:mat('#f2e8cf'),white:mat('#f8f2df'),teal:mat('#278f91'),deep:mat('#244e68'),coral:mat('#ef886d'),brick:mat('#c96c58'),ochre:mat('#edbd61'),blue:mat('#78c6df'),lavender:mat('#a99bdf'),glass:mat('#a5e4ef'),roof:mat('#526b64'),dark:mat('#344c48'),wood:mat('#8a6246'),leaf:mat('#397955'),leaf2:mat('#5f9b68'),leaf3:mat('#85b66f'),water:mat('#64b9c7'),sand:mat('#e7d6ac'),flower:mat('#e6b9a0'),gold:mat('#e8bd67'),soil:mat('#7d694c')};
 const geo={box:new THREE.BoxGeometry(1,1,1),sphere:new THREE.SphereGeometry(1,12,9),lowSphere:new THREE.SphereGeometry(1,8,6),cyl:new THREE.CylinderGeometry(1,1,1,12),cone:new THREE.ConeGeometry(1,1,1,8),torus:new THREE.TorusGeometry(1,.08,6,24)};
 const world=new THREE.Group();scene.add(world);const targets=[],venues=[],buildings=[],homes=[];
 function mesh(parent,g,material,x,y,z,sx=1,sy=1,sz=1){const o=new THREE.Mesh(g,material);o.position.set(x,y,z);o.scale.set(sx,sy,sz);o.castShadow=true;o.receiveShadow=true;parent.add(o);return o}
@@ -38,6 +38,39 @@ function createWorld(){
  for(let x=-75;x<=75;x+=30)for(let z=-75;z<=75;z+=30){if(Math.abs(x)<18&&Math.abs(z)<18)continue;const planter=groupAt(x+(x%2?2:-2),z+(z%2?2:-2));box(planter,0,.22,0,2.2,.42,1.15,M.white);box(planter,0,.45,0,1.9,.08,.9,M.soil);for(let q=-1;q<=1;q++)mesh(planter,geo.lowSphere,[M.leaf,M.leaf2,M.flower][Math.abs(q)%3],q*.55,.75,0,.32,.36,.3);if((Math.abs(x+z)%60)===0){const bench=groupAt(x+4,z+4);box(bench,0,.55,0,2.2,.18,.62,M.wood);for(const bx of [-.8,.8])box(bench,bx,.28,0,.14,.5,.14,M.dark);box(bench,0,.95,-.24,2.2,.75,.12,M.wood)}}
  // City skyline accents make the centre read as a proper mixed-use district.
  for(const b of [{x:-22,z:-22,h:15,c:M.deep},{x:22,z:-22,h:19,c:M.teal},{x:-22,z:22,h:12,c:M.lavender},{x:22,z:22,h:16,c:M.coral}]){const g=groupAt(b.x,b.z);box(g,0,b.h/2,0,5.8,b.h,5.4,b.c);box(g,0,b.h+.15,0,6,.3,5.6,M.white);for(let y=2;y<b.h;y+=2.4)for(let xx of [-1.7,0,1.7]){box(g,xx,y,2.74,1.05,.95,.08,M.dark);box(g,xx,y,2.8,.84,.72,.04,M.glass)}box(g,0,b.h+1.2,0,1.4,2.1,1.4,M.dark);box(g,0,b.h+2.3,0,1.7,.14,1.7,M.gold);buildings.push(g)}
+ // Cinematic animal metropolis skyline: original towers, bright facades and a raised city tram.
+ const skylinePalette=[M.teal,M.coral,M.ochre,M.blue,M.lavender,M.deep];
+ for(let side of [-1,1])for(let i=0;i<13;i++){
+   const z=-105+i*17+(i%2?3:-3),x=side*(101+(i%3)*3),h=11+(i%5)*4.1,w=5.8+(i%3)*1.2;
+   const g=groupAt(x,z),facade=skylinePalette[(i+(side===1?2:0)+6)%skylinePalette.length];
+   box(g,0,h/2,0,w,h,5.8,facade);box(g,0,h+.18,0,w+.35,.35,6.15,M.white);
+   for(let y=2;y<h-1;y+=2.5)for(let xx of [-w*.28,w*.28]){
+     box(g,xx,y,2.96,w*.25,1.1,.08,M.dark);box(g,xx,y,3.02,w*.2,.86,.035,M.glass)
+   }
+   box(g,0,h+1.1,0,w*.42,1.8,w*.42,M.deep);box(g,0,h+2.05,0,w*.48,.14,w*.48,M.gold);
+   if(i%3===0){box(g,0,h*.62,3.02,w*.82,.5,.1,M.white);box(g,0,h*.62,3.1,w*.7,.28,.06,M.coral)}
+ }
+ // Distinct district gateway arches act as readable landmarks when exploring.
+ for(const gate of [{x:0,z:-82,c:M.blue},{x:0,z:82,c:M.coral},{x:-82,z:0,c:M.leaf2},{x:82,z:0,c:M.ochre}]){
+   const g=groupAt(gate.x,gate.z);
+   box(g,-3.4,3.3,0,.65,6.6,.75,gate.c);box(g,3.4,3.3,0,.65,6.6,.75,gate.c);
+   box(g,0,6.35,0,7.5,.75,.9,M.white);box(g,0,6.4,.5,5.8,.2,.12,gate.c);
+   for(let j=-2;j<=2;j++)mesh(g,geo.lowSphere,[M.gold,M.coral,M.teal,M.blue,M.lavender][(j+5)%5],j*1.1,5.8,.58,.16,.16,.16);
+ }
+ // Raised tram viaducts follow main avenues and make the skyline feel connected.
+ for(const z of [-30,30]){
+   box(world,0,8.2,z,195,.42,1.7,M.deep);box(world,0,8.48,z,195,.12,1.25,M.gold);
+   for(let x=-90;x<=90;x+=18){box(world,x,4.1,z,.42,8.2,.42,M.deep);box(world,x,7.95,z,.9,.25,2.3,M.white)}
+ }
+ for(const station of [{x:-48,z:30,c:M.coral},{x:42,z:-30,c:M.blue}]){
+   const g=groupAt(station.x,station.z);box(g,0,8.9,0,12,.42,3.1,M.white);box(g,0,9.18,0,11,.12,2.4,station.c);
+   for(let xx=-4;xx<=4;xx+=2)box(g,xx,8.35,0,.12,1.1,1.9,M.glass)
+ }
+ // Canopy palms add a lush, tropical silhouette to the southern neighbourhoods.
+ for(const p of [{x:-63,z:-61},{x:-57,z:-61},{x:-63,z:-55},{x:62,z:62},{x:56,z:62},{x:62,z:56}]){
+   const g=groupAt(p.x,p.z);mesh(g,geo.cyl,M.wood,0,1.65,0,.16,3.3,.16);
+   for(let a=0;a<6;a++){const leaf=mesh(g,geo.lowSphere,[M.leaf,M.leaf2,M.leaf3][a%3],Math.cos(a*Math.PI/3)*1.1,3.05,Math.sin(a*Math.PI/3)*1.1,.65,.12,.24);leaf.rotation.y=-a*Math.PI/3}
+ }
  // Feature parks and a generous central civic plaza.
  box(world,0,.02,0,18,.12,18,M.sidewalk);mesh(world,geo.cyl,M.gold,0,.12,0,5,.18,5);mesh(world,geo.cyl,M.teal,0,.26,0,3.2,.15,3.2);mesh(world,geo.cyl,M.water,0,.36,0,2.25,.1,2.25);
  for(let i=0;i<12;i++){let a=i*Math.PI/6;tree(Math.cos(a)*8,Math.sin(a)*8,.9,i%3);streetLamp(Math.cos(a)*6.5,Math.sin(a)*6.5)}
