@@ -115,3 +115,33 @@ button:focus-visible{outline:3px solid #f0c36e;outline-offset:2px}
  .mobile-layout .property-list{max-height:40dvh;grid-template-columns:1fr 1fr}
 }
 @media(prefers-reduced-motion:reduce){.right-panel,.nav-item,.property-card,button{transition:none!important}}
+
+
+/* Playable town journal and activity feedback */
+.activity-dock{position:fixed;right:20px;top:94px;z-index:8;width:258px;padding:14px 15px;border:1px solid #ffffffd9;border-radius:18px;background:#fffdf0ed;box-shadow:0 16px 44px #173c5320;backdrop-filter:blur(18px);color:#183f49;transition:width .2s,transform .2s}
+.activity-dock-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.activity-dock-head>div{display:grid;gap:3px}
+.activity-dock-head strong{font-family:Manrope,sans-serif;font-size:16px;letter-spacing:-.03em}
+.activity-dock-head button{width:30px;height:30px;border:0;border-radius:9px;background:#e1f1e7;color:#174e52;font-size:20px}
+.journal-stats{display:flex;flex-wrap:wrap;gap:5px;margin:12px 0}
+.journal-stats span{padding:6px 8px;border-radius:9px;background:#edf4e9;font-size:10px;font-weight:700}
+.journal-task{display:grid;gap:5px;padding:10px 0;border-top:1px solid #e4e9dc}
+.journal-task b{font-size:11px}
+.journal-task span{font-size:11px;line-height:1.4;color:#627a79}
+.journal-track{height:5px;border-radius:9px;background:#e2e9dd;overflow:hidden}
+.journal-track i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,#27958a,#edbd61);transition:width .3s}
+.activity-dock.collapsed{width:200px}
+.activity-dock.collapsed #journal-content{display:none}
+#place-visit:disabled{opacity:.75;cursor:default;filter:saturate(.75)}
+@media(max-width:800px){
+ .activity-dock{top:auto;right:9px;bottom:calc(136px + env(safe-area-inset-bottom));width:min(220px,55vw);padding:10px 11px;border-radius:15px}
+ .activity-dock-head strong{font-size:13px}
+ .activity-dock .eyebrow{font-size:8px}
+ .journal-stats{gap:4px;margin:8px 0}
+ .journal-stats span{font-size:9px;padding:5px 6px}
+ .journal-task{padding:7px 0;gap:4px}
+ .journal-task b,.journal-task span{font-size:10px}
+ .activity-dock.collapsed{width:150px}
+}
+@media(max-width:380px){.activity-dock{width:48vw;right:7px;padding:8px}.activity-dock.collapsed{width:128px}.journal-stats span{font-size:8px}}
+@media(max-height:520px) and (orientation:landscape){.activity-dock{top:60px;right:74px;bottom:auto;width:200px;max-height:40vh;overflow:auto}.activity-dock.collapsed{width:150px}}
