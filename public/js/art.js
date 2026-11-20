@@ -20,25 +20,25 @@ export function lit(hex, n) {
   const f = 0.74 + 0.36 * k;
   return rgbHex(hexRgb(c).map(v => v * f));
 }
-const NI = [1, 0, 0], NJ = [0, 1, 0], NUP = [0, 0, 1];
+export const NI = [1, 0, 0], NJ = [0, 1, 0], NUP = [0, 0, 1];
 
 // ---------- low-level drawing ----------
-function poly(ctx, pts, fill, stroke = null, lw = 1.4) {
+export function poly(ctx, pts, fill, stroke = null, lw = 1.4) {
   ctx.beginPath();
   pts.forEach(([x, y, z], k) => { const [sx, sy] = P(x, y, z); k ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); });
   ctx.closePath();
   if (fill) { ctx.fillStyle = fill; ctx.fill(); }
   if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.lineJoin = 'round'; ctx.stroke(); }
 }
-const edge = c => darken(c, 0.45) + 'aa';
+export const edge = c => darken(c, 0.45) + 'aa';
 
 // A wall face: origin, horizontal span vector U (tiles) and height in px.
-function faceJ(x0, y0, z0, w, d, h) { return { o: [x0, y0 + d, z0], U: [w, 0, 0], h, n: NJ, out: [0, 1, 0] }; }
-function faceI(x0, y0, z0, w, d, h) { return { o: [x0 + w, y0 + d, z0], U: [0, -d, 0], h, n: NI, out: [1, 0, 0] }; }
-function fp(f, u, v, push = 0) {
+export function faceJ(x0, y0, z0, w, d, h) { return { o: [x0, y0 + d, z0], U: [w, 0, 0], h, n: NJ, out: [0, 1, 0] }; }
+export function faceI(x0, y0, z0, w, d, h) { return { o: [x0 + w, y0 + d, z0], U: [0, -d, 0], h, n: NI, out: [1, 0, 0] }; }
+export function fp(f, u, v, push = 0) {
   return [f.o[0] + f.U[0] * u + f.out[0] * push, f.o[1] + f.U[1] * u + f.out[1] * push, f.o[2] + f.h * v];
 }
-function rectOn(ctx, f, u0, v0, u1, v1, color, stroke, push = 0.004) {
+export function rectOn(ctx, f, u0, v0, u1, v1, color, stroke, push = 0.004) {
   poly(ctx, [fp(f, u0, v0, push), fp(f, u1, v0, push), fp(f, u1, v1, push), fp(f, u0, v1, push)], color, stroke, 1);
 }
 
@@ -93,7 +93,7 @@ function hipRoof(ctx, x0, y0, z, w, d, rh, color, o = 0.14) {
   else { poly(ctx, [dd, c, r2], lit(color, [0, 0.6, 0.8]), st); poly(ctx, [b, c, r2, r1], lit(color, [0.6, 0, 0.8]), st); }
 }
 
-function windowOn(ctx, f, u, v, ww, wh, opt = {}) {
+export function windowOn(ctx, f, u, v, ww, wh, opt = {}) {
   const fu = ww / 2, fv = wh / 2;
   rectOn(ctx, f, u - fu - 0.02, v - fv - 0.03, u + fu + 0.02, v + fv + 0.03, opt.frame || '#FFFFFF', '#00000022');
   const g0 = fp(f, u, v + fv), g1 = fp(f, u, v - fv);
@@ -407,10 +407,10 @@ function drawShop(ctx, o) {
 }
 
 export function buildingSprite(o) {
-  const tall = { apartment: 260, villa: 170, venue: 210, shop: 150, house: 140 }[o.kind] || 200;
+  const tall = { myhome: 140, apartment: 260, villa: 170, venue: 210, shop: 150, house: 140 }[o.kind] || 200;
   const [a, b, c, d] = bounds(o.w, o.d, tall);
   return new Sprite(a, b, c, d, ctx => {
-    if (o.kind === 'house') drawHouse(ctx, o);
+    if (o.kind === 'house' || o.kind === 'myhome') drawHouse(ctx, o);
     else if (o.kind === 'apartment') drawApartment(ctx, o);
     else if (o.kind === 'villa') drawVilla(ctx, o);
     else if (o.kind === 'venue') drawVenue(ctx, o);
@@ -652,7 +652,7 @@ export function smallSprite(kind, seed, face) {
 }
 
 // ---------- ground tiles ----------
-const TILE_COL = { 1: '#F3DFAE', 2: '#7CC562', 3: '#F0D9AE', 4: '#EFE6D6', 5: '#8FD06F', 7: '#C98A4B', 8: '#86C966' };
+const TILE_COL = { 1: '#F3DFAE', 2: '#7CC562', 3: '#F0D9AE', 4: '#EFE6D6', 5: '#8FD06F', 7: '#C98A4B', 8: '#86C966', 9: '#D9A066', 10: '#EEF4F2', 11: '#C9BBF0', 12: '#D3ECF6' };
 export function tileSprite(type, variant) {
   const r = rng(type * 97 + variant * 13 + 5);
   const s = new Sprite(-TW / 2 - 1, -1, TW / 2 + 1, TH + 1, ctx => {
@@ -677,6 +677,24 @@ export function tileSprite(type, variant) {
       for (let k = -4; k <= 4; k++) { ctx.beginPath(); ctx.moveTo(k * 16, 0); ctx.lineTo(k * 16 + TW / 2, TH / 2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(k * 16, 0); ctx.lineTo(k * 16 - TW / 2, TH / 2); ctx.stroke(); }
     } else if (type === 1) {
       for (let k = 0; k < 30; k++) blob(ctx, (r() - 0.5) * TW, r() * TH, 1, r() < 0.5 ? '#E3C98F' : '#FFF1CC');
+    } else if (type === 9) { // wood floor
+      ctx.strokeStyle = '#B98448'; ctx.lineWidth = 1.2;
+      for (let k = -10; k <= 10; k++) { ctx.beginPath(); ctx.moveTo(k * 10, 0); ctx.lineTo(k * 10 + TW / 2, TH / 2); ctx.stroke(); }
+      for (let k = 0; k < 10; k++) { const x = (r() - 0.5) * TW, y = r() * TH; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 6, y + 3); ctx.stroke(); }
+      ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(-TW / 2, 0, TW, TH / 2);
+    } else if (type === 10 || type === 12) { // kitchen and bathroom tiles
+      ctx.strokeStyle = type === 10 ? '#CFDAD6' : '#A9D2E4'; ctx.lineWidth = 1.4;
+      const n = type === 10 ? 2 : 4;
+      ctx.beginPath();
+      for (let k = 1; k < n; k++) {
+        const t = k / n;
+        ctx.moveTo(-TW / 2 * t, TH / 2 * t); ctx.lineTo(TW / 2 - TW / 2 * t, TH / 2 + TH / 2 * t);
+        ctx.moveTo(TW / 2 * t, TH / 2 * t); ctx.lineTo(-TW / 2 + TW / 2 * t, TH / 2 + TH / 2 * t);
+      }
+      ctx.stroke();
+      if (type === 10 && variant % 2) { ctx.fillStyle = 'rgba(63,168,106,.12)'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(TW / 4, TH / 4); ctx.lineTo(0, TH / 2); ctx.lineTo(-TW / 4, TH / 4); ctx.fill(); }
+    } else if (type === 11) { // carpet
+      for (let k = 0; k < 40; k++) blob(ctx, (r() - 0.5) * TW, r() * TH, 1.1, r() < 0.5 ? '#B7A6E6' : '#DCD1F7');
     } else if (type === 7) {
       ctx.strokeStyle = '#9B6A37'; ctx.lineWidth = 1.5;
       for (let k = -8; k <= 8; k++) { ctx.beginPath(); ctx.moveTo(k * 12, 0); ctx.lineTo(k * 12 - TW / 2, TH / 2 + k * 0); ctx.lineTo(k * 12, TH); ctx.stroke(); }
@@ -740,7 +758,10 @@ export function drawAnimal(ctx, species, outfitIndex, o = {}) {
   ctx.save();
   if (o.flip) ctx.scale(-1, 1);
   if (o.shadow !== false) { ctx.fillStyle = 'rgba(33,56,79,.22)'; ctx.beginPath(); ctx.ellipse(0, 0, 15, 5.5, 0, 0, 7); ctx.fill(); }
-  ctx.translate(0, -bob);
+  const pose = o.pose || 'stand';
+  if (pose === 'sit') ctx.translate(0, 9);
+  if (pose === 'dance') ctx.rotate(Math.sin(t * 6) * 0.12);
+  ctx.translate(0, -bob - (pose === 'dance' ? Math.abs(Math.sin(t * 6)) * 4 : 0));
   const tail = () => {
     ctx.save(); ctx.translate(back ? 0 : 10, -18); ctx.rotate((back ? 0 : 0.5) + Math.sin(t * 3 + (o.seed || 0)) * 0.15);
     if (S.tail === 'bushy') { ellipse(ctx, 0, -10, 8, 14, S.fur, ink, 1.4, 0.3); ellipse(ctx, 3, -20, 5, 5.5, '#FFFFFF', null, 1, 0.3); }
@@ -754,10 +775,15 @@ export function drawAnimal(ctx, species, outfitIndex, o = {}) {
   if (!back) tail();
   // legs
   const legY = -12;
+  if (pose === 'sit') {
+    ellipse(ctx, -5, legY + 2, 4.6, 4.2, O.pants, ink, 1.2); ellipse(ctx, 5, legY + 2, 4.6, 4.2, O.pants, ink, 1.2);
+    if (!back) { ellipse(ctx, -5, legY + 6, 4.4, 2.6, darken(S.fur, 0.25), null); ellipse(ctx, 5, legY + 6, 4.4, 2.6, darken(S.fur, 0.25), null); }
+  } else {
   ellipse(ctx, -5 + step * 1.5, legY + 6 - Math.max(0, step) * 2, 4.2, 6.5, O.pants, ink, 1.2);
   ellipse(ctx, 5 - step * 1.5, legY + 6 - Math.max(0, -step) * 2, 4.2, 6.5, O.pants, ink, 1.2);
   ellipse(ctx, -5 + step * 2.5, -1.5 - Math.max(0, step) * 2, 4.8, 2.8, darken(S.fur, 0.25), null);
   ellipse(ctx, 5 - step * 2.5, -1.5 - Math.max(0, -step) * 2, 4.8, 2.8, darken(S.fur, 0.25), null);
+  }
   // body
   ctx.fillStyle = O.shirt; ctx.strokeStyle = ink; ctx.lineWidth = 1.4;
   roundRect(ctx, -10, -34, 20, 24, 9); ctx.fill(); ctx.stroke();
@@ -765,7 +791,7 @@ export function drawAnimal(ctx, species, outfitIndex, o = {}) {
   if (O.extra === 'backpack' && back) { ctx.fillStyle = O.extraColor; roundRect(ctx, -8, -32, 16, 17, 5); ctx.fill(); ctx.stroke(); }
   if (O.extra === 'backpack' && !back) { ctx.strokeStyle = O.extraColor; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(-6, -33); ctx.lineTo(-7, -18); ctx.moveTo(6, -33); ctx.lineTo(7, -18); ctx.stroke(); }
   // arms
-  const sw = moving ? Math.sin(walk) * 0.6 : Math.sin(t * 1.6 + (o.seed || 0)) * 0.08;
+  const sw = moving ? Math.sin(walk) * 0.6 : pose === 'dance' ? Math.sin(t * 6) * 1.2 : Math.sin(t * 1.6 + (o.seed || 0)) * 0.08;
   const wave = o.wave ? Math.sin(t * 10) * 0.4 - 2.4 : null;
   for (const side of [-1, 1]) {
     ctx.save(); ctx.translate(side * 10, -31);
@@ -813,7 +839,7 @@ export function drawAnimal(ctx, species, outfitIndex, o = {}) {
     // muzzle
     if (!S.wool) ellipse(ctx, 0, 5.5, species === 'bunny' || species === 'cat' ? 7 : 8.5, 6, S.belly, null);
     // eyes
-    const blink = ((t + (o.seed || 0) * 0.37) % 4.2) < 0.13;
+    const blink = o.asleep || ((t + (o.seed || 0) * 0.37) % 4.2) < 0.13;
     for (const side of [-1, 1]) {
       if (blink) { ctx.strokeStyle = '#2B2238'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(side * 6, -1, 3, 0.2, Math.PI - 0.2); ctx.stroke(); }
       else {

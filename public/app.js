@@ -1,6 +1,9 @@
 // Willowvale: the illustrated animal city. Canvas 2D engine + phone-first UI.
-import { N, T, buildWorld, findPath, nearestWalkable, DISTRICTS, districtAt, HOMES, VENUES, NEIGHBOURS } from './js/world.js';
+import { N, T, buildWorld, findPath, nearestWalkable, stepOK, DISTRICTS, districtAt, HOMES, VENUES, NEIGHBOURS } from './js/world.js';
 import * as A from './js/art.js';
+import * as F from './js/furniture.js';
+import { buildHome, O as HOME_O } from './js/home.js';
+import { NEEDS, freshNeeds, mood, moodLabel, moodColor, needColor, SPEEDS, GAME_MIN_PER_SEC, clockText, dayOf, hourOf, skyTint, isNight, actionsFor } from './js/sim.js';
 
 const IS_NATIVE = location.protocol === 'capacitor:' || !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
 const API_BASE = IS_NATIVE ? (safeGet('willowvale_server') || 'https://willowvale-animal-town.onrender.com') : '';
@@ -37,11 +40,15 @@ const S = {
   run: false,
 };
 S.coins = S.progress.coins;
+S.progress.needs = Object.assign(freshNeeds(), S.progress.needs || {});
+if (typeof S.progress.clock !== 'number') S.progress.clock = 8 * 60;
+S.speed = 1;
 const saveProgress = () => { if (!S.token) S.progress.coins = S.coins; store.set('willowvale_progress_v2', S.progress); };
 const saveSettings = () => store.set('willowvale_settings_v2', S.settings);
 
 // ---------- world ----------
-const world = buildWorld();
+const cityWorld = buildWorld();
+let world = cityWorld;
 const canvas = $('world'), ctx = canvas.getContext('2d');
 let W = 0, H = 0, DPR = 1;
 const mobile = () => Math.min(W, H) < 620;
@@ -60,19 +67,18 @@ function smallSpr(kind, seed, face) { const k = kind + (kind === 'bench' ? face 
 const TREE_SHADOW = A.treeShadow();
 
 // Static scene objects with their art.
-const things = [];
-const flats = [];
+let things = [];
+let flats = [];
 const venuesById = {};
-for (const o of world.objects) {
+for (const o of cityWorld.objects) {
   const t = { o, box: [o.i, o.j, o.i + o.w, o.j + o.d], ax: o.i, ay: o.j, interactive: true };
-  if (['house', 'apartment', 'villa', 'venue', 'shop'].includes(o.kind)) {
+  if (['house', 'apartment', 'villa', 'venue', 'shop', 'myhome'].includes(o.kind)) {
     t.sprite = A.buildingSprite(o);
-    const h = { house: 120, apartment: 200, villa: 140, venue: 140, shop: 120 }[o.kind];
+    const h = { house: 120, myhome: 120, apartment: 200, villa: 140, venue: 140, shop: 120 }[o.kind];
     t.shadow = A.shadowSprite(o.w, o.d, h);
-    t.top = { house: 130, apartment: 230, villa: 160, venue: 165, shop: 135 }[o.kind];
+    t.top = { house: 130, myhome: 130, apartment: 230, villa: 160, venue: 165, shop: 135 }[o.kind];
     if (o.id === 'station') t.top = 90;
     if (o.kind === 'venue') venuesById[o.id] = o;
-    if (o.kind === 'shop' && o.label === 'Cottage') t.interactive = false;
   } else if (o.kind === 'fountain') { t.sprite = A.fountainSprite(); t.live = 'fountain'; }
   else if (o.kind === 'clock') { t.sprite = A.clockSprite(); t.shadow = A.shadowSprite(1, 1, 120); t.live = 'clock'; t.top = 240; }
   else if (o.kind === 'board') { t.sprite = A.boardSprite(); }
@@ -80,15 +86,40 @@ for (const o of world.objects) {
   else if (o.kind === 'windmill') { t.sprite = A.windmillBase(); t.live = 'windmill'; t.shadow = A.shadowSprite(2, 2, 90); t.top = 200; }
   things.push(t);
 }
-for (const d of world.decor) {
-  const x = d.i + 0.5 + (d.ox || 0), y = d.j + 0.5 + (d.oy || 0);
-  if (d.kind === 'flowers' || d.kind === 'bench') { flats.push({ d, x, y, sprite: smallSpr(d.kind, d.seed || 0, d.face) }); continue; }
-  const t = { o: d, box: [d.i + 0.2, d.j + 0.2, d.i + 0.8, d.j + 0.8], ax: x, ay: y, centered: true };
-  if (d.kind === 'tree') { t.sprite = treeSpr(d.tree, d.seed); t.treeShadow = true; }
-  else t.sprite = smallSpr(d.kind, d.seed || 0, d.face);
-  things.push(t);
+function addDecor(list, flatList, decor) {
+  for (const d of decor) {
+    const x = d.i + 0.5 + (d.ox || 0), y = d.j + 0.5 + (d.oy || 0);
+    if (d.kind === 'flowers' || d.kind === 'bench') { flatList.push({ d, x, y, sprite: smallSpr(d.kind, d.seed || 0, d.face) }); continue; }
+    const t = { o: d, box: [d.i + 0.2, d.j + 0.2, d.i + 0.8, d.j + 0.8], ax: x, ay: y, centered: true };
+    if (d.kind === 'tree') { t.sprite = treeSpr(d.tree, d.seed); t.treeShadow = true; }
+    else t.sprite = smallSpr(d.kind, d.seed || 0, d.face);
+    list.push(t);
+  }
 }
-for (const b of world.boats) things.push({ o: b, box: [b.x - 0.4, b.y - 0.4, b.x + 0.4, b.y + 0.4], ax: b.x, ay: b.y, centered: true, live: 'boat' });
+addDecor(things, flats, cityWorld.decor);
+for (const b of cityWorld.boats) things.push({ o: b, box: [b.x - 0.4, b.y - 0.4, b.x + 0.4, b.y + 0.4], ax: b.x, ay: b.y, centered: true, live: 'boat' });
+const cityThings = things, cityFlats = flats;
+
+// Inside your cottage: walls on tile edges, furniture, and a little garden.
+const homeWorld = buildHome();
+const homeThings = [], homeFlats = [];
+for (const w of homeWorld.walls) {
+  const sprite = F.wallSprite(w);
+  const ax = w.axis === 'i' ? HOME_O[0] + w.k : HOME_O[0] + w.at, ay = w.axis === 'i' ? HOME_O[1] + w.at : HOME_O[1] + w.k;
+  homeThings.push({ o: { kind: 'wall' }, wall: w, sprite, ax, ay, box: w.axis === 'i' ? [ax, ay - 0.06, ax + 1, ay + 0.06] : [ax - 0.06, ay, ax + 0.06, ay + 1] });
+}
+for (const f of homeWorld.objects) {
+  if (f.type === 'sofa') {
+    homeThings.push({ o: f, furn: true, sprite: F.furnitureSprite(f, 'seat'), ax: f.i, ay: f.j, box: [f.i, f.j, f.i + f.w, f.j + 0.7], interactive: true });
+    homeThings.push({ o: f, furn: true, sprite: F.furnitureSprite(f, 'back'), ax: f.i, ay: f.j, box: [f.i, f.j + 0.72, f.i + f.w, f.j + f.d], interactive: true });
+    continue;
+  }
+  const t = { o: f, furn: true, sprite: F.furnitureSprite(f), ax: f.i, ay: f.j, box: [f.i, f.j, f.i + f.w, f.j + f.d], interactive: !f.decor && !f.flat };
+  if (f.flat) homeFlats.push({ d: f, x: f.i, y: f.j, sprite: t.sprite, furn: f }); else homeThings.push(t);
+}
+addDecor(homeThings, homeFlats, homeWorld.decor);
+const homeDoor = homeWorld.objects.find(f => f.door);
+const myHome = cityWorld.objects.find(o => o.kind === 'myhome');
 
 // ---------- characters ----------
 class Walker {
@@ -117,12 +148,34 @@ class Walker {
 const playerStart = [23.5, 23.5];
 const BASE_SPEED = 4.2;
 const player = new Walker(...playerStart, S.profile?.species || 'fox', S.profile?.outfit ?? 0, { speed: BASE_SPEED, seed: 3 });
-const npcs = NEIGHBOURS.map((n, k) => {
-  const spot = nearestWalkable(world, n.home[0], n.home[1]) || [22, 22];
+let npcs = NEIGHBOURS.map((n, k) => {
+  const spot = nearestWalkable(cityWorld, n.home[0], n.home[1]) || [22, 22];
   const w = new Walker(spot[0] + 0.5, spot[1] + 0.5, n.species, n.outfit, { speed: 1.5 + (k % 3) * 0.2, seed: k * 3 + 1, name: n.name });
   w.data = n; w.home = spot; w.busy = 0;
   return w;
 });
+const cityNpcs = npcs;
+let sceneName = 'city';
+function setScene(name, x, y) {
+  sceneName = name;
+  if (name === 'home') { world = homeWorld; things = homeThings; flats = homeFlats; npcs = []; }
+  else { world = cityWorld; things = cityThings; flats = cityFlats; npcs = cityNpcs; }
+  player.x = x; player.y = y; player.path = []; player.onArrive = null; player.using = null; player.pose = null;
+  marker = null; cam.free = false; cam.tz = 0;
+  if (name === 'home') { cam.zoom = mobile() ? 0.4 : 0.62; const p = A.P(HOME_O[0] + 6.5, HOME_O[1] + 6, 30); cam.x = p[0]; cam.y = p[1]; }
+  else { cam.zoom = mobile() ? 0.56 : 0.72; const p = A.P(player.x, player.y, 34); cam.x = p[0]; cam.y = p[1]; }
+  radarMap = buildRadarMap(); update.lastDistrict = null; lastNear = '';
+  document.body.classList.toggle('indoors', name === 'home');
+}
+function fadeTo(fn) {
+  const f = $('fade'); f.classList.add('on');
+  setTimeout(() => { fn(); f.classList.remove('on'); }, S.settings.reduced ? 40 : 380);
+}
+function enterHome() { cancelActions(); closePie(); fadeTo(() => { setScene('home', ...homeWorld.insideDoor); player.face(player.x - 1, player.y - 1); toast('Home sweet home'); }); }
+function leaveHome() {
+  cancelActions(); closePie();
+  fadeTo(() => { setScene('city', myHome.doorTile[0] + 0.5, myHome.doorTile[1] + 0.5); player.face(player.x + 1, player.y + 1); });
+}
 function npcThink(n, dt) {
   if (n.busy > 0) { n.busy -= dt; n.face(player.x, player.y); return; }
   if (n.path.length) return;
@@ -207,10 +260,15 @@ function gradients() {
   sea.addColorStop(0, '#6FCDEB'); sea.addColorStop(1, '#3FAAD8');
   const sun = ctx.createRadialGradient(W * 0.15, -H * 0.1, 0, W * 0.15, -H * 0.1, Math.max(W, H) * 1.1);
   sun.addColorStop(0, 'rgba(255,236,190,.28)'); sun.addColorStop(0.5, 'rgba(255,236,190,.06)'); sun.addColorStop(1, 'rgba(40,70,110,.10)');
-  grads = { w: W, h: H, sea, sun };
+  const garden = ctx.createLinearGradient(0, 0, 0, H);
+  garden.addColorStop(0, '#BDE7C4'); garden.addColorStop(1, '#8FCB78');
+  grads = { w: W, h: H, sea, sun, garden };
   return grads;
 }
-function drawSea() { ctx.fillStyle = gradients().sea; ctx.fillRect(0, 0, W, H); }
+function drawSea() {
+  if (world.interior) { ctx.fillStyle = gradients().garden; ctx.fillRect(0, 0, W, H); return; }
+  ctx.fillStyle = gradients().sea; ctx.fillRect(0, 0, W, H);
+}
 
 function frame(now) {
   const dt = S.sheet === 'pause' ? 0 : Math.min(0.05, (now - t0) / 1000); t0 = now; time += S.settings.reduced ? dt * 0.4 : dt;
@@ -223,7 +281,9 @@ function frame(now) {
   const i0 = Math.max(0, Math.floor(Math.min(...corners.map(c => c[0]))) - 2), i1 = Math.min(N - 1, Math.ceil(Math.max(...corners.map(c => c[0]))) + 2);
   const j0 = Math.max(0, Math.floor(Math.min(...corners.map(c => c[1]))) - 2), j1 = Math.min(N - 1, Math.ceil(Math.max(...corners.map(c => c[1]))) + 4);
 
+  const indoor = !!world.interior;
   // sea sparkle
+  if (!indoor) {
   ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 2 * z; ctx.lineCap = 'round';
   ctx.beginPath();
   for (let j = j0 - 6; j <= j1 + 6; j += 2) for (let i = i0 - 6; i <= i1 + 6; i += 2) {
@@ -235,9 +295,10 @@ function frame(now) {
     ctx.moveTo(sx - w, sy); ctx.quadraticCurveTo(sx, sy - 4 * z, sx + w, sy);
   }
   ctx.stroke();
+  }
 
   // ground tiles, cliffs and foam
-  const sea = (i, j) => world.get(i, j) === T.SEA;
+  const sea = (i, j) => !indoor && world.get(i, j) === T.SEA;
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const t = world.get(i, j);
     if (t === T.SEA) continue;
@@ -258,12 +319,14 @@ function frame(now) {
   ctx.beginPath();
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const t = world.get(i, j); if (t === T.PATH || t === T.PLAZA) edgeLines(i, j, roadEdge); }
   ctx.strokeStyle = 'rgba(170,128,70,.42)'; ctx.lineWidth = 2.2 * z; ctx.stroke();
+  if (!indoor) {
   ctx.beginPath();
   const foam = 22 * z + Math.sin(time * 1.6) * 3 * z;
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const t = world.get(i, j); if (t !== T.SEA) edgeLines(i, j, sea, foam); }
   ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = (3.2 + Math.sin(time * 2) * 0.8) * z; ctx.stroke();
+  }
   // cloud shadows drift across the island
-  if (!S.settings.reduced) {
+  if (!S.settings.reduced && !indoor) {
     ctx.fillStyle = 'rgba(30,60,90,.07)';
     for (const c of clouds) {
       const x = ((c.x + time * 0.35) % 60) - 8, y = c.y;
@@ -300,14 +363,18 @@ function frame(now) {
     if (!onScreen(sx, sy, 330 * z)) continue;
     list.push(t);
   }
-  const chars = [player, ...npcs].map(c => ({ char: c, box: [c.x - 0.25, c.y - 0.25, c.x + 0.25, c.y + 0.25] }));
+  const chars = [player, ...npcs].map(c => {
+    if (c.using && c.using.type === 'sofa') return { char: c, box: [c.x - 0.2, c.y - 0.25, c.x + 0.2, c.y + 0.25] };
+    if (c.using) { const u = c.using; return { char: c, box: [u.i + 0.02, u.j + 0.02, u.i + u.w + 0.02, u.j + u.d + 0.02] }; }
+    return { char: c, box: [c.x - 0.25, c.y - 0.25, c.x + 0.25, c.y + 0.25] };
+  });
   for (const c of chars) { const [sx, sy] = toScreen(c.char.x, c.char.y); if (onScreen(sx, sy, 100)) list.push(c); }
   drawn = sortScene(list);
   for (const t of drawn) drawThing(t, z);
   drawPlayerIfHidden(z);
 
   // overlays
-  for (const b of butterflies) {
+  if (!indoor) for (const b of butterflies) {
     const x = b.cx + Math.sin(time * 0.6 + b.seed) * 1.6, y = b.cy + Math.cos(time * 0.45 + b.seed * 2) * 1.6;
     const [sx, sy] = toScreen(x, y, 30 + Math.sin(time * 3 + b.seed) * 8);
     if (!onScreen(sx, sy, 20)) continue;
@@ -320,7 +387,7 @@ function frame(now) {
     A.drawEmote(ctx, sx, sy - 74 * z, Math.max(0.7, z), c.emote, c.emoteLife);
   }
   drawLabels(z);
-  drawBirds(dt);
+  if (!indoor) drawBirds(dt);
   for (let k = pops.length - 1; k >= 0; k--) {
     const p = pops[k]; p.life -= dt;
     if (p.life <= 0) { pops.splice(k, 1); continue; }
@@ -331,9 +398,30 @@ function frame(now) {
     ctx.lineWidth = 4; ctx.strokeStyle = '#FFFFFF'; ctx.strokeText(p.text, sx, sy - 90 * z - rise); ctx.fillStyle = p.color || '#C98A1E'; ctx.fillText(p.text, sx, sy - 90 * z - rise);
     ctx.restore();
   }
-  // warm sunlight wash
-  ctx.fillStyle = gradients().sun; ctx.fillRect(0, 0, W, H);
+  drawDaylight(z);
   requestAnimationFrame(frame);
+}
+
+// Sun by day, warm evening light, then night with lamps glowing.
+function drawDaylight(z) {
+  const hr = hourOf(S.progress.clock), [r, g, b, a] = skyTint(hr);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 1 - a * 2.2); ctx.fillStyle = gradients().sun; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+  if (a > 0.005) { ctx.fillStyle = `rgba(${r | 0},${g | 0},${b | 0},${a})`; ctx.fillRect(0, 0, W, H); }
+  if (a > 0.15) {
+    ctx.globalCompositeOperation = 'lighter';
+    const k = Math.min(1, (a - 0.15) / 0.25);
+    for (const t of things) {
+      const lamp = t.o && (t.o.kind === 'lamp' || t.o.lamp);
+      if (!lamp) continue;
+      const [sx, sy] = t.o.lamp ? toScreen(t.ax + 0.5, t.ay + 0.5, 70) : toScreen(t.ax, t.ay, 78);
+      if (sx < -200 || sx > W + 200 || sy < -200 || sy > H + 200) continue;
+      F.lampGlow(ctx, sx, sy, 150 * z, 0.32 * k);
+    }
+    if (world.interior) for (const w of homeWorld.walls) if (w.win) { const [sx, sy] = w.axis === 'i' ? toScreen(HOME_O[0] + w.k + 0.5, HOME_O[1] + w.at, 70) : toScreen(HOME_O[0] + w.at, HOME_O[1] + w.k + 0.5, 70); F.lampGlow(ctx, sx, sy, 90 * z, 0.12 * k); }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  ctx.restore();
 }
 
 function edgeLines(i, j, test, drop = 0) {
@@ -358,9 +446,12 @@ function drawPond(i, j, sx, sy, z) {
 
 function drawThing(t, z) {
   if (t.char) {
-    const c = t.char, [sx, sy] = toScreen(c.x, c.y);
+    const c = t.char;
+    if (c.pose === 'inside') return;
+    const [sx, sy] = toScreen(c.x, c.y);
     ctx.save(); ctx.translate(sx, sy); ctx.scale(z * 1.15, z * 1.15);
-    A.drawAnimal(ctx, c.species, c.outfit, { t: time, walk: c.walk, moving: c.moving, dir: c.dir, flip: c.flip, seed: c.seed, wave: c.wave > 0, happy: c.wave > 0 || !!c.emote });
+    if (c.pose === 'sleep') { ctx.translate(0, -24); ctx.rotate(c.flip ? 1.25 : -1.25); ctx.translate(0, 26); }
+    A.drawAnimal(ctx, c.species, c.outfit, { t: time, walk: c.walk, moving: c.moving, dir: c.pose === 'sleep' ? 'front' : c.dir, flip: c.flip, seed: c.seed, wave: c.wave > 0, happy: c.wave > 0 || !!c.emote, pose: c.pose === 'sleep' ? 'stand' : c.pose, asleep: c.pose === 'sleep', shadow: c.pose !== 'sleep' });
     ctx.restore();
     return;
   }
@@ -375,6 +466,7 @@ function drawThing(t, z) {
   else if (t.live === 'clock') A.drawClockHands(ctx, sx, sy, z, new Date());
   else if (t.live === 'sunwheel') A.drawSunwheel(ctx, sx, sy, z, time);
   else if (t.live === 'windmill') A.drawWindmillBlades(ctx, sx, sy, z, time);
+  if (t.furn) F.drawFurnitureLive(ctx, t.o, sx, sy, z, time, activeObject() === t.o || (t.o.type === 'tv' && act && act.phase === 'do' && act.step.tv) || (t.o.type === 'stove' && act && act.phase === 'do' && act.step.objType === 'stove'));
   t.sx = sx; t.sy = sy;
 }
 
@@ -403,6 +495,7 @@ function drawLabels(z) {
     if (o.kind === 'venue') { text = o.name.replace(/^The /, ''); icon = o.icon; col = o.color; }
     else if (o.home && S.sheet === 'homes') { const p = propFor(o.id); text = p && p.status !== 'available' ? (p.status === 'owned' ? 'Owned' : 'Rented') : `✦ ${o.rent}/day`; icon = '🏠'; col = '#3FA86A'; }
     else if (o.kind === 'sunwheel') { text = 'Sunwheel'; icon = '🎡'; col = '#F0587A'; }
+    else if (o.kind === 'myhome') { text = 'Your home'; icon = '🏡'; col = '#F2A93B'; }
     if (!text) continue;
     const [x, y] = toScreen(o.i + o.w / 2, o.j + o.d / 2, t.top + 18);
     if (x < -100 || x > W + 100 || y < -40 || y > H + 40) continue;
@@ -429,9 +522,17 @@ function drawBirds(dt) {
 // ---------- simulation ----------
 const keys = new Set();
 function update(dt) {
+  const onboardingOpen = !$('onboarding').classList.contains('hidden');
+  // game time: speed setting, faster while asleep at work or at a long show
+  const curDef = act && act.phase === 'do' ? act.step : null;
+  const fast = curDef && curDef.fast ? curDef.fast : 1;
+  const gm = onboardingOpen ? 0 : dt * GAME_MIN_PER_SEC * S.speed * fast;
+  const simDt = dt * Math.min(S.speed, 3);
+  if (gm) { tickClock(gm); tickNeeds(gm, curDef); tickAction(gm, dt); }
   // direct walking from the stick or keyboard (screen directions turned into grid directions)
   const running = S.run || keys.has('run');
-  player.speed = BASE_SPEED * (running ? 1.7 : 1);
+  const tired = S.progress.needs.energy < 10 ? 0.7 : 1;
+  player.speed = BASE_SPEED * (running ? 1.7 : 1) * tired;
   let sx = 0, sy = 0, mag = 0;
   if (keys.has('up')) sy -= 1; if (keys.has('down')) sy += 1; if (keys.has('left')) sx -= 1; if (keys.has('right')) sx += 1;
   if (sx || sy) { const m = Math.hypot(sx, sy); sx /= m; sy /= m; mag = 1; }
@@ -439,20 +540,24 @@ function update(dt) {
   let kx = 0, ky = 0;
   if (mag) { kx = sx / 64 + sy / 32; ky = sy / 32 - sx / 64; const m = Math.hypot(kx, ky); kx /= m; ky /= m; }
   if (mag) {
+    if (act || queue.length) cancelActions();
     player.path = []; player.onArrive = null; marker = null; cam.free = false;
-    const sp = player.speed * dt * (0.35 + 0.65 * mag), nx = player.x + kx * sp, ny = player.y + ky * sp;
-    if (world.walkable(Math.floor(nx), Math.floor(ny))) { player.x = nx; player.y = ny; }
-    else if (world.walkable(Math.floor(nx), Math.floor(player.y))) player.x = nx;
-    else if (world.walkable(Math.floor(player.x), Math.floor(ny))) player.y = ny;
+    const sp = player.speed * simDt * (0.35 + 0.65 * mag), nx = player.x + kx * sp, ny = player.y + ky * sp;
+    const ok = (x, y) => { const ci = Math.floor(player.x), cj = Math.floor(player.y), ti = Math.floor(x), tj = Math.floor(y); return world.walkable(ti, tj) && stepOK(world, ci, cj, ti, tj); };
+    if (ok(nx, ny)) { player.x = nx; player.y = ny; }
+    else if (ok(nx, player.y)) player.x = nx;
+    else if (ok(player.x, ny)) player.y = ny;
     player.face(player.x + kx, player.y + ky); player.moving = true; player.walk += sp * 5.2;
     hideHint();
-  } else player.update(dt);
+  } else player.update(simDt);
   updateNearby();
-  for (const n of npcs) { npcThink(n, dt); n.update(dt); }
+  for (const n of npcs) { npcThink(n, simDt); n.update(simDt); }
+  updateHudClock();
   // camera
   const onboarding = !$('onboarding').classList.contains('hidden');
   let target;
   if (onboarding) { onboardT += dt; target = A.P(22 + Math.cos(onboardT * 0.08) * 7, 22 + Math.sin(onboardT * 0.08) * 7, 30); }
+  else if (world.interior) { const c = A.P(HOME_O[0] + 6.5, HOME_O[1] + 6, 30), p = A.P(player.x, player.y, 30); target = [c[0] * 0.6 + p[0] * 0.4, c[1] * 0.6 + p[1] * 0.4]; }
   else target = A.P(player.x, player.y, 34);
   if (cam.tz) {
     const nz = cam.zoom + (cam.tz - cam.zoom) * (S.settings.reduced ? 1 : 1 - Math.exp(-dt * 8));
@@ -466,11 +571,11 @@ function update(dt) {
   }
   // district chip
   const square = player.x >= 19 && player.x < 25 && player.y >= 19 && player.y < 25;
-  const d = square ? 'square' : districtAt(player.x, player.y);
+  const d = world.interior ? 'home' : square ? 'square' : districtAt(player.x, player.y);
   if (d !== update.lastDistrict) {
     update.lastDistrict = d;
-    $('district-name').textContent = square ? 'Town Square' : DISTRICTS[d].name;
-    $('district-name').style.background = square ? '#C98A1E' : A.darken(DISTRICTS[d].color, 0.15);
+    $('district-name').textContent = d === 'home' ? 'Your cottage' : square ? 'Town Square' : DISTRICTS[d].name;
+    $('district-name').style.background = d === 'home' ? '#C98A1E' : square ? '#C98A1E' : A.darken(DISTRICTS[d].color, 0.15);
   }
   drawRadar();
 }
@@ -544,13 +649,19 @@ function tap(sx, sy) {
   if (!$('onboarding').classList.contains('hidden')) return;
   hideHint();
   const hit = hitThing(sx, sy);
-  if (hit && hit.char) { goMeet(hit.char); return; }
-  if (hit) { visitThing(hit.o); return; }
-  const [x, y] = toWorld(sx, sy);
+  if (hit && hit.char) { showPie({ npc: hit.char }, sx, sy); return; }
+  if (hit) { showPie({ o: hit.o }, sx, sy); return; }
+  const [x, y] = toWorld(sx, sy), ti = Math.floor(x), tj = Math.floor(y);
+  // flat things you can still use: the front door mat and benches
+  if (world.interior && homeDoor && ti === homeDoor.i && tj === homeDoor.j) { showPie({ o: homeDoor }, sx, sy); return; }
+  const bench = !world.interior && flats.find(f => f.d.kind === 'bench' && f.d.i === ti && f.d.j === tj);
+  if (bench) { showPie({ o: bench.d }, sx, sy); return; }
+  cancelActions();
   walkTo(x, y);
 }
 function walkTo(x, y, onArrive) {
   cam.free = false; $('cam-button').classList.remove('free');
+  if (player.using) standUp();
   const p = findPath(world, player.x, player.y, x, y);
   if (!p) { toast('You can’t walk there.'); return false; }
   const end = p[p.length - 1];
@@ -560,61 +671,308 @@ function walkTo(x, y, onArrive) {
 }
 function near(x, y, r = 1.6) { return Math.hypot(player.x - x, player.y - y) <= r; }
 
-function visitThing(o) {
-  const dest = o.doorTile ? [o.doorTile[0] + 0.5, o.doorTile[1] + 0.5] : (() => { const s = nearestWalkable(world, o.i + o.w, o.j + o.d); return s ? [s[0] + 0.5, s[1] + 0.5] : [player.x, player.y]; })();
-  const open = () => { player.face(o.i + o.w / 2, o.j + o.d / 2); openThing(o); };
-  if (near(...dest, 1.2)) open(); else if (walkTo(...dest, open)) toastQuiet(`Walking to ${o.name || o.label || 'there'}…`);
+// Where you stand to use something.
+function approachOf(o) {
+  if (o.stand) return o.stand;
+  if (o.doorTile) return [o.doorTile[0] + 0.5, o.doorTile[1] + 0.5];
+  if (o.kind === 'bench') return [o.i + 0.5, o.j + 0.5];
+  const s = nearestWalkable(world, o.i + (o.w || 1), o.j + (o.d || 1));
+  return s ? [s[0] + 0.5, s[1] + 0.5] : [player.x, player.y];
 }
-function openThing(o) {
-  if (o.kind === 'venue') showVenue(o);
-  else if (o.home) showHome(o);
-  else if (o.kind === 'board') showHomes();
-  else if (o.kind === 'clock') showInfo('🕰️', 'Town Clock', `It's ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} in Willowvale. Everyone meets under the clock.`);
-  else if (o.kind === 'sunwheel') showVenue({ id: 'sunwheel', name: 'The Sunwheel', type: 'Ride', icon: '🎡', color: '#F0587A', desc: 'The tallest thing on the island. On a clear day you can see all four districts.', activity: { title: 'Ride the Sunwheel', verb: 'Riding', story: 'From the top you spotted the windmill, the theatre and three boats.', reward: 'coins', amount: 0, coins: 3 }, i: o.i, j: o.j, w: o.w, d: o.d, landmark: true });
-  else if (o.kind === 'windmill') showInfo('🌾', 'Fernhill Windmill', 'The oldest building on the island. Clover says it squeaks before it rains.');
-  else if (o.kind === 'shop') showInfo(o.icon || '🏡', o.label, { Bakery: 'Honey buns, fresh every morning. Marlow does the baking.', Florist: 'Bunches from the Fernhill meadows.', Books: 'A tiny bookshop with a very sleepy cat.' }[o.label] || 'A little shop in Old Town.');
+function kindKey(o) {
+  if (o.kind === 'furn') return o.door ? 'door' : o.type;
+  if (o.kind === 'venue') return o.id;
+  if (o.kind === 'shop') return o.label === 'Bakery' ? 'cafe' : null;
+  return o.kind;
+}
+function displayName(o) { return o.name || o.label || ({ fountain: 'Fountain', bench: 'Bench', board: 'Property board', clock: 'Town Clock' }[o.kind]) || 'Here'; }
+
+// Lists and other screens use this to send you somewhere and pop the menu on arrival.
+function visitThing(o) {
+  const go = () => { const dest = approachOf(o); const open = () => { player.face(o.i + (o.w || 1) / 2, o.j + (o.d || 1) / 2); const [sx, sy] = toScreen(o.i + (o.w || 1) / 2, o.j + (o.d || 1) / 2, 40); showPie({ o }, sx, sy); }; if (near(...dest, 1.2)) open(); else if (walkTo(...dest, open)) toastQuiet(`Walking to ${displayName(o)}…`); };
+  if (world.interior) { leaveHome(); setTimeout(go, 600); } else go();
 }
 function goMeet(n) {
-  n.busy = 6; n.path = [];
-  const ni = Math.floor(n.x), nj = Math.floor(n.y);
-  const side = [[ni + 1, nj - 1], [ni - 1, nj + 1], [ni + 1, nj], [ni, nj + 1], [ni - 1, nj], [ni, nj - 1]].find(([a, b]) => world.walkable(a, b));
-  const tgt = side || nearestWalkable(world, ni, nj) || [ni, nj];
-  const meet = () => { n.busy = 4; n.face(player.x, player.y); player.face(n.x, n.y); n.wave = 1.4; n.say('👋'); showNeighbour(n); };
-  if (near(n.x, n.y, 2.2)) meet(); else walkTo(tgt[0] + 0.5, tgt[1] + 0.5, meet);
+  if (world.interior) { leaveHome(); setTimeout(() => goMeet(n), 600); return; }
+  const def = actionsFor('neighbour')[0];
+  queueAction(def, { npc: n });
 }
 function findNearby() {
-  let best = null, bd = 2.4;
+  let best = null, bd = 2.2;
   for (const n of npcs) { const d = Math.hypot(n.x - player.x, n.y - player.y); if (d < bd) { bd = d; best = { n }; } }
-  for (const o of world.objects) {
-    if (!o.doorTile || (o.kind === 'shop' && o.label === 'Cottage')) continue;
-    const d = Math.hypot(o.doorTile[0] + 0.5 - player.x, o.doorTile[1] + 0.5 - player.y);
+  for (const t of things) {
+    const o = t.o; if (!t.interactive || !o) continue;
+    if (!o.doorTile && !o.stand) continue;
+    const [ax, ay] = approachOf(o), d = Math.hypot(ax - player.x, ay - player.y);
     if (d < bd) { bd = d; best = { o }; }
   }
+  if (world.interior && homeDoor) { const d = Math.hypot(homeDoor.stand[0] - player.x, homeDoor.stand[1] - player.y); if (d < bd) best = { o: homeDoor }; }
   return best;
 }
 function interactNearby() {
   const best = findNearby();
-  if (!best) { toast('Nothing close by. Walk up to a door or a neighbour.'); return; }
-  if (best.n) goMeet(best.n); else openThing(best.o);
+  if (!best) { toast('Nothing close by. Walk up to something or someone.'); return; }
+  const tx = best.n ? best.n.x : best.o.i + (best.o.w || 1) / 2, ty = best.n ? best.n.y : best.o.j + (best.o.d || 1) / 2;
+  const [sx, sy] = toScreen(tx, ty, 40);
+  showPie(best.n ? { npc: best.n } : { o: best.o }, sx, sy);
 }
-// The big action button shows what is in reach: a neighbour to talk to or a door to open.
+// The big action button shows what is in reach.
 const TALK_ICON = '<svg viewBox="0 0 24 24"><path d="M4 6.5A2.5 2.5 0 016.5 4h11A2.5 2.5 0 0120 6.5v7a2.5 2.5 0 01-2.5 2.5H11l-4.5 4v-4h0A2.5 2.5 0 014 13.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8.5" cy="10" r="1.2" fill="currentColor"/><circle cx="12" cy="10" r="1.2" fill="currentColor"/><circle cx="15.5" cy="10" r="1.2" fill="currentColor"/></svg>';
-const DOOR_ICON = '<svg viewBox="0 0 24 24"><path d="M6 21V4.5A1.5 1.5 0 017.5 3h9A1.5 1.5 0 0118 4.5V21M3.5 21h17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="14.5" cy="12.5" r="1.3" fill="currentColor"/></svg>';
 let actDefault = null, lastNear = '';
 function updateNearby() {
   const btn = $('act-button');
   if (actDefault === null) actDefault = $('act-icon').innerHTML;
-  const best = player.moving && player.path.length > 1 ? null : findNearby();
-  const key = best ? (best.n ? 'n:' + best.n.name : 'o:' + (best.o.id || best.o.name || best.o.label)) : '';
+  const best = (player.moving && player.path.length > 1) || act ? null : findNearby();
+  const key = best ? (best.n ? 'n:' + best.n.name : 'o:' + displayName(best.o) + best.o.i + best.o.j) : '';
   if (key === lastNear) return;
   lastNear = key;
   btn.disabled = !best; btn.classList.toggle('ready', !!best);
   if (!best) { $('act-icon').innerHTML = actDefault; $('act-label').textContent = 'Nearby'; btn.setAttribute('aria-label', 'Interact (nothing in reach)'); return; }
-  if (best.n) { $('act-icon').innerHTML = TALK_ICON; $('act-label').textContent = 'Talk to ' + best.n.name; btn.setAttribute('aria-label', 'Talk to ' + best.n.name); return; }
-  const o = best.o, name = o.name || o.label || 'Door';
-  $('act-icon').innerHTML = o.icon ? `<span>${esc(o.icon)}</span>` : o.kind === 'board' ? '<span>🏠</span>' : DOOR_ICON;
-  $('act-label').textContent = (o.home ? 'View ' : o.kind === 'board' ? '' : 'Enter ') + name.replace(/^The /, '');
-  btn.setAttribute('aria-label', $('act-label').textContent);
+  if (best.n) { $('act-icon').innerHTML = TALK_ICON; $('act-label').textContent = best.n.name; btn.setAttribute('aria-label', 'Interact with ' + best.n.name); return; }
+  const o = best.o, first = actionsFor(kindKey(o))[0];
+  $('act-icon').innerHTML = `<span>${esc(o.icon || first?.icon || '✋')}</span>`;
+  $('act-label').textContent = displayName(o).replace(/^The /, '');
+  btn.setAttribute('aria-label', 'Interact with ' + displayName(o));
+}
+
+// ---------- tap menu ----------
+let pieTarget = null;
+function showPie(target, sx, sy) {
+  const o = target.o, n = target.npc;
+  const opts = [];
+  const defs = n ? actionsFor('neighbour') : actionsFor(kindKey(o));
+  for (const def of defs) {
+    let disabled = '', note = '';
+    if (def.coins < 0 && S.coins < -def.coins) { disabled = 'Not enough coins'; }
+    if (n && def.hearts && friendship(n.name).hearts < def.hearts) { disabled = `Needs ${def.hearts} hearts`; }
+    if (def.coins) note = (def.coins > 0 ? '+' : '') + def.coins + ' ✦';
+    opts.push({ icon: def.icon, label: def.label, note, disabled, run: () => queueAction(def, n ? { npc: n } : { o }) });
+  }
+  if (n) opts.push({ icon: '🎁', label: 'Gifts & friendship', run: () => { n.busy = 4; showNeighbour(n); } });
+  else if (o.kind === 'venue') opts.push({ icon: '⭐', label: visitedToday(o.id) ? 'Today’s activity ✓' : `Today: ${o.activity.title}`, run: () => visitThenSheet(o, () => showVenue(o)) });
+  else if (o.home) opts.push({ icon: '🏠', label: 'See the listing', run: () => showHome(o) });
+  else if (o.kind === 'board') opts.push({ icon: '🏠', label: 'Browse homes', run: () => showHomes() });
+  else if (o.kind === 'clock') opts.push({ icon: '🕰️', label: 'Check the time', run: () => toast(`It’s ${clockText(S.progress.clock)}, day ${dayOf(S.progress.clock)}.`) });
+  else if (o.kind === 'shop' && o.label !== 'Bakery') opts.push({ icon: o.icon || '🏪', label: 'Look in the window', run: () => showInfo(o.icon || '🏪', o.label, { Florist: 'Bunches from the Fernhill meadows.', Books: 'A tiny bookshop with a very sleepy cat.' }[o.label] || 'A little shop in Old Town.') });
+  if (!opts.length) return;
+  pieTarget = target;
+  const pie = $('pie'), ring = $('pie-ring');
+  ring.innerHTML = '';
+  $('pie-title').textContent = n ? n.name : displayName(o);
+  const R = Math.min(118, Math.max(92, opts.length * 22));
+  const cx = Math.max(R * 0.5 + 70, Math.min(W - R * 0.5 - 70, sx)), cy = Math.max(R + 70, Math.min(H - R - 110, sy));
+  ring.style.left = cx + 'px'; ring.style.top = cy + 'px';
+  opts.forEach((op, k) => {
+    const a = -Math.PI / 2 + (opts.length === 1 ? 0 : (k / opts.length) * Math.PI * 2);
+    const b = document.createElement('button');
+    b.className = 'pie-btn'; b.disabled = !!op.disabled;
+    b.style.setProperty('--x', Math.cos(a) * R + 'px'); b.style.setProperty('--y', Math.sin(a) * R + 'px'); b.style.setProperty('--d', k * 25 + 'ms');
+    b.innerHTML = `<span class="pie-icon">${esc(op.icon)}</span><span class="pie-label">${esc(op.label)}${op.note ? ` <em>${esc(op.note)}</em>` : ''}${op.disabled ? `<small>${esc(op.disabled)}</small>` : ''}</span>`;
+    b.onclick = e => { e.stopPropagation(); closePie(); op.run(); };
+    ring.append(b);
+  });
+  const center = h(`<div class="pie-center"><b>${esc(n ? n.name : displayName(o))}</b></div>`);
+  ring.append(center);
+  pie.classList.remove('hidden');
+  if (n) { n.busy = Math.max(n.busy, 3); n.face(player.x, player.y); }
+}
+function closePie() { $('pie').classList.add('hidden'); pieTarget = null; }
+$('pie').addEventListener('pointerdown', e => { if (e.target === $('pie')) { e.preventDefault(); closePie(); } });
+function visitThenSheet(o, fn) {
+  const dest = approachOf(o);
+  if (near(...dest, 1.4)) fn(); else walkTo(...dest, fn);
+}
+
+// ---------- actions ----------
+const queue = [];
+let act = null; // { item, k, step, phase: 'walk' | 'do', t, emoteT }
+function activeObject() { return act && act.phase === 'do' && act.obj ? act.obj : null; }
+function stepsOf(def, target) {
+  const base = def.steps ? def.steps : [{ ...def, obj: null }];
+  return base.map(s => ({ ...s, target: s.obj ? null : target, objType: s.obj }));
+}
+function queueAction(def, target) {
+  if (def.special === 'leave') { leaveHome(); return; }
+  if (def.special === 'enter') { const go = () => enterHome(); const d = approachOf(target.o); if (near(...d, 1.3)) go(); else walkTo(...d, go); return; }
+  if (def.coins < 0 && S.coins < -def.coins) { toast('Not enough coins for that.'); return; }
+  if (queue.length >= 4) { toast('Your to-do list is full.'); return; }
+  queue.push({ def, target, label: def.label, icon: def.icon, steps: stepsOf(def, target) });
+  renderQueue();
+  if (!act) startNext();
+}
+function cancelActions() {
+  queue.length = 0;
+  if (act) { endStep(true); act = null; }
+  renderQueue();
+}
+function cancelQueued(k) {
+  if (k === 0 && act) { endStep(true); act = null; queue.shift(); renderQueue(); startNext(); return; }
+  queue.splice(k, 1); renderQueue();
+}
+function standUp() {
+  const u = player.using; player.using = null; player.pose = null;
+  if (u && u.stand) { player.x = u.stand[0]; player.y = u.stand[1]; }
+}
+function startNext() {
+  if (!queue.length) { act = null; renderQueue(); return; }
+  const item = queue[0];
+  act = { item, k: 0 };
+  startStep();
+}
+function resolveStepTarget(step) {
+  if (step.target) return step.target;
+  const f = things.find(t => t.o && t.o.kind === 'furn' && t.o.type === step.objType);
+  return f ? { o: f.o } : null;
+}
+function startStep() {
+  const step = act.item.steps[act.k];
+  const target = resolveStepTarget(step);
+  if (!target) { toast('You need to be at home for that.'); queue.shift(); act = null; renderQueue(); startNext(); return; }
+  if (player.using) standUp();
+  act.step = step; act.target = target; act.phase = 'walk'; act.t = 0; act.emoteT = 0;
+  // TV time happens on the sofa
+  let o = target.o;
+  if (step.tv && o && o.type !== 'sofa') { const sofa = things.find(t => t.o.type === 'sofa'); if (sofa) { o = sofa.o; act.target = { o }; } }
+  act.obj = o || null;
+  let dest;
+  if (target.npc) {
+    const n = target.npc; n.busy = 12; n.path = [];
+    const ni = Math.floor(n.x), nj = Math.floor(n.y);
+    const side = [[ni + 1, nj - 1], [ni - 1, nj + 1], [ni + 1, nj], [ni, nj + 1], [ni - 1, nj], [ni, nj - 1]].find(([a, b]) => world.walkable(a, b));
+    const tgt = side || nearestWalkable(world, ni, nj) || [ni, nj];
+    dest = [tgt[0] + 0.5, tgt[1] + 0.5];
+    if (near(n.x, n.y, 1.8)) dest = null;
+  } else dest = approachOf(o);
+  renderQueue();
+  if (!dest || near(...dest, 0.35)) beginDoing(); else if (!walkTo(...dest, beginDoing)) { queue.shift(); act = null; renderQueue(); startNext(); }
+}
+function beginDoing() {
+  if (!act) return;
+  const step = act.step, o = act.obj, n = act.target.npc;
+  act.phase = 'do'; act.t = 0;
+  marker = null;
+  if (n) { n.busy = 9999; n.path = []; player.face(n.x, n.y); n.face(player.x, player.y); n.wave = 1.2; }
+  else if (o) {
+    if (o.use && (step.pose === 'sit' || step.pose === 'sleep' || step.pose === 'shower')) {
+      player.using = o; player.x = o.use[0]; player.y = o.use[1];
+      if (o.look) player.face(...o.look);
+      if (step.pose === 'sleep') player.flip = false;
+    } else if (o.look) player.face(...o.look);
+    else player.face(o.i + (o.w || 1) / 2, o.j + (o.d || 1) / 2);
+  }
+  player.pose = step.pose === 'chat' || step.pose === 'stand' ? null : step.pose === 'shower' ? null : step.pose;
+  if (step.pose === 'sit' && !(o && o.use) && o && o.kind !== 'bench') player.pose = null;
+  if (step.pose === 'sit' && o && o.kind === 'bench') { player.x = o.i + 0.5; player.y = o.j + 0.5; player.pose = 'sit'; }
+}
+function endStep(cancelled) {
+  if (!act) return;
+  if (act.target && act.target.npc) { act.target.npc.busy = 2; }
+  standUp();
+  if (cancelled) player.say('✋', 1);
+}
+function tickAction(gm, dt) {
+  if (!act || act.phase !== 'do') return;
+  const step = act.step, mins = step.mins || 1, part = Math.min(gm, mins - act.t);
+  act.t += part;
+  const N2 = S.progress.needs;
+  for (const [k, v] of Object.entries(step.gain || {})) N2[k] = Math.min(100, N2[k] + v * part / mins);
+  for (const [k, v] of Object.entries(step.cost || {})) N2[k] = Math.max(0, N2[k] - v * part / mins);
+  act.emoteT -= dt;
+  if (act.emoteT <= 0 && step.emotes) {
+    act.emoteT = 1.8;
+    const e = step.emotes[Math.floor(Math.random() * step.emotes.length)];
+    if (act.target.npc && Math.random() < 0.5) act.target.npc.say(e, 1.6); else player.say(e, 1.6);
+  }
+  if (act.t >= mins - 0.001) finishStep();
+}
+function finishStep() {
+  const item = act.item, step = act.step, def = item.def;
+  const last = act.k >= item.steps.length - 1;
+  if (!last) { endStep(false); act.k++; startStep(); return; }
+  endStep(false);
+  if (def.coins) setCoins(S.coins + def.coins, true);
+  if (def.special === 'mail') { const notes = ['A postcard from Nori: “The gulls say hi.”', 'A coupon for one free honey bun.', 'Your library card is ready!', 'A drawing from Dot of the Sunwheel.']; toast(notes[Math.floor(Math.random() * notes.length)]); if (Math.random() < 0.4) setCoins(S.coins + 3, true); }
+  if (def.friend && act.target.npc) befriend(act.target.npc, def.friend);
+  if (def.id === 'fish') addItem('fish', 1);
+  player.say('⭐', 1.2);
+  queue.shift(); act = null; renderQueue(); startNext();
+}
+function befriend(n, kind) {
+  const f = friendship(n.name); const day = today();
+  if (kind === 'chat' && f.day !== day) { f.day = day; f.hearts = Math.min(3, (f.hearts || 0) + (f.hearts < 3 ? 1 : 0)); S.progress.daily[day + ':hello'] = (S.progress.daily[day + ':hello'] || 0) + 1; }
+  if (kind === 'joke' && f.joke !== day) { f.joke = day; f.hearts = Math.min(4, (f.hearts || 0) + (f.hearts < 4 ? 1 : 0)); }
+  if (kind === 'hug' && f.hug !== day) { f.hug = day; f.hearts = Math.min(5, (f.hearts || 0) + 1); }
+  S.progress.friends[n.name] = f; n.say('💛', 2); saveProgress(); checkGoals();
+}
+function renderQueue() {
+  const el = $('queue'); el.innerHTML = '';
+  queue.forEach((q, k) => {
+    const b = document.createElement('button');
+    b.className = 'q-item' + (k === 0 && act ? ' current' : '');
+    b.setAttribute('aria-label', `Cancel ${q.label}`); b.title = `${q.label} (tap to cancel)`;
+    b.innerHTML = `<span>${esc(q.icon)}</span><i class="q-x" aria-hidden="true">×</i>`;
+    b.onclick = () => cancelQueued(k);
+    el.append(b);
+  });
+  if (queue[0]) { const c = document.createElement('span'); c.className = 'q-label'; c.textContent = queue[0].label; el.append(c); }
+}
+function updateQueueProgress() {
+  const cur = $('queue').querySelector('.q-item.current');
+  if (!cur || !act) return;
+  const total = act.item.steps.reduce((a, s) => a + (s.mins || 1), 0), done = act.item.steps.slice(0, act.k).reduce((a, s) => a + (s.mins || 1), 0) + (act.phase === 'do' ? act.t : 0);
+  cur.style.setProperty('--p', Math.round(done / total * 100) + '%');
+}
+
+// ---------- needs & clock ----------
+const warned = {};
+function tickClock(gm) {
+  const before = S.progress.clock; S.progress.clock += gm;
+  if (Math.floor(before / 1440) !== Math.floor(S.progress.clock / 1440)) toast(`Good morning! Day ${dayOf(S.progress.clock)} in Willowvale.`);
+  if (Math.floor(before / 30) !== Math.floor(S.progress.clock / 30)) saveProgress();
+}
+function tickNeeds(gm, curDef) {
+  const N2 = S.progress.needs, hrs = gm / 60;
+  for (const nd of NEEDS) {
+    let rate = nd.decay;
+    if (curDef && curDef.slow && curDef.slow[nd.k] !== undefined) rate *= curDef.slow[nd.k];
+    if (curDef && curDef.gain && curDef.gain[nd.k]) rate = 0;
+    if (nd.k === 'comfort' && player.pose === 'sit') rate = 0;
+    if (nd.k === 'energy' && player.pose === 'sleep') rate = 0;
+    N2[nd.k] = Math.max(0, N2[nd.k] - rate * hrs);
+    if (N2[nd.k] < 22 && !warned[nd.k]) { warned[nd.k] = true; toast(`${nd.icon} ${nd.low} ${nd.fix}`); player.say(nd.icon, 3); }
+    if (N2[nd.k] > 40) warned[nd.k] = false;
+  }
+}
+let hudTick = 0;
+function updateHudClock() {
+  updateQueueProgress();
+  if (++hudTick % 10) return;
+  $('clock-time').textContent = clockText(S.progress.clock);
+  const m = mood(S.progress.needs);
+  $('mood-ring').style.setProperty('--m', moodColor(m));
+  $('mood-ring').style.setProperty('--p', m + '%');
+  if (S.sheet === 'needs') renderNeeds();
+}
+function cycleSpeed() {
+  const k = SPEEDS.indexOf(S.speed); S.speed = SPEEDS[(k + 1) % SPEEDS.length];
+  $('speed-button').textContent = '▶'.repeat(S.speed); $('speed-button').setAttribute('aria-label', `Game speed ${S.speed}x`);
+  toastQuiet(`Time speed ${S.speed}×`);
+}
+function showNeeds() {
+  const el = h(`<div class="needs"><div class="mood-row"><div class="portrait-wrap"></div><div><small>Mood</small><b id="needs-mood"></b><span id="needs-clock"></span></div></div><div class="need-list" id="need-list"></div><p class="lead" id="need-tip"></p><button class="btn btn-ghost btn-wide" id="needs-profile">Character &amp; account</button></div>`);
+  el.querySelector('.portrait-wrap').append(portrait(player.species, player.outfit, 76, { full: true, t: time }));
+  el.querySelector('#needs-profile').onclick = () => showProfile();
+  openSheet('needs', 'How you’re doing', S.profile?.name || 'You', el, { tab: 'explore' });
+  renderNeeds();
+}
+function renderNeeds() {
+  const list = $('need-list'); if (!list) return;
+  const N2 = S.progress.needs, m = mood(N2);
+  $('needs-mood').textContent = moodLabel(m); $('needs-mood').style.color = A.darken(moodColor(m), 0.2);
+  $('needs-clock').textContent = `${clockText(S.progress.clock)} · Day ${dayOf(S.progress.clock)}`;
+  list.innerHTML = NEEDS.map(nd => { const v = Math.round(N2[nd.k]); return `<div class="need"><span class="need-icon">${nd.icon}</span><div class="need-main"><div class="need-top"><b>${nd.label}</b><span>${v}</span></div><div class="need-bar"><i style="width:${v}%;background:${needColor(v)}"></i></div></div></div>`; }).join('');
+  const low = NEEDS.slice().sort((a, b) => N2[a.k] - N2[b.k])[0];
+  $('need-tip').textContent = N2[low.k] < 60 ? `${low.label} is lowest. ${low.fix}` : 'You’re doing great. Go have some fun!';
 }
 
 // ---------- UI helpers ----------
@@ -771,7 +1129,7 @@ function hearts(n) { return '<span class="hearts" aria-label="' + n + ' of 5 hea
 function showFriends() {
   const body = openSheet('friends', 'Your neighbours', 'Friends', null, { tab: 'friends' });
   body.append(h('<p class="lead">Say hello every day and bring neighbours what they love to fill their hearts.</p>'));
-  for (const n of npcs) {
+  for (const n of cityNpcs) {
     const f = friendship(n.name), wants = ITEMS[n.data.wants];
     const el = h(`<article class="card friend-card"><div class="card-art round"></div><div class="card-main"><div class="card-top"><h3>${esc(n.name)}</h3>${hearts(f.hearts)}</div><p class="card-sub">${esc(A.SPECIES[n.species].label)} · ${esc(DISTRICTS[districtAt(n.x, n.y)].name)} · loves ${wants.icon}</p><div class="card-actions"><button class="btn btn-small btn-ghost">Find ${esc(n.name)}</button></div></div></article>`);
     el.querySelector('.card-art').append(portrait(n.species, n.outfit, 60));
@@ -839,8 +1197,8 @@ function travel(k) {
   closeSheet();
   const fade = $('fade'); fade.classList.add('on');
   setTimeout(() => {
-    const [i, j] = DISTRICTS[k].spawn; player.x = i + 0.5; player.y = j + 0.5; player.path = []; player.onArrive = null; marker = null; cam.free = false;
-    const p = A.P(player.x, player.y, 34); cam.x = p[0]; cam.y = p[1];
+    cancelActions();
+    const [i, j] = DISTRICTS[k].spawn; setScene('city', i + 0.5, j + 0.5);
     fade.classList.remove('on'); toast(`Welcome to ${DISTRICTS[k].name}`); player.say('🚋', 1.6);
   }, S.settings.reduced ? 50 : 420);
 }
@@ -968,10 +1326,11 @@ document.querySelectorAll('.dock-item').forEach(b => b.onclick = () => {
   if (S.sheet && document.querySelector('.dock-item.active') === b && m !== 'explore') { closeSheet(); return; }
   ({ explore: closeSheet, homes: () => showHomes(), places: showPlaces, friends: showFriends, journal: showJournal })[m]();
 });
-$('profile-button').onclick = () => showProfile();
+$('profile-button').onclick = () => (S.sheet === 'needs' ? closeSheet() : showNeeds());
 $('radar-button').onclick = showDistricts;
 $('pause-button').onclick = () => (S.sheet === 'pause' ? closeSheet() : showSettings());
 $('act-button').onclick = interactNearby;
+$('speed-button').onclick = cycleSpeed;
 $('run-button').onclick = toggleRun;
 $('cam-button').onclick = cameraButton;
 function toggleRun() { S.run = !S.run; $('run-button').setAttribute('aria-pressed', String(S.run)); toastQuiet(S.run ? 'Running' : 'Walking'); }
@@ -1012,19 +1371,21 @@ window.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') doc
 // ---------- radar ----------
 // A small map of the island drawn once, then panned so you are always in the middle.
 const RS = 12 / A.TW; // radar pixels per world pixel (drawn at 2x, shown at about half)
-const radarMap = (() => {
+let radarMap = null;
+function buildRadarMap() {
   const c = document.createElement('canvas'), w = N * A.TW * RS, h = N * A.TH * RS;
   c.width = Math.ceil(w); c.height = Math.ceil(h);
   const g = c.getContext('2d'), ox = w / 2;
-  const col = { [T.SAND]: '#F3DFAE', [T.GRASS]: '#8FD06F', [T.PATH]: '#FFF3D6', [T.PLAZA]: '#FFFFFF', [T.PARK]: '#A3DB83', [T.POND]: '#7FD0EA', [T.DOCK]: '#D9A56B', [T.MEADOW]: '#9AD77D' };
+  const col = { 9: '#E2B47E', 10: '#FFFFFF', 11: '#D9CFF5', 12: '#D6EEF7', [T.SAND]: '#F3DFAE', [T.GRASS]: '#8FD06F', [T.PATH]: '#FFF3D6', [T.PLAZA]: '#FFFFFF', [T.PARK]: '#A3DB83', [T.POND]: '#7FD0EA', [T.DOCK]: '#D9A56B', [T.MEADOW]: '#9AD77D' };
   const dia = (i, j, w2 = 1, d2 = 1, fill) => {
     const p = (x, y) => { const [a, b] = A.P(x, y); return [a * RS + ox, b * RS]; };
     g.beginPath(); g.moveTo(...p(i, j)); g.lineTo(...p(i + w2, j)); g.lineTo(...p(i + w2, j + d2)); g.lineTo(...p(i, j + d2)); g.closePath(); g.fillStyle = fill; g.fill();
   };
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const t = world.get(i, j); if (t !== T.SEA) dia(i, j, 1.04, 1.04, col[t]); }
-  for (const o of world.objects) dia(o.i, o.j, o.w, o.d, o.kind === 'venue' ? A.lighten(o.color, 0.1) : o.home ? '#B9C6D6' : '#C9D3DE');
+  for (const o of world.objects) if (!o.flat) dia(o.i, o.j, o.w, o.d, o.kind === 'venue' ? A.lighten(o.color, 0.1) : o.kind === 'myhome' ? '#F2A93B' : o.home ? '#B9C6D6' : '#C9D3DE');
   return { c, ox };
-})();
+}
+radarMap = buildRadarMap();
 function drawRadar() {
   const cv = $('radar'), css = cv.clientWidth || 96, dpr = Math.min(2, window.devicePixelRatio || 1);
   if (cv.width !== Math.round(css * dpr)) { cv.width = cv.height = Math.round(css * dpr); }
@@ -1034,7 +1395,7 @@ function drawRadar() {
   const [px, py] = A.P(player.x, player.y);
   const toR = (x, y) => { const [a, b] = A.P(x, y); return [size / 2 + (a - px) * RS * k, size / 2 + (b - py) * RS * k]; };
   g.drawImage(radarMap.c, size / 2 - (px * RS + radarMap.ox) * k, size / 2 - py * RS * k, radarMap.c.width * k, radarMap.c.height * k);
-  for (const v of VENUES) { const [x, y] = toR(v.i + v.w / 2, v.j + v.d / 2); g.fillStyle = '#fff'; g.beginPath(); g.arc(x, y, 4.2, 0, 7); g.fill(); g.fillStyle = v.color; g.beginPath(); g.arc(x, y, 2.9, 0, 7); g.fill(); }
+  if (!world.interior) for (const v of VENUES) { const [x, y] = toR(v.i + v.w / 2, v.j + v.d / 2); g.fillStyle = '#fff'; g.beginPath(); g.arc(x, y, 4.2, 0, 7); g.fill(); g.fillStyle = v.color; g.beginPath(); g.arc(x, y, 2.9, 0, 7); g.fill(); }
   g.fillStyle = '#26395A';
   for (const n of npcs) { const [x, y] = toR(n.x, n.y); g.beginPath(); g.arc(x, y, 1.8, 0, 7); g.fill(); }
   if (marker) { const [x, y] = toR(marker.x, marker.y); g.strokeStyle = '#FFC83D'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.stroke(); }
@@ -1062,7 +1423,7 @@ function startOnboarding() {
     state.name = ($('name-input').value.trim() || state.name).slice(0, 16);
     S.profile = { ...state }; applyProfile();
     $('onboarding').classList.add('hidden'); document.body.classList.remove('onboarding-open');
-    const p = A.P(player.x, player.y, 34); cam.x = p[0]; cam.y = p[1];
+    setScene('home', ...homeWorld.insideDoor);
     player.wave = 1.6; player.say('👋');
     $('hint').classList.remove('hidden'); setTimeout(hideHint, 9000);
     if (then) then();
@@ -1073,7 +1434,7 @@ function startOnboarding() {
 
 applyProfileSafe();
 function applyProfileSafe() {
-  if (S.profile) { applyProfile(); $('onboarding').classList.add('hidden'); $('hint').classList.remove('hidden'); setTimeout(hideHint, 7000); }
+  if (S.profile) { applyProfile(); $('onboarding').classList.add('hidden'); setScene('home', ...homeWorld.insideDoor); $('hint').classList.remove('hidden'); setTimeout(hideHint, 7000); }
   else { S.profile = { species: 'fox', outfit: 0, name: 'Guest' }; document.body.classList.add('onboarding-open'); startOnboarding(); }
 }
 setCoins(S.coins);
@@ -1081,3 +1442,6 @@ restoreSession();
 requestAnimationFrame(t => { t0 = t; requestAnimationFrame(frame); });
 $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 700);
+
+// Small read-only hook for automated play-testing.
+window.__willowvale = { state: S, screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; } };

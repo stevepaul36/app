@@ -71,7 +71,6 @@ const SHOPS = [
   { i: 24, j: 5, w: 2, d: 2, label: 'Bakery', color: '#F2A93B', icon: '🥐' },
   { i: 27, j: 5, w: 3, d: 2, label: 'Florist', color: '#F0587A', icon: '🌷' },
   { i: 31, j: 6, w: 2, d: 2, label: 'Books', color: '#2F6F8F', icon: '📖' },
-  { i: 6, j: 25, w: 2, d: 2, label: 'Cottage', color: '#C98A1E', icon: '' },
 ];
 
 export const NEIGHBOURS = [
@@ -190,6 +189,7 @@ export function buildWorld() {
   for (const v of VENUES) place(Object.assign(v, { kind: 'venue' }));
   for (const h of HOMES) place(Object.assign(h, { kind: h.kind === 'apartment' ? 'apartment' : h.kind === 'villa' ? 'villa' : 'house', home: true }));
   for (const s of SHOPS) place(Object.assign(s, { kind: 'shop' }));
+  place({ kind: 'myhome', i: 6, j: 25, w: 2, d: 2, name: 'Your cottage', look: 2 });
   const wheel = { kind: 'sunwheel', i: 31, j: 35, w: 2, d: 2, name: 'The Sunwheel' }; footprint(wheel); objects.push(wheel);
   const mill = { kind: 'windmill', i: 5, j: 30, w: 2, d: 2, name: 'Fernhill Windmill' }; footprint(mill); objects.push(mill);
 
@@ -269,12 +269,13 @@ export function findPath(world, sx, sy, tx, ty) {
     if (ci === goal[0] && cj === goal[1]) {
       const path = [[ci, cj]]; let cur = k(ci, cj);
       while (came.has(cur)) { cur = came.get(cur); path.unshift([cur % N, Math.floor(cur / N)]); }
-      return path.map(([i, j]) => [i + 0.5, j + 0.5]);
+      return smooth(world, [sx, sy], path.map(([i, j]) => [i + 0.5, j + 0.5]));
     }
     for (const [a, b] of dirs) {
       const ni = ci + a, nj = cj + b;
       if (!world.walkable(ni, nj)) continue;
       if (a && b && (!world.walkable(ci + a, cj) || !world.walkable(ci, cj + b))) continue;
+      if (world.edge && !stepOK(world, ci, cj, ni, nj)) continue;
       const cost = g.get(k(ci, cj)) + (a && b ? 1.41 : 1);
       const nk = k(ni, nj);
       if (cost < (g.has(nk) ? g.get(nk) : Infinity)) {
@@ -296,4 +297,38 @@ export function nearestWalkable(world, i, j) {
     if (best) return best;
   }
   return null;
+}
+
+// Walls sit on tile edges (used indoors). A diagonal step must be clear both ways round.
+export function stepOK(world, i, j, ni, nj) {
+  if (!world.edge) return true;
+  const a = ni - i, b = nj - j;
+  if (a && b) return !world.edge(i, j, ni, j) && !world.edge(ni, j, ni, nj) && !world.edge(i, j, i, nj) && !world.edge(i, nj, ni, nj);
+  return !world.edge(i, j, ni, nj);
+}
+// Is the straight line between two points walkable, with a little body width on each side?
+export function clearLine(world, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+  if (len < 0.01) return true;
+  const nx = -dy / len * 0.22, ny = dx / len * 0.22;
+  for (const off of [0, 1, -1]) {
+    let pi = Math.floor(a[0] + nx * off), pj = Math.floor(a[1] + ny * off);
+    for (let t = 0.12; t <= len; t += 0.12) {
+      const x = a[0] + dx * t / len + nx * off, y = a[1] + dy * t / len + ny * off, ci = Math.floor(x), cj = Math.floor(y);
+      if (ci === pi && cj === pj) continue;
+      if (!world.walkable(ci, cj) || (world.edge && !stepOK(world, pi, pj, ci, cj))) return false;
+      pi = ci; pj = cj;
+    }
+  }
+  return true;
+}
+// String-pull the grid route so characters walk in straight lines instead of tile zig-zags.
+function smooth(world, start, pts) {
+  const out = []; let from = start, k = 0;
+  while (k < pts.length) {
+    let far = k;
+    for (let m = pts.length - 1; m > k; m--) if (clearLine(world, from, pts[m])) { far = m; break; }
+    out.push(pts[far]); from = pts[far]; k = far + 1;
+  }
+  return [start, ...out];
 }

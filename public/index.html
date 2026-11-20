@@ -6,12 +6,12 @@
 <meta name="theme-color" content="#5BC0EB">
 <meta name="description" content="Willowvale is a sunny island town of animal neighbours. Explore four districts, visit places, make friends and find a home.">
 <title>Willowvale — Animal Town</title>
-<link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" href="/app-icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="app-icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@600;700;800&display=swap">
-<link rel="stylesheet" href="/style.css?v=island-2">
+<link rel="stylesheet" href="style.css?v=sims-1">
 </head>
 <body>
 <main id="game-shell">
@@ -23,13 +23,15 @@
       <span id="district-name" class="radar-name">Town Square</span>
     </button>
     <button id="profile-button" class="hud-me" aria-label="Your character and account">
-      <span class="avatar-ring"><canvas id="hud-avatar" width="40" height="40"></canvas><i id="online-dot" class="online-dot"></i></span>
+      <span class="avatar-ring" id="mood-ring"><canvas id="hud-avatar" width="40" height="40"></canvas><i id="online-dot" class="online-dot"></i></span>
       <span class="me-text"><b id="player-name">Guest</b><span id="coin-pill" class="coin-pill"><i class="coin"></i><b id="coins">35</b></span></span>
     </button>
     <button id="pause-button" class="hud-round" aria-label="Pause"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="5" width="3.6" height="14" rx="1.4" fill="currentColor"/><rect x="13.9" y="5" width="3.6" height="14" rx="1.4" fill="currentColor"/></svg></button>
   </header>
+  <div id="clock" class="clock"><span id="clock-time">8:00 AM</span><button id="speed-button" aria-label="Game speed 1x">▶</button></div>
+  <div id="queue" class="queue" aria-label="What you’re doing"></div>
 
-  <p id="hint" class="hint hidden">Walk with the stick or tap the ground · press the hand button at doors and neighbours</p>
+  <p id="hint" class="hint hidden">Tap anything to see what you can do. Try the fridge for breakfast, then head into town.</p>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <section id="sheet" class="sheet hidden" role="dialog" aria-label="Details">
@@ -71,9 +73,10 @@
     </div>
   </section>
 
+  <div id="pie" class="pie hidden"><div id="pie-ring" class="pie-ring"></div><span id="pie-title" class="sr-only"></span></div>
   <div id="fade" class="fade" aria-hidden="true"></div>
   <div id="loading" class="loading" aria-hidden="true"><span>Willowvale</span></div>
 </main>
-<script type="module" src="/app.js?v=island-2"></script>
+<script type="module" src="app.js?v=sims-1"></script>
 </body>
 </html>
