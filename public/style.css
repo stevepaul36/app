@@ -356,6 +356,59 @@ body.indoors .radar canvas { background: #BDE7C4; }
 .career b { display: block; font: 800 16px/1.2 var(--display); }
 .career small { color: #6B4A00; font-size: 13px; line-height: 1.35; }
 
+/* island road: map, towns, passports, bus ride, shop */
+.island-cta { display: flex; align-items: center; gap: 12px; width: 100%; margin: 4px 0 14px; padding: 12px 14px; border: 0; border-radius: 18px; background: linear-gradient(135deg, #E6F6FF, #FFF6D8); color: var(--ink); text-align: left; font: inherit; cursor: pointer; box-shadow: inset 0 0 0 2px #CFE7F5; }
+.island-cta span { font-size: 28px; }
+.island-cta b { font: 800 17px/1.1 var(--display); }
+.island-cta small { margin-left: auto; color: var(--ink-2); font-size: 12px; max-width: 46%; text-align: right; }
+.island-wrap { margin: 0 0 10px; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 0 #2E9BD622; }
+.island-map { display: block; width: 100%; height: auto; max-height: 360px; }
+.island-map .isea { fill: #5BC0EB; }
+.island-map .wave { fill: none; stroke: rgba(255,255,255,.55); stroke-width: .5; stroke-linecap: round; }
+.island-map .iroad { fill: none; stroke: rgba(255,255,255,.45); stroke-width: 1.4; stroke-dasharray: 2 1.6; stroke-linecap: round; }
+.island-map .iroad.open { stroke: #FFF3D6; stroke-dasharray: none; }
+.island-map .isle { cursor: pointer; }
+.island-map .isle-sand { fill: #F3DFAE; }
+.island-map .isle-land { stroke: rgba(255,255,255,.8); stroke-width: .6; }
+.island-map .isle-icon { font-size: 6px; }
+.island-map .isle-name { font: 800 3.6px var(--display); fill: #FFFFFF; paint-order: stroke; stroke: #26395A; stroke-width: .9px; }
+.island-map .isle.here .isle-land { stroke: #FFC83D; stroke-width: 1.4; }
+.island-map .isle-pin { fill: #F0587A; stroke: #FFFFFF; stroke-width: .7; }
+.island-map .isle.locked { opacity: .85; }
+.town-card { display: block; padding: 14px; border-left: 5px solid var(--town); }
+.town-card.here { background: #FFF9E6; }
+.town-head { display: flex; gap: 10px; align-items: flex-start; }
+.town-head > div { flex: 1; min-width: 0; }
+.town-head h3 { margin: 0; }
+.town-icon { font-size: 30px; line-height: 1; }
+.town-card .card-actions { margin-top: 10px; }
+.town-card .card-actions:empty { display: none; }
+.passport { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.passport li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: var(--mist); font-size: 14px; }
+.passport li i { width: 20px; height: 20px; flex: none; border-radius: 50%; background: #FFFFFF; box-shadow: inset 0 0 0 2px #C9D3DE; display: grid; place-items: center; font-style: normal; font-weight: 800; color: #FFFFFF; font-size: 12px; }
+.passport li.ok i { background: var(--leaf); box-shadow: none; }
+.passport li span { flex: 1; min-width: 0; }
+.passport li b { color: var(--ink-2); font-size: 13px; }
+.chip-mine { background: #FFF1C9; color: #8A5A00; }
+.notice { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; margin: 0 0 12px; border-radius: 14px; background: #FFF6D8; font-size: 14px; }
+.notice.calm { background: #E8F6EE; }
+.notice span { color: var(--ink-2); }
+.shop-card { display: flex; gap: 12px; align-items: center; }
+.shop-emojis { flex: none; width: 76px; font-size: 22px; line-height: 1.35; text-align: center; letter-spacing: 2px; }
+.btn-small { padding: 8px 14px; font-size: 14px; margin-top: 8px; }
+.ride { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: color-mix(in srgb, var(--town, #5BC0EB) 30%, rgba(38,57,90,.55)); padding: 16px; }
+.ride.hidden { display: none; }
+.ride-card { width: min(360px, 100%); padding: 18px 18px 16px; border-radius: 24px; background: #FFFFFF; text-align: center; box-shadow: 0 10px 0 rgba(38,57,90,.15); }
+.ride-card small { color: var(--ink-2); font-weight: 700; }
+.ride-card b { display: block; margin-top: 8px; font: 800 18px var(--display); }
+.ride-road { position: relative; height: 54px; margin-top: 10px; border-radius: 14px; background: linear-gradient(#8FD06F 0 40%, #6B7480 40% 100%); overflow: hidden; }
+.ride-road::after { content: ''; position: absolute; left: 0; right: 0; top: 70%; border-top: 3px dashed #FFFFFF; }
+.ride-bus { position: absolute; left: -40px; top: 8px; font-size: 32px; transform: scaleX(-1); }
+.ride.go .ride-bus { animation: busRide 2s ease-in-out forwards; }
+.ride-dest { position: absolute; right: 10px; top: 4px; font-size: 26px; }
+@keyframes busRide { 0% { left: -40px; } 100% { left: calc(100% - 80px); } }
+@media (prefers-reduced-motion: reduce) { .ride.go .ride-bus { animation: none; left: 40%; } }
+
 /* ---------- larger screens ---------- */
 @media (min-width: 820px) {
   .hud { top: 16px; left: 16px; right: 16px; }

@@ -100,11 +100,81 @@ export const ACTIONS = {
   community: [{ id: 'craft', label: 'Join a workshop', icon: '🎨', mins: 45, pose: 'inside', skill: 'creativity', gain: { fun: 30, social: 18 }, emotes: ['🎨', '✂️'] }],
   theatre: [{ id: 'show', label: 'Watch a show', icon: '🎭', mins: 90, pose: 'inside', skill: 'creativity', gain: { fun: 70, social: 10 }, coins: -8, fast: 3, emotes: ['🎭', '👏', '😂'] }],
   library: [{ id: 'read', label: 'Read quietly', icon: '📚', mins: 45, pose: 'inside', skill: 'logic', gain: { fun: 30, comfort: 10 }, emotes: ['📚', '🤓'] }],
-  station: [{ id: 'work', label: 'Work a shift', icon: '💼', mins: 240, pose: 'inside', stat: 'works', job: true, gain: {}, cost: { energy: 22, fun: 18, hygiene: 10 }, fast: 8, emotes: ['💼', '🚋'] }],
+  station: [{ id: 'work', label: 'Work a shift', icon: '💼', career: 'tram', mins: 240, pose: 'inside', stat: 'works', job: true, gain: {}, cost: { energy: 22, fun: 18, hygiene: 10 }, fast: 8, emotes: ['💼', '🚋'] }],
   marina: [{ id: 'fish', label: 'Go fishing', icon: '🎣', mins: 40, pose: 'stand', stat: 'fish', arms: 'hold', gain: { fun: 26, comfort: 6 }, emotes: ['🎣', '🌊', '🐟'] }],
   clinic: [{ id: 'freshen', label: 'Freshen up', icon: '🧼', mins: 15, pose: 'inside', gain: { hygiene: 45, comfort: 10 }, emotes: ['🧼'] }],
   sunwheel: [{ id: 'ride', label: 'Ride the Sunwheel', icon: '🎡', mins: 20, pose: 'inside', stat: 'rides', gain: { fun: 34 }, coins: -2, emotes: ['🎡', '😆'] }],
   windmill: [{ id: 'admire', label: 'Admire the view', icon: '🌾', mins: 10, pose: 'stand', gain: { fun: 8, comfort: 6 }, emotes: ['😊'] }],
+  // The island road and the new towns
+  busstop: [{ id: 'travel', label: 'Take the island bus', icon: '🚌', special: 'travel' }],
+  admire: [{ id: 'admire', label: 'Admire it', icon: '😍', mins: 10, pose: 'stand', gain: { fun: 10, comfort: 6 }, emotes: ['😍', '✨', '📸'] }],
+  bandstand: [{ id: 'show', label: 'Listen to the band', icon: '🎺', mins: 30, pose: 'stand', gain: { fun: 28, social: 8 }, emotes: ['🎺', '🎶', '👏'] }],
+  bigtree: [
+    { id: 'sit', label: 'Picnic under the blossoms', icon: '🧺', mins: 30, pose: 'stand', gain: { comfort: 24, fun: 16, hunger: 10 }, emotes: ['🌸', '🍙', '😌'] },
+    { id: 'admire', label: 'Catch falling petals', icon: '🌸', mins: 10, pose: 'stand', gain: { fun: 14 }, emotes: ['🌸', '😆'] },
+  ],
+  rangoli: [{ id: 'craft', label: 'Draw a rangoli', icon: '🌺', mins: 30, pose: 'stand', skill: 'creativity', stat: 'rangoli', gain: { fun: 28, social: 6 }, emotes: ['🌺', '🎨', '✨'] }],
+  school: [
+    { id: 'read', label: 'Study in the library', icon: '📖', mins: 45, pose: 'inside', skill: 'logic', stat: 'reads', gain: { fun: 16, social: 8 }, emotes: ['📖', '✏️'] },
+    { id: 'work', label: 'Work a shift', icon: '🍎', career: 'teacher', job: true, mins: 240, pose: 'inside', stat: 'works', skill: 'charisma', gain: { social: 20 }, cost: { energy: 22, fun: 12, hygiene: 8 }, fast: 8, emotes: ['🍎', '✏️', '🔔'] },
+  ],
+  track: [{ id: 'jog', label: 'Go for a jog', icon: '🏃', mins: 30, pose: 'jog', skill: 'fitness', stat: 'jogs', gain: { fun: 18 }, cost: { energy: 12, hygiene: 14 }, emotes: ['🏃', '💦', '💪'] }],
+  pool: [{ id: 'swim', label: 'Go for a swim', icon: '🏊', mins: 30, pose: 'inside', skill: 'fitness', stat: 'swims', gain: { fun: 30, hygiene: 20 }, cost: { energy: 10 }, coins: -2, emotes: ['🏊', '💦', '😆'] }],
+  cornershop: [{ id: 'eat', label: 'Buy a snack', icon: '🍪', mins: 10, pose: 'inside', gain: { hunger: 28, fun: 4 }, coins: -3, emotes: ['🍪', '😋'] }],
+  office: [
+    { id: 'games', label: 'Test new games', icon: '🎮', mins: 40, pose: 'inside', skill: 'logic', gain: { fun: 40 }, emotes: ['🎮', '🤔', '🏆'] },
+    { id: 'work', label: 'Work a shift', icon: '💻', career: 'tech', job: true, mins: 240, pose: 'inside', stat: 'works', skill: 'logic', gain: {}, cost: { energy: 24, fun: 14, comfort: 8 }, fast: 8, emotes: ['💻', '⌨️', '🚀'] },
+  ],
+  arcade: [{ id: 'ride', label: 'Play arcade games', icon: '🕹️', mins: 40, pose: 'inside', skill: 'logic', stat: 'arcade', gain: { fun: 50 }, coins: -4, emotes: ['🕹️', '😆', '🏆'] }],
+  mall: [
+    { id: 'browse', label: 'Window shopping', icon: '🛍️', mins: 30, pose: 'inside', gain: { fun: 20, social: 10 }, emotes: ['🛍️', '👀'] },
+    { id: 'eat', label: 'Food court lunch', icon: '🍔', mins: 25, pose: 'inside', gain: { hunger: 55, social: 6 }, coins: -6, emotes: ['🍔', '😋'] },
+  ],
+  cinema: [{ id: 'show', label: 'Watch a movie', icon: '🎬', mins: 90, pose: 'inside', stat: 'movies', gain: { fun: 68, comfort: 12 }, coins: -7, fast: 3, emotes: ['🎬', '🍿', '😂', '😮'] }],
+  monorail: [{ id: 'ride', label: 'Ride the monorail', icon: '🚝', mins: 20, pose: 'inside', stat: 'rides', gain: { fun: 32 }, coins: -2, emotes: ['🚝', '😆', '🏙️'] }],
+  gym: [{ id: 'workout', label: 'Work out', icon: '🏋️', mins: 40, pose: 'inside', skill: 'fitness', gain: { fun: 14, comfort: 6 }, cost: { energy: 16, hygiene: 18 }, emotes: ['🏋️', '💪', '💦'] }],
+  observatory: [{ id: 'read', label: 'Stargaze', icon: '🔭', mins: 45, pose: 'inside', skill: 'logic', stat: 'reads', gain: { fun: 32, comfort: 8 }, emotes: ['🔭', '⭐', '🪐'] }],
+  lab: [
+    { id: 'experiment', label: 'Try an experiment', icon: '🧪', mins: 40, pose: 'inside', skill: 'logic', gain: { fun: 34 }, emotes: ['🧪', '💥', '🤓'] },
+    { id: 'work', label: 'Work a shift', icon: '🔬', career: 'science', job: true, mins: 240, pose: 'inside', stat: 'works', skill: 'logic', gain: {}, cost: { energy: 22, fun: 12, hygiene: 10 }, fast: 8, emotes: ['🔬', '🧪', '💡'] },
+  ],
+  museum: [{ id: 'read', label: 'Explore the exhibits', icon: '🤖', mins: 45, pose: 'inside', skill: 'logic', stat: 'reads', gain: { fun: 36, social: 6 }, coins: -2, emotes: ['🤖', '🦖', '🪐'] }],
+  greenhouse: [{ id: 'sit', label: 'Tend the plants', icon: '🌿', mins: 30, pose: 'inside', skill: 'creativity', gain: { comfort: 26, fun: 14 }, emotes: ['🌿', '🌵', '💧'] }],
+  teahouse: [
+    { id: 'tea', label: 'Sip jasmine tea', icon: '🍵', mins: 20, pose: 'inside', gain: { energy: 14, fun: 8, social: 8 }, coins: -3, emotes: ['🍵', '😌'] },
+    { id: 'eat', label: 'Share dim sum', icon: '🥟', mins: 30, pose: 'inside', gain: { hunger: 56, social: 12 }, coins: -6, emotes: ['🥟', '😋'] },
+  ],
+  noodles: [{ id: 'eat', label: 'Slurp noodles', icon: '🍜', mins: 25, pose: 'inside', gain: { hunger: 58 }, coins: -5, emotes: ['🍜', '😋'] }],
+  kitchen: [
+    { id: 'cookclass', label: 'Dumpling class', icon: '🥟', mins: 40, pose: 'inside', skill: 'cooking', gain: { fun: 22, hunger: 20, social: 10 }, coins: -4, emotes: ['🥟', '👩‍🍳'] },
+    { id: 'work', label: 'Work a shift', icon: '🥟', career: 'chef', job: true, mins: 240, pose: 'inside', stat: 'works', skill: 'cooking', gain: { hunger: 10 }, cost: { energy: 22, fun: 12, hygiene: 14 }, fast: 8, emotes: ['🥟', '🔥', '🍳'] },
+  ],
+  pagoda: [{ id: 'admire', label: 'Climb for the view', icon: '🏯', mins: 15, pose: 'inside', gain: { fun: 18, comfort: 8 }, cost: { energy: 4 }, emotes: ['🏯', '😍'] }],
+  nightmarket: [
+    { id: 'browse', label: 'Browse the stalls', icon: '🧧', mins: 25, pose: 'stand', gain: { fun: 18, social: 8 }, emotes: ['🧧', '🪁', '🎎'] },
+    { id: 'eat', label: 'Grab a bao bun', icon: '🥟', mins: 10, pose: 'stand', gain: { hunger: 30 }, coins: -3, emotes: ['🥟', '😋'] },
+  ],
+  garden: [
+    { id: 'sit', label: 'Rest in the garden', icon: '🌳', mins: 30, pose: 'stand', gain: { comfort: 34, fun: 6 }, emotes: ['😌', '🦋', '🌸'] },
+    { id: 'wish', label: 'Make a wish', icon: '🪙', mins: 5, pose: 'stand', gain: { fun: 12 }, coins: -1, emotes: ['✨'] },
+  ],
+  shrinegarden: [
+    { id: 'wish', label: 'Ring the bell & wish', icon: '🔔', mins: 5, pose: 'stand', gain: { fun: 12, comfort: 6 }, coins: -1, emotes: ['🔔', '✨'] },
+    { id: 'sit', label: 'Walk the garden', icon: '🍃', mins: 25, pose: 'stand', gain: { comfort: 32, fun: 6 }, emotes: ['🍃', '🌸', '😌'] },
+  ],
+  onsen: [{ id: 'freshen', label: 'Soak in the hot spring', icon: '♨️', mins: 40, pose: 'inside', stat: 'soaks', gain: { hygiene: 70, comfort: 34, energy: 10 }, coins: -4, emotes: ['♨️', '😌', '🫧'] }],
+  ramen: [
+    { id: 'eat', label: 'Eat ramen', icon: '🍜', mins: 25, pose: 'inside', gain: { hunger: 62 }, coins: -5, emotes: ['🍜', '😋'] },
+    { id: 'work', label: 'Work a shift', icon: '🍥', career: 'ramen', job: true, mins: 240, pose: 'inside', stat: 'works', skill: 'cooking', gain: { hunger: 10 }, cost: { energy: 22, fun: 12, hygiene: 14 }, fast: 8, emotes: ['🍜', '🥢', '🔥'] },
+  ],
+  dojo: [{ id: 'workout', label: 'Practise at the dojo', icon: '🥋', mins: 40, pose: 'inside', skill: 'fitness', gain: { fun: 20, comfort: 4 }, cost: { energy: 14, hygiene: 12 }, emotes: ['🥋', '💪', '🙇'] }],
+  koi: [{ id: 'fish', label: 'Feed the koi', icon: '🎏', mins: 15, pose: 'stand', gain: { fun: 18, comfort: 10 }, emotes: ['🎏', '🐟', '😊'] }],
+  bazaar: [
+    { id: 'browse', label: 'Browse the bazaar', icon: '🧺', mins: 30, pose: 'stand', gain: { fun: 22, social: 10 }, emotes: ['🧺', '🌶️', '🪁'] },
+    { id: 'work', label: 'Work a shift', icon: '🧺', career: 'trader', job: true, mins: 240, pose: 'stand', stat: 'works', skill: 'charisma', gain: { social: 20 }, cost: { energy: 22, fun: 10, hygiene: 10 }, fast: 8, emotes: ['🧺', '🪙', '😊'] },
+  ],
+  chai: [{ id: 'tea', label: 'Have masala chai', icon: '🫖', mins: 15, pose: 'stand', gain: { energy: 16, social: 10 }, coins: -2, emotes: ['🫖', '😌'] }],
+  sweets: [{ id: 'eat', label: 'Eat sweets', icon: '🍬', mins: 15, pose: 'inside', gain: { hunger: 32, fun: 12 }, coins: -4, emotes: ['🍬', '😋', '🤩'] }],
   neighbour: [
     { id: 'chat', label: 'Chat', icon: '💬', mins: 25, pose: 'chat', skill: 'charisma', gain: { social: 30, fun: 6 }, emotes: ['💬', '😄', '🌼', '☀️', '🎵'], friend: 'chat' },
     { id: 'story', label: 'Tell a story', icon: '📖', mins: 20, pose: 'chat', skill: 'charisma', needSkill: { charisma: 2 }, gain: { social: 26, fun: 12 }, emotes: ['📖', '😮', '🐉', '👏'], friend: 'story' },
@@ -120,13 +190,13 @@ export function actionsFor(kind) {
 // Traits change which actions a neighbour picks (weights multiply the score of matching action ids).
 export const TRAITS = {
   'Foodie': { icon: '🍰', likes: { eat: 1.8, tea: 1.4, browse: 1.3 } },
-  'Bookworm': { icon: '📚', likes: { read: 1.9 } },
+  'Bookworm': { icon: '📚', likes: { read: 1.9, experiment: 1.4 } },
   'Night Owl': { icon: '🦉', sleep: [1, 9] },
   'Early Bird': { icon: '🐦', sleep: [21, 5] },
   'Neat': { icon: '🧼', likes: { freshen: 1.8 }, decay: { hygiene: 1.4 } },
   'Social Butterfly': { icon: '🦋', likes: { chat: 1.8 }, decay: { social: 1.3 } },
   'Shy': { icon: '🙈', likes: { chat: 0.5, read: 1.3 } },
-  'Athletic': { icon: '🏃', speed: 1.25, likes: { admire: 1.4 } },
+  'Athletic': { icon: '🏃', speed: 1.25, likes: { admire: 1.4, workout: 1.9, jog: 1.8, swim: 1.6 } },
   'Artist': { icon: '🎨', likes: { craft: 1.9, show: 1.3 } },
   'Music Lover': { icon: '🎵', likes: { show: 1.8 } },
   'Outdoorsy': { icon: '🌳', likes: { sit: 1.5, fish: 1.7, wish: 1.4, admire: 1.6 } },
@@ -147,5 +217,15 @@ export const CAREER = [
   { title: 'Tram driver', pay: 75, icon: '🚋' },
   { title: 'Station master', pay: 100, icon: '🎖️' },
 ];
+// Every town has its own job ladder. A shift a day, 7 AM to 6 PM.
+export const CAREERS = {
+  tram: { place: 'Willowvale Tram Station', city: 'willowvale', ladder: CAREER },
+  teacher: { place: 'Maple Row School', city: 'maple', ladder: [{ title: 'Classroom helper', pay: 45, icon: '🍎' }, { title: 'Teacher', pay: 60, icon: '📝' }, { title: 'Head of year', pay: 80, icon: '🏫' }, { title: 'Head teacher', pay: 105, icon: '🎓' }] },
+  tech: { place: 'Pixel Works, Skyhaven', city: 'skyhaven', ladder: [{ title: 'Junior coder', pay: 55, icon: '💻' }, { title: 'App maker', pay: 75, icon: '📱' }, { title: 'Lead engineer', pay: 100, icon: '🚀' }, { title: 'Chief inventor', pay: 135, icon: '🏆' }] },
+  science: { place: 'Bright Ideas Lab, Lumen Labs', city: 'lumen', ladder: [{ title: 'Lab assistant', pay: 55, icon: '🧪' }, { title: 'Researcher', pay: 75, icon: '🔬' }, { title: 'Professor', pay: 100, icon: '💡' }, { title: 'Chief scientist', pay: 135, icon: '🌌' }] },
+  chef: { place: 'Dumpling Kitchen, Lantern Quarter', city: 'lantern', ladder: [{ title: 'Dumpling folder', pay: 50, icon: '🥟' }, { title: 'Line cook', pay: 65, icon: '🍳' }, { title: 'Head chef', pay: 90, icon: '🔥' }, { title: 'Master chef', pay: 120, icon: '🏮' }] },
+  ramen: { place: 'Hilltop Ramen, Sakura Hill', city: 'sakura', ladder: [{ title: 'Noodle maker', pay: 50, icon: '🍜' }, { title: 'Broth cook', pay: 65, icon: '🥢' }, { title: 'Ramen chef', pay: 90, icon: '🍥' }, { title: 'Ramen master', pay: 120, icon: '🌸' }] },
+  trader: { place: 'Grand Bazaar, Marigold Bazaar', city: 'marigold', ladder: [{ title: 'Stall helper', pay: 50, icon: '🧺' }, { title: 'Spice trader', pay: 65, icon: '🌶️' }, { title: 'Shopkeeper', pay: 90, icon: '🏪' }, { title: 'Bazaar elder', pay: 120, icon: '🪔' }] },
+};
 export const FRIEND_LEVELS = [[0, 'Stranger'], [1, 'Acquaintance'], [3, 'Friend'], [5, 'Best friend']];
 export const friendLevel = h => FRIEND_LEVELS.filter(([n]) => h >= n).pop()[1];

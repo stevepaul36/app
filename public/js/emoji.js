@@ -1,3 +1,4 @@
+import { CITY_PACKS, RECIPES } from './cities.js';
 // Emoji chat for a children's game: no typed messages, only emojis. You start with a small set and
 // unlock more by playing (cooking, making friends, working...). Each neighbour also has a signature emoji.
 
@@ -25,11 +26,17 @@ export const ACHIEVEMENTS = [
   { id: 'sporty', label: 'Reach fitness level 5', emojis: ['🏅', '⚽'], test: s => s.fitness >= 5 },
   { id: 'promoted', label: 'Get a promotion at work', emojis: ['🎖️', '🧭'], test: s => s.jobLevel >= 1 },
   { id: 'storyteller', label: 'Reach charisma level 3', emojis: ['🗣️', '✨'], test: s => s.charisma >= 3 },
+  { id: 'bus', label: 'Ride the island bus', emojis: ['🚌', '🛣️'], test: s => s.trips >= 1 },
+  { id: 'mover', label: 'Rent a home in another town', emojis: ['🔑', '📦'], test: s => s.rentals >= 1 },
+  { id: 'explorer', label: 'Visit all 7 towns', emojis: ['🧭', '🏝️'], test: s => s.cities >= 7 },
+  { id: 'jogger', label: 'Go for 3 jogs', emojis: ['👟', '🥇'], test: s => s.jogs >= 3 },
 ];
-export const ALL_EMOJIS = [...STARTER, ...ACHIEVEMENTS.flatMap(a => a.emojis)];
+export const ALL_EMOJIS = [...STARTER, ...ACHIEVEMENTS.flatMap(a => a.emojis), ...Object.values(CITY_PACKS).flatMap(p => p.emojis)];
 
 // Each neighbour shares a signature emoji once you reach 3 hearts with them.
 export const SIGNATURE = { Pip: '🥕', Marlow: '🍯', Juniper: '🎟️', Biscuit: '🪙', Nori: '🐚', Wren: '🎨', Clover: '🌾', Hazel: '🌅', Tumble: '📖', Sable: '🍏', Dot: '🎈', Bramble: '🌱' };
+// Neighbours in the other towns share one of their town's pack emojis.
+for (const [city, r] of Object.entries(RECIPES)) r.neighbours.forEach((n, k) => { SIGNATURE[n.name] = CITY_PACKS[city].emojis[k % 4]; });
 
 // Families of emojis, so a neighbour can answer in kind.
 const FAMILY = {
@@ -55,5 +62,6 @@ export function unlockedSet(progress) {
   const set = new Set(STARTER);
   for (const a of ACHIEVEMENTS) if ((progress.achievements || []).includes(a.id)) a.emojis.forEach(e => set.add(e));
   for (const [name, e] of Object.entries(SIGNATURE)) if (((progress.friends || {})[name]?.hearts || 0) >= 3) set.add(e);
+  for (const id of progress.packs || []) (CITY_PACKS[id]?.emojis || []).forEach(e => set.add(e));
   return set;
 }

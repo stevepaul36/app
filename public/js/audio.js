@@ -22,6 +22,16 @@ export function setPrefs({ music, sfx }) {
   sfxBus.gain.setTargetAtTime(state.sfx ? 0.6 : 0, ac.currentTime, 0.05);
 }
 export function setScene(scene, night) { state.scene = scene; state.night = !!night; }
+// Each town has its own flavour of tune: a different scale and voice for the melody.
+const TOWN = {
+  skyhaven: { scale: [523.3, 659.3, 784, 987.8, 1046.5], wave: 'square', vol: 0.03 },
+  lumen: { scale: [523.3, 587.3, 698.5, 784, 1046.5], wave: 'sine', vol: 0.06 },
+  lantern: { scale: [587.3, 659.3, 784, 880, 1046.5], wave: 'triangle', vol: 0.06 },
+  sakura: { scale: [587.3, 622.3, 784, 880, 932.3], wave: 'sine', vol: 0.07 },
+  marigold: { scale: [523.3, 554.4, 659.3, 698.5, 784, 830.6], wave: 'triangle', vol: 0.06 },
+  maple: { scale: [523.3, 587.3, 659.3, 784, 880], wave: 'triangle', vol: 0.06 },
+};
+export function setCity(id) { state.town = TOWN[id] || null; }
 
 function tone(freq, start, dur, { type = 'sine', vol = 0.3, bus = sfxBus, attack = 0.005, release = 0.12, slide = 0 } = {}) {
   const o = ac.createOscillator(), g = ac.createGain();
@@ -109,7 +119,7 @@ function startMusic() {
       if (beat % 8 === 0) chord.forEach(f => tone(f / 2, nextAt, spb * 7, { type: 'sine', vol: 0.05, bus: musicBus, attack: 0.6, release: 1.2 }));
       if (beat % 2 === 0) tone(chord[(beat / 2) % 3] / 2, nextAt, spb * 0.9, { type: 'triangle', vol: 0.05, bus: musicBus, attack: 0.02 });
       const r = Math.sin(beat * 12.9898) * 43758.5453 % 1;
-      if (Math.abs(r) > (state.night ? 0.6 : 0.35)) { const sc = SCALE[key]; tone(sc[Math.floor(Math.abs(r) * 97) % sc.length], nextAt, spb * 0.8, { type: 'triangle', vol: 0.06, bus: musicBus, attack: 0.01, release: 0.4 }); }
+      if (Math.abs(r) > (state.night ? 0.6 : 0.35)) { const tw = key === 'city' && state.town; const sc = tw ? tw.scale : SCALE[key]; tone(sc[Math.floor(Math.abs(r) * 97) % sc.length], nextAt, spb * 0.8, { type: tw ? tw.wave : 'triangle', vol: tw ? tw.vol : 0.06, bus: musicBus, attack: 0.01, release: 0.4 }); }
       beat++; nextAt += spb;
     }
   }, 120);
