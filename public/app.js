@@ -81,7 +81,9 @@ if (S.profile && !S.profile.look) S.profile.look = A.normLook(S.profile.outfit ?
 const cleanName = v => String(v || '').replace(/[^\p{L} '-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 14);
 SND.setPrefs({ music: S.settings.music, sfx: S.settings.sfx, musicVol: S.settings.musicVol ?? 1, sfxVol: S.settings.sfxVol ?? 1 });
 let RESETTING = false;
-const saveProgress = () => { if (RESETTING) return; if (!S.token) S.progress.coins = S.coins; store.set('willowvale_progress_v2', S.progress); };
+// One wallet: coins live in the save, on this device and (when signed in) in the cloud.
+const CLOUD = Object.assign({ version: 0, user: null, dirty: false, state: 'off', savedAt: 0, ready: false }, store.get('willowvale_cloud_v1', {}));
+const saveProgress = () => { if (RESETTING) return; S.progress.coins = S.coins; store.set('willowvale_progress_v2', S.progress); CLOUD.dirty = true; };
 const saveSettings = () => store.set('willowvale_settings_v2', S.settings);
 
 // ---------- world ----------
@@ -337,6 +339,7 @@ function collectPickup(p) {
   if (Math.hypot(px - player.x, py - player.y) < 1.2) go(); else walkTo(px, py, go);
 }
 // old picked keys are cleared away so the save stays small
+function pruneDaily() { const d = gameDay(); for (const k of Object.keys(S.progress.daily)) { const m = k.match(/^(?:req|mail|q):(\d+)/); if (m && +m[1] < d - 2) delete S.progress.daily[k]; } }
 function prunePicked() { const d = gameDay(); for (const k of Object.keys(S.progress.picked)) if (+k.split(':')[1] < d) delete S.progress.picked[k]; }
 
 // ---------- the market: buy seeds, sell what you've gathered ----------
@@ -765,6 +768,7 @@ function useCity(id) {
   cityWorld = C.world; cityThings = C.things; cityFlats = C.flats; cityNpcs = C.npcs; myHome = C.myHome; venuesById = C.venuesById;
   S.progress.city = id;
   SND.setCity(id);
+  if (typeof socket !== 'undefined' && socket && socket.connected) socket.emit('town:join', { townId: id });
 }
 if (!cityMeta(S.progress.city) || !cityOpen(S.progress.city)) S.progress.city = 'willowvale';
 useCity(S.progress.city);
@@ -1859,7 +1863,7 @@ const warned = {};
 function tickClock(gm) {
   const before = S.progress.clock; S.progress.clock += gm;
   for (const p of S.progress.plots) L.growPlot(p, S.progress.clock, raining());
-  if (Math.floor(before / 1440) !== Math.floor(S.progress.clock / 1440)) { toast(`Good morning! Day ${dayOf(S.progress.clock)} in ${C.meta.name}.`); chargeRent(); checkAchievements(); }
+  if (Math.floor(before / 1440) !== Math.floor(S.progress.clock / 1440)) { toast(`Good morning! Day ${dayOf(S.progress.clock)} in ${C.meta.name}.`); chargeRent(); prunePicked(); pruneDaily(); checkAchievements(); }
   if (Math.floor(before / 30) !== Math.floor(S.progress.clock / 30)) saveProgress();
 }
 function tickNeeds(gm, curDef) {
@@ -1977,7 +1981,7 @@ async function loadProperties() {
   catch { S.properties = S.properties || HOMES.map(h => ({ ...h, status: 'available' })); }
   return S.properties;
 }
-const localHomes = () => !S.token || C.id !== 'willowvale';
+const localHomes = () => true; // every home, in every town, is kept in your save
 function homeIsMine(o) {
   if (S.progress.homes[o.id]) return true;
   const p = !localHomes() && propFor(o.id);
@@ -2366,12 +2370,10 @@ function showProfile(message) {
   el.querySelector('#open-wardrobe').onclick = () => showWardrobe();
   redraw();
   const acc = el.querySelector('.account');
-  if (S.token) {
-    acc.innerHTML = `<h4 class="group-title">Account</h4><p class="lead">Signed in as <b>${esc(S.user?.username || 'player')}</b>. ${S.online === 'live' ? 'Connected to the shared town.' : 'Shared town is offline right now.'}</p><button class="btn btn-ghost btn-wide" id="logout-button">Log out</button>`;
-    acc.querySelector('#logout-button').onclick = () => { logout(); showProfile(); };
-  } else {
-    acc.innerHTML = `<h4 class="group-title">Save your home with an account</h4>
-      <p class="lead">Accounts let you rent and buy homes. Use a nickname, not your real name.</p>
+  if (S.token) renderAccount(acc);
+  else {
+    acc.innerHTML = `<h4 class="group-title">Save your game to the cloud</h4>
+      <p class="lead">With an account your game saves online, so you can carry on from another phone or computer. Use a nickname, never your real name. No email needed.</p>
       <label class="field"><span>Nickname</span><input id="auth-username" autocomplete="username" maxlength="20" placeholder="3–20 letters, numbers or _"></label>
       <label class="field"><span>Password</span><input id="auth-password" type="password" autocomplete="current-password" placeholder="8 or more characters"></label>
       <p class="form-error" id="auth-error" role="alert"></p>
@@ -2389,17 +2391,91 @@ async function auth(type) {
   try {
     const d = await request('/api/auth/' + type, 'POST', { username: u, password: p });
     S.token = d.token; try { localStorage.setItem('willowvale_token', S.token); } catch { /* ignore */ }
-    S.user = d.user; setCoins(d.world.coins); applyProfile(); connect();
-    toast(type === 'register' ? `Welcome to Willowvale, ${u}!` : `Welcome back, ${u}!`);
-    closeSheet();
+    S.user = d.user; applyProfile(); connect();
+    toast(type === 'register' ? `Welcome to Willowvale, ${u}! Your game now saves to the cloud.` : `Welcome back, ${u}!`);
+    closeSheet(); cloudAfterLogin();
   } catch (e) {
-    err.textContent = /Persistent accounts are not configured/.test(e.message) ? 'Accounts aren’t switched on for this town yet. You can keep playing as a guest; your progress stays on this device.' : e.message;
+    err.textContent = e.message;
   }
 }
-function logout() {
+// ---------- cloud saves ----------
+function storeCloud() { store.set('willowvale_cloud_v1', { version: CLOUD.version, user: CLOUD.user, savedAt: CLOUD.savedAt }); }
+const saveBlob = () => ({ progress: { ...S.progress, coins: S.coins }, profile: S.profile });
+const agoText = t => { const m = Math.round((Date.now() - t) / 60000); return !t ? 'not yet' : m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
+function cloudStatusText() {
+  return { saving: 'Saving to the cloud…', saved: `☁️ Saved to the cloud ${agoText(CLOUD.savedAt)}`, offline: 'You’re offline. Your game will save to the cloud when you’re back.', conflict: 'Waiting for you to choose which save to keep.', off: 'Cloud saves are off.' }[CLOUD.state] || '';
+}
+function renderAccount(acc) {
+  acc.innerHTML = `<h4 class="group-title">Account</h4>
+    <p class="lead">Signed in as <b>${esc(S.user?.username || CLOUD.user || 'player')}</b>.</p>
+    <div class="notice calm"><b id="cloud-status">${esc(cloudStatusText())}</b><span>Your character, coins, homes, garden and friends are all in your save.</span></div>
+    <div class="row2"><button class="btn btn-sun" id="cloud-now">Save now</button><button class="btn btn-ghost" id="logout-button">Log out</button></div>
+    <details class="danger"><summary>Delete my account</summary><p class="lead">This removes your account and cloud save for good. Your game stays on this device.</p>
+      <label class="field"><span>Type your password to confirm</span><input id="del-password" type="password" autocomplete="current-password"></label>
+      <p class="form-error" id="del-error" role="alert"></p><button class="btn btn-ghost" id="del-button">Delete account</button></details>`;
+  acc.querySelector('#cloud-now').onclick = async () => { CLOUD.dirty = true; await cloudPush().catch(() => {}); renderAccount(acc); };
+  acc.querySelector('#logout-button').onclick = async () => { await logout(); showProfile(); };
+  acc.querySelector('#del-button').onclick = async () => {
+    try { await request('/api/account', 'DELETE', { password: acc.querySelector('#del-password').value }); await logout(); toast('Your account and cloud save were deleted.'); showProfile(); }
+    catch (e) { acc.querySelector('#del-error').textContent = e.message; }
+  };
+}
+async function cloudAfterLogin() {
+  if (!S.token) return;
+  try {
+    const r = await request('/api/save');
+    const sameUser = CLOUD.user === S.user?.username;
+    if (!r.data) { CLOUD.version = 0; CLOUD.user = S.user?.username; CLOUD.ready = true; CLOUD.dirty = true; await cloudPush(); return; }
+    if (sameUser && CLOUD.version === r.version) { CLOUD.ready = true; CLOUD.state = 'saved'; if (CLOUD.dirty) cloudPush(); return; }
+    const fresh = (S.progress.clock || 0) < 900 && !Object.keys(S.progress.places || {}).length;
+    if (fresh || (sameUser && !CLOUD.dirty)) { applyCloud(r.data, r.version); return; }
+    chooseSave(r);
+  } catch (e) { CLOUD.state = 'offline'; }
+}
+function applyCloud(data, version) {
+  RESETTING = true;
+  store.set('willowvale_progress_v2', data.progress); if (data.profile) store.set('willowvale_player_v2', data.profile);
+  CLOUD.version = version; CLOUD.user = S.user?.username; CLOUD.savedAt = Date.now(); storeCloud();
+  toast('Loading your cloud save…'); setTimeout(() => location.reload(), 500);
+}
+function chooseSave(r) {
+  CLOUD.state = 'conflict';
+  const cp = r.data.progress || {}, cday = dayOf(cp.clock || 0), lday = dayOf(S.progress.clock || 0);
+  const el = h(`<div class="choose-save"><p class="lead">There’s a save in the cloud and a different one on this device. Which one do you want to keep playing?</p>
+    <button class="save-pick" data-k="cloud"><span>☁️</span><b>The cloud save</b><small>Day ${cday} · ✦ ${cp.coins ?? 0} · saved ${r.updatedAt ? new Date(r.updatedAt).toLocaleString() : 'earlier'}</small></button>
+    <button class="save-pick" data-k="device"><span>📱</span><b>This device</b><small>Day ${lday} · ✦ ${S.coins} · playing now</small></button>
+    <p class="hint-text">The other save will be replaced.</p></div>`);
+  el.querySelector('[data-k=cloud]').onclick = () => applyCloud(r.data, r.version);
+  el.querySelector('[data-k=device]').onclick = async () => { CLOUD.version = r.version; CLOUD.user = S.user?.username; CLOUD.ready = true; CLOUD.dirty = true; closeSheet(); await cloudPush(); toast('This device’s game is now your cloud save.'); };
+  openSheet('choose-save', 'Two saves found', 'Which game is yours?', el, { tab: 'explore' });
+}
+let pushing = null;
+async function cloudPush() {
+  if (!S.token || !CLOUD.ready || CLOUD.state === 'conflict') return;
+  if (pushing) return pushing;
+  CLOUD.state = 'saving'; const wasDirty = CLOUD.dirty; CLOUD.dirty = false;
+  pushing = (async () => {
+    try {
+      const r = await fetch(API_BASE + '/api/save', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + S.token }, body: JSON.stringify({ data: saveBlob(), baseVersion: CLOUD.version }) });
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 409) { chooseSave(d); return; }
+      if (!r.ok) throw new Error(d.error || 'save failed');
+      CLOUD.version = d.version; CLOUD.user = S.user?.username; CLOUD.savedAt = Date.now(); CLOUD.state = 'saved'; storeCloud();
+    } catch { CLOUD.dirty = CLOUD.dirty || wasDirty; CLOUD.state = 'offline'; }
+    finally { pushing = null; const st = document.getElementById('cloud-status'); if (st) st.textContent = cloudStatusText(); }
+  })();
+  return pushing;
+}
+setInterval(() => { if (S.token && CLOUD.ready && CLOUD.dirty) cloudPush(); }, 20000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && S.token && CLOUD.ready && CLOUD.dirty) cloudPush(); });
+window.addEventListener('online', () => { if (S.token) (CLOUD.ready ? cloudPush() : cloudAfterLogin()); });
+
+async function logout() {
+  if (CLOUD.dirty && S.token) await cloudPush().catch(() => {});
   S.token = ''; S.user = null; try { localStorage.removeItem('willowvale_token'); } catch { /* ignore */ }
   if (socket) socket.disconnect(); S.online = 'guest'; $('online-dot').className = 'online-dot';
-  setCoins(S.progress.coins); applyProfile(); toast('Logged out. You’re playing as a guest.');
+  Object.assign(CLOUD, { version: 0, user: null, state: 'off', ready: false }); storeCloud();
+  applyProfile(); toast('Logged out. Your game is still on this device.');
 }
 function showSettings() {
   const el = h(`<div class="settings">
@@ -2514,7 +2590,7 @@ async function request(path, method = 'GET', body) {
   if (!res.ok) throw Error(data.error || 'Request failed');
   return data;
 }
-let socket = null;
+var socket = null; // var: useCity runs before this line on start-up
 function loadIo() {
   if (typeof window.io === 'function') return Promise.resolve(true);
   return new Promise(r => { const s = document.createElement('script'); s.src = API_BASE + '/socket.io/socket.io.js'; s.onload = () => r(true); s.onerror = () => r(false); document.head.append(s); });
@@ -2523,16 +2599,15 @@ async function connect() {
   if (!S.token || !(await loadIo())) return;
   if (socket) socket.disconnect();
   socket = window.io(API_BASE || undefined, { auth: { token: S.token } });
-  socket.on('connect', () => { S.online = 'live'; $('online-dot').className = 'online-dot live'; socket.emit('town:join', { townId: 'willowvale' }); });
+  socket.on('connect', () => { S.online = 'live'; $('online-dot').className = 'online-dot live'; socket.emit('town:join', { townId: C ? C.id : 'willowvale' }); });
   socket.on('connect_error', () => { S.online = 'offline'; $('online-dot').className = 'online-dot'; });
   socket.on('town:presence', d => { $('online-dot').title = d.count + ' player' + (d.count === 1 ? '' : 's') + ' in town'; });
-  socket.on('town:state', d => { if (d.world) setCoins(d.world.coins); });
   socket.on('town:error', d => toast(d.message));
 }
 async function restoreSession() {
   if (!S.token) return;
-  try { const d = await request('/api/me'); S.user = d.user; setCoins(d.world.coins); applyProfile(); connect(); }
-  catch { S.token = ''; try { localStorage.removeItem('willowvale_token'); } catch { /* ignore */ } }
+  try { const d = await request('/api/me'); S.user = d.user; applyProfile(); connect(); cloudAfterLogin(); }
+  catch (e) { if (/sign in again|not found/i.test(e.message)) { S.token = ''; try { localStorage.removeItem('willowvale_token'); } catch { /* ignore */ } } else { CLOUD.state = 'offline'; } }
 }
 
 // ---------- career ----------
@@ -2875,4 +2950,4 @@ $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 700);
 
 // Small read-only hook for automated play-testing.
-window.__willowvale = { state: S, screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { S.progress.clock = m; }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
+window.__willowvale = { state: S, screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { S.progress.clock = m; }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };

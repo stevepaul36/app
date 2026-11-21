@@ -1,51 +1,54 @@
 'use strict';
-const {test,before,after}=require('node:test');
-const assert=require('node:assert/strict');
-const {spawn}=require('node:child_process');
+const { test, before, after, describe } = require('node:test');
+const assert = require('node:assert/strict');
+const { spawn } = require('node:child_process');
+const wait = ms => new Promise(r => setTimeout(r, ms));
 
-let child,base,logs='';
-const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+function startServer(env) {
+  const port = 31000 + Math.floor(Math.random() * 18000), base = 'http://127.0.0.1:' + port;
+  let logs = '';
+  const child = spawn(process.execPath, ['server.js'], { env: { ...process.env, NODE_ENV: 'test', PORT: String(port), JWT_SECRET: 'test-secret-that-is-long-enough-for-smoke-tests-123456', MONGODB_URI: '', ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+  child.stdout.on('data', b => { logs += b; }); child.stderr.on('data', b => { logs += b; });
+  const ready = (async () => { for (let i = 0; i < 60; i++) { if (child.exitCode !== null) throw new Error('Server exited. ' + logs); try { await fetch(base + '/healthz', { signal: AbortSignal.timeout(500) }); return; } catch { /* not yet */ } await wait(250); } throw new Error('Server did not start. ' + logs); })();
+  return { child, base, ready };
+}
+const json = (base, path, method = 'GET', body, token) => fetch(base + path, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: 'Bearer ' + token } : {}) }, body: body ? JSON.stringify(body) : undefined });
 
-before(async()=>{
-  const port=31000+Math.floor(Math.random()*18000);
-  base='http://127.0.0.1:'+port;
-  child=spawn(process.execPath,['server.js'],{env:{...process.env,NODE_ENV:'test',PORT:String(port),JWT_SECRET:'test-secret-that-is-long-enough-for-smoke-tests-123456'},stdio:['ignore','pipe','pipe']});
-  child.stdout.on('data',b=>{logs+=b.toString()});
-  child.stderr.on('data',b=>{logs+=b.toString()});
-  for(let i=0;i<60;i++){
-    if(child.exitCode!==null)throw new Error('Server exited before becoming ready. '+logs);
-    try{await fetch(base+'/healthz',{signal:AbortSignal.timeout(500)});return}catch{}
-    await wait(250);
-  }
-  throw new Error('Server did not start. '+logs);
+describe('guest mode (no database)', () => {
+  let srv;
+  before(async () => { srv = startServer({}); await srv.ready; });
+  after(() => srv.child.kill('SIGTERM'));
+  test('health is fine and says accounts are off', async () => {
+    const r = await fetch(srv.base + '/healthz'); assert.equal(r.status, 200);
+    const b = await r.json(); assert.equal(b.database, 'not-configured'); assert.equal(b.accounts, false);
+  });
+  test('registration is politely switched off', async () => {
+    const r = await json(srv.base, '/api/auth/register', 'POST', { username: 'WillowTester', password: 'test-password-123' });
+    assert.equal(r.status, 503); assert.match((await r.json()).error, /switched on/);
+  });
 });
 
-after(()=>{if(child&&!child.killed)child.kill('SIGTERM')});
-
-test('health endpoint reports missing persistent database as not ready',async()=>{
-  const r=await fetch(base+'/healthz');
-  assert.equal(r.status,503);
-  const body=await r.json();
-  assert.equal(body.ok,false);
-  assert.equal(body.database,'not-configured');
-});
-
-test('property catalogue remains available in guest demo mode',async()=>{
-  const r=await fetch(base+'/api/properties');
-  assert.equal(r.status,200);
-  const body=await r.json();
-  assert.ok(Array.isArray(body.properties));
-  assert.ok(body.properties.length>=12);
-});
-
-test('registration is blocked when progress cannot be persisted',async()=>{
-  const r=await fetch(base+'/api/auth/register',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:'WillowTester',password:'test-password-123'})});
-  assert.equal(r.status,503);
-  assert.match((await r.json()).error,/Persistent accounts are not configured/);
-});
-
-test('property transactions are blocked when progress cannot be persisted',async()=>{
-  const r=await fetch(base+'/api/properties/home-1/buy',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
-  assert.equal(r.status,503);
-  assert.match((await r.json()).error,/Persistent accounts are not configured/);
+describe('accounts and cloud saves', () => {
+  let srv;
+  before(async () => { srv = startServer({ MONGODB_URI: 'memory://test' }); await srv.ready; });
+  after(() => srv.child.kill('SIGTERM'));
+  const save = (coins, clock = 0) => ({ data: { progress: { coins, clock }, profile: { name: 'Pip' } } });
+  test('register, save, load, conflict, delete', async () => {
+    let r = await json(srv.base, '/api/auth/register', 'POST', { username: 'Bunny_1', password: 'carrots-1234' });
+    assert.equal(r.status, 201); const { token } = await r.json();
+    r = await json(srv.base, '/api/auth/register', 'POST', { username: 'bunny_1', password: 'carrots-1234' }); assert.equal(r.status, 409);
+    r = await json(srv.base, '/api/save', 'GET', null, token); assert.deepEqual(await r.json(), { data: null, version: 0 });
+    r = await json(srv.base, '/api/save', 'PUT', { ...save(50), baseVersion: 0 }, token); assert.equal(r.status, 200); assert.equal((await r.json()).version, 1);
+    r = await json(srv.base, '/api/save', 'PUT', { ...save(80, 3000), baseVersion: 1 }, token); assert.equal((await r.json()).version, 2);
+    // an old device tries to write over the newer save
+    r = await json(srv.base, '/api/save', 'PUT', { ...save(10), baseVersion: 1 }, token); assert.equal(r.status, 409);
+    const c = await r.json(); assert.equal(c.version, 2); assert.equal(c.data.progress.coins, 80);
+    r = await json(srv.base, '/api/save', 'PUT', { data: { progress: { coins: -5 } }, baseVersion: 2 }, token); assert.equal(r.status, 400);
+    r = await json(srv.base, '/api/auth/login', 'POST', { username: 'BUNNY_1', password: 'carrots-1234' }); assert.equal(r.status, 200);
+    const login = await r.json(); assert.equal(login.save.version, 2); assert.equal(login.save.coins, 80); assert.equal(login.save.day, 3);
+    r = await json(srv.base, '/api/auth/login', 'POST', { username: 'Bunny_1', password: 'wrong-password' }); assert.equal(r.status, 401);
+    r = await json(srv.base, '/api/account', 'DELETE', { password: 'nope-nope' }, token); assert.equal(r.status, 401);
+    r = await json(srv.base, '/api/account', 'DELETE', { password: 'carrots-1234' }, token); assert.equal(r.status, 200);
+    r = await json(srv.base, '/api/me', 'GET', null, token); assert.equal(r.status, 401);
+  });
 });

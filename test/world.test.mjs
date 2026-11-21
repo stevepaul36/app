@@ -26,7 +26,7 @@ test('every door can be walked to from the town square', () => {
   }
 });
 
-test('home IDs match the server property catalogue', () => {
-  const server = fs.readFileSync(new URL('../server.js', import.meta.url), 'utf8');
-  for (const h of HOMES) assert.match(server, new RegExp(`'${h.id}','${h.name.replace(/[&]/g, '\\$&')}'`), `${h.id} missing from server seed`);
+test('home IDs are unique and every home has a price and rent', () => {
+  assert.equal(new Set(HOMES.map(h => h.id)).size, HOMES.length);
+  for (const h of HOMES) assert.ok(h.price > 0 && h.rent > 0, h.id);
 });

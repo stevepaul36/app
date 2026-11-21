@@ -1,46 +1,152 @@
 'use strict';
-const express=require('express'),http=require('http'),crypto=require('crypto'),cors=require('cors'),helmet=require('helmet'),bcrypt=require('bcryptjs'),jwt=require('jsonwebtoken'),{rateLimit}=require('express-rate-limit'),{Pool}=require('pg'),{Server}=require('socket.io');
-const app=express(),server=http.createServer(app),production=process.env.NODE_ENV==='production';
-if(production&&(!process.env.JWT_SECRET||process.env.JWT_SECRET.length<32))throw Error('Set JWT_SECRET to at least 32 random characters.');
-const secret=process.env.JWT_SECRET||crypto.randomBytes(48).toString('hex');
-const pool=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_URL.includes('localhost')?false:{rejectUnauthorized:false},max:10,connectionTimeoutMillis:5000}):null;
-const users=new Map(),worlds=new Map(),allowed=(process.env.ALLOWED_ORIGINS||'').split(',').map(s=>s.trim()).filter(Boolean);
-const isLocalWebViewOrigin=origin=>{try{const u=new URL(origin);return u.hostname==='localhost'&&['http:','https:','capacitor:'].includes(u.protocol)}catch{return false}};
-const corsOptions={origin:(origin,cb)=>!origin||!allowed.length||allowed.includes(origin)||isLocalWebViewOrigin(origin)?cb(null,true):cb(Error('Origin not allowed')),methods:['GET','POST'],allowedHeaders:['Content-Type','Authorization']};
-app.set('trust proxy',1);app.disable('x-powered-by');app.use(helmet({contentSecurityPolicy:false,crossOriginEmbedderPolicy:false}));app.use(cors(corsOptions));app.use(express.json({limit:'24kb'}));app.use(express.static('public',{maxAge:0,setHeaders:(res,path)=>{if(path.endsWith('.html'))res.setHeader('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate')}}));app.use('/api/auth',rateLimit({windowMs:900000,limit:20,standardHeaders:true,legacyHeaders:false}));
-const io=new Server(server,{cors:corsOptions,maxHttpBufferSize:100000,pingInterval:25000,pingTimeout:20000});
-async function initDb(){if(!pool){console.warn('DATABASE_URL missing: accounts and property transactions are temporary in-memory only.');return}await pool.query("CREATE TABLE IF NOT EXISTS players(id UUID PRIMARY KEY,username VARCHAR(20) NOT NULL UNIQUE,password_hash TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()); CREATE TABLE IF NOT EXISTS player_worlds(player_id UUID PRIMARY KEY REFERENCES players(id) ON DELETE CASCADE,coins INTEGER NOT NULL DEFAULT 35 CHECK(coins>=0),nature INTEGER NOT NULL DEFAULT 0 CHECK(nature>=0),restored JSONB NOT NULL DEFAULT '[]'::jsonb,inventory JSONB NOT NULL DEFAULT '{\"seeds\":3,\"crops\":0,\"fish\":0}'::jsonb,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()); CREATE TABLE IF NOT EXISTS town_events(id BIGSERIAL PRIMARY KEY,player_id UUID REFERENCES players(id) ON DELETE SET NULL,town_id VARCHAR(64) NOT NULL,event_type VARCHAR(40) NOT NULL,payload JSONB NOT NULL DEFAULT '{}'::jsonb,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()); CREATE INDEX IF NOT EXISTS town_events_town_created_idx ON town_events(town_id,created_at DESC); CREATE TABLE IF NOT EXISTS properties(id VARCHAR(64) PRIMARY KEY,name VARCHAR(80) NOT NULL,kind VARCHAR(24) NOT NULL,price INTEGER NOT NULL,rent INTEGER NOT NULL,description TEXT NOT NULL,x DOUBLE PRECISION NOT NULL,z DOUBLE PRECISION NOT NULL,owner_id UUID REFERENCES players(id) ON DELETE SET NULL,tenant_id UUID REFERENCES players(id) ON DELETE SET NULL,lease_until TIMESTAMPTZ);");
-const seed=[['home-1','Mosslight Cottage','house',250,12,'A cosy starter home beside Willow Park',-68,-38],['home-2','The Sunbeam House','house',325,16,'A bright little home with a garden',-68,-8],['home-3','Fern & Finch Home','house',400,20,'A leafy home in a quiet neighbourhood',-38,-38],['home-4','Maple Corner','house',475,24,'A cheerful corner home near the shops',-38,-8],['home-5','Clover House','house',550,28,'A roomy home close to the central plaza',-8,-38],['home-6','Juniper Apartments','apartment',420,20,'A modern apartment near city life',8,-38],['home-7','The Fern House','apartment',530,25,'An airy apartment with park views',38,-38],['home-8','Willow Lofts','apartment',640,30,'A stylish loft near Old Town',38,-8],['home-9','Bluebell Residences','apartment',750,36,'A waterside residence with room to grow',68,-38],['home-10','Acorn Court','apartment',850,42,'A premium city apartment near the plaza',68,-8],['home-11','Marina View Villa','villa',1100,55,'A spacious home by Bluewater Quay',68,-68],['home-12','Fernhill Garden Villa','villa',1350,68,'A private garden home in the hills',-68,-68]];
-for(const p of seed)await pool.query('INSERT INTO properties(id,name,kind,price,rent,description,x,z) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO NOTHING',p)}
-const tokenFor=u=>jwt.sign({sub:u.id,username:u.username},secret,{expiresIn:'14d',issuer:'willowvale'});
-function claims(req){const h=req.headers.authorization||'';if(!h.startsWith('Bearer '))return null;try{return jwt.verify(h.slice(7),secret,{issuer:'willowvale'})}catch{return null}}
-async function getUser(id){if(pool){const r=await pool.query('SELECT id,username,password_hash FROM players WHERE id=$1',[id]);return r.rows[0]||null}return [...users.values()].find(u=>u.id===id)||null}
-async function getWorld(id){if(pool){const r=await pool.query('SELECT coins,nature,restored,inventory FROM player_worlds WHERE player_id=$1',[id]);return r.rows[0]||{coins:35,nature:0,restored:[],inventory:{seeds:3,crops:0,fish:0}}}return worlds.get(id)||{coins:35,nature:0,restored:[],inventory:{seeds:3,crops:0,fish:0}}}
-async function saveWorld(id,w){if(pool)await pool.query('INSERT INTO player_worlds(player_id,coins,nature,restored,inventory,updated_at) VALUES($1,$2,$3,$4,$5,NOW()) ON CONFLICT(player_id) DO UPDATE SET coins=EXCLUDED.coins,nature=EXCLUDED.nature,restored=EXCLUDED.restored,inventory=EXCLUDED.inventory,updated_at=NOW()',[id,w.coins,w.nature,JSON.stringify(w.restored),JSON.stringify(w.inventory)]);else worlds.set(id,w)}
-async function createUser(username,password){const id=crypto.randomUUID(),hash=await bcrypt.hash(password,12),u={id,username,password_hash:hash};if(pool){const r=await pool.query('INSERT INTO players(id,username,password_hash) VALUES($1,$2,$3) RETURNING id,username,password_hash',[id,username,hash]);Object.assign(u,r.rows[0])}else{if([...users.values()].some(x=>x.username.toLowerCase()===username.toLowerCase()))throw Object.assign(Error('That nickname is already taken.'),{status:409});users.set(username.toLowerCase(),u)}await saveWorld(id,{coins:350,nature:0,restored:[],inventory:{seeds:3,crops:0,fish:0}});return u}
-app.get('/healthz',async(_q,res)=>{if(!pool)return res.status(503).json({ok:false,service:'willowvale-api',database:'not-configured',mode:'ephemeral',warning:'Persistent storage is required for accounts, property transactions and shared multiplayer.'});try{await pool.query('SELECT 1');res.json({ok:true,service:'willowvale-api',database:'connected',mode:'persistent'})}catch{res.status(503).json({ok:false,service:'willowvale-api',database:'unavailable'})}});
-const requirePersistentStore=(_req,res,next)=>pool?next():res.status(503).json({error:'Persistent accounts are not configured yet. Guest mode is available; account registration and property transactions are temporarily disabled to prevent lost progress.'});
-const adminLimiter=rateLimit({windowMs:900000,limit:8,standardHeaders:true,legacyHeaders:false,message:{error:'Too many tries. Wait 15 minutes.'}});
-app.post('/api/admin/verify',adminLimiter,(req,res)=>{const want=process.env.ADMIN_KEY||'';if(want.length<12)return res.status(404).json({error:'Admin mode is not set up on this server.'});const got=String(req.body.key||'');const a=crypto.createHash('sha256').update(got).digest(),b=crypto.createHash('sha256').update(want).digest();if(!crypto.timingSafeEqual(a,b))return res.status(401).json({error:'That admin key is not right.'});res.json({ok:true,token:jwt.sign({role:'admin'},secret,{expiresIn:'12h',issuer:'willowvale-admin'})})});
-app.get('/api/admin/check',(req,res)=>{const h=req.headers.authorization||'';try{const c=jwt.verify(h.slice(7),secret,{issuer:'willowvale-admin'});res.json({ok:c.role==='admin'})}catch{res.status(401).json({ok:false})}});
-app.get('/api/me',requirePersistentStore,async(req,res,next)=>{try{const c=claims(req);if(!c)return res.status(401).json({error:'Please sign in again.'});const u=await getUser(c.sub);if(!u)return res.status(401).json({error:'Account not found.'});res.json({user:{id:u.id,username:u.username},world:await getWorld(u.id)})}catch(e){next(e)}});
-app.post('/api/auth/register',requirePersistentStore,async(req,res,next)=>{try{const username=String(req.body.username||'').trim(),password=String(req.body.password||'');if(!/^[a-zA-Z0-9_]{3,20}$/.test(username))return res.status(400).json({error:'Nickname must be 3–20 letters, numbers or underscores.'});if(password.length<8||password.length>128)return res.status(400).json({error:'Password must be 8–128 characters.'});if(pool){const ex=await pool.query('SELECT 1 FROM players WHERE lower(username)=lower($1)',[username]);if(ex.rowCount)return res.status(409).json({error:'That nickname is already taken.'})}const u=await createUser(username,password);res.status(201).json({token:tokenFor(u),user:{id:u.id,username:u.username},world:await getWorld(u.id)})}catch(e){if(e.code==='23505')return res.status(409).json({error:'That nickname is already taken.'});if(e.status)return res.status(e.status).json({error:e.message});next(e)}});
-app.post('/api/auth/login',requirePersistentStore,async(req,res,next)=>{try{const username=String(req.body.username||'').trim(),password=String(req.body.password||'');let u;if(pool){const r=await pool.query('SELECT id,username,password_hash FROM players WHERE lower(username)=lower($1)',[username]);u=r.rows[0]}else u=[...users.values()].find(x=>x.username.toLowerCase()===username.toLowerCase());if(!u||!(await bcrypt.compare(password,u.password_hash)))return res.status(401).json({error:'Nickname or password is incorrect.'});res.json({token:tokenFor(u),user:{id:u.id,username:u.username},world:await getWorld(u.id)})}catch(e){next(e)}});
-const memoryProperties=[{id:'home-1',name:'Mosslight Cottage',kind:'house',price:250,rent:12,description:'A cosy starter home beside Willow Park',x:-68,z:-38},{id:'home-2',name:'The Sunbeam House',kind:'house',price:325,rent:16,description:'A bright little home with a garden',x:-68,z:-8},{id:'home-3',name:'Fern & Finch Home',kind:'house',price:400,rent:20,description:'A leafy home in a quiet neighbourhood',x:-38,z:-38},{id:'home-4',name:'Maple Corner',kind:'house',price:475,rent:24,description:'A cheerful corner home near the shops',x:-38,z:-8},{id:'home-5',name:'Clover House',kind:'house',price:550,rent:28,description:'A roomy home close to the central plaza',x:-8,z:-38},{id:'home-6',name:'Juniper Apartments',kind:'apartment',price:420,rent:20,description:'A modern apartment near city life',x:8,z:-38},{id:'home-7',name:'The Fern House',kind:'apartment',price:530,rent:25,description:'An airy apartment with park views',x:38,z:-38},{id:'home-8',name:'Willow Lofts',kind:'apartment',price:640,rent:30,description:'A stylish loft near Old Town',x:38,z:-8},{id:'home-9',name:'Bluebell Residences',kind:'apartment',price:750,rent:36,description:'A waterside residence with room to grow',x:68,z:-38},{id:'home-10',name:'Acorn Court',kind:'apartment',price:850,rent:42,description:'A premium city apartment near the plaza',x:68,z:-8},{id:'home-11',name:'Marina View Villa',kind:'villa',price:1100,rent:55,description:'A spacious home by Bluewater Quay',x:68,z:-68},{id:'home-12',name:'Fernhill Garden Villa',kind:'villa',price:1350,rent:68,description:'A private garden home in the hills',x:-68,z:-68}].map(p=>({...p,owner:null,tenant:null,lease_until:null}));
-app.get('/api/properties',async(_req,res,next)=>{try{if(pool){const r=await pool.query('SELECT p.id,p.name,p.kind,p.price,p.rent,p.description,p.x,p.z,owner.username AS owner,tenant.username AS tenant,p.lease_until FROM properties p LEFT JOIN players owner ON owner.id=p.owner_id LEFT JOIN players tenant ON tenant.id=p.tenant_id ORDER BY p.price');return res.json({properties:r.rows.map(p=>({...p,status:p.owner?'owned':p.tenant?'rented':'available'}))})}res.json({properties:memoryProperties.map(p=>({...p,status:p.owner?'owned':p.tenant?'rented':'available'}))})}catch(e){next(e)}});
-app.post('/api/properties/:id/:action',requirePersistentStore,async(req,res,next)=>{try{const c=claims(req);if(!c)return res.status(401).json({error:'Create an account or log in first.'});const u=await getUser(c.sub);if(!u)return res.status(401).json({error:'Account not found.'});const action=req.params.action;if(!['rent','buy'].includes(action))return res.status(400).json({error:'Choose rent or buy.'});let p,w;
-if(pool){const r=await pool.query('SELECT * FROM properties WHERE id=$1',[req.params.id]);p=r.rows[0];if(!p)return res.status(404).json({error:'That property is not listed.'});w=await getWorld(u.id)}else{p=memoryProperties.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({error:'That property is not listed.'});w=await getWorld(u.id)}
-const now=Date.now();if(p.lease_until&&new Date(p.lease_until).getTime()<now){p.tenant=null;p.tenant_id=null;p.lease_until=null;if(pool)await pool.query('UPDATE properties SET tenant_id=NULL,lease_until=NULL WHERE id=$1',[p.id])}
-const isOwned=pool?!!p.owner_id:!!p.owner,isRented=pool?!!p.tenant_id:!!p.tenant;
-if(action==='rent'){if(isOwned||isRented)return res.status(409).json({error:'This home is not available to rent right now.'});if(w.coins<p.rent)return res.status(400).json({error:'Not enough coins to rent this home.'});w.coins-=p.rent;if(pool){await pool.query('UPDATE player_worlds SET coins=$1,updated_at=NOW() WHERE player_id=$2',[w.coins,u.id]);const until=new Date(now+24*60*60*1000);await pool.query('UPDATE properties SET tenant_id=$1,lease_until=$2 WHERE id=$3',[u.id,until,p.id]);p.tenant=u.username;p.lease_until=until}else{p.tenant=u.username;p.lease_until=new Date(now+24*60*60*1000).toISOString();await saveWorld(u.id,w)}return res.json({message:'You rented '+p.name+' for one in-game day!',world:w,property:p})}
-if(isOwned)return res.status(409).json({error:'This home already has an owner.'});if(isRented)return res.status(409).json({error:'This home is currently rented. Try another listing.'});if(w.coins<p.price)return res.status(400).json({error:'You need '+p.price+' coins to buy this home.'});w.coins-=p.price;if(pool){await pool.query('UPDATE player_worlds SET coins=$1,updated_at=NOW() WHERE player_id=$2',[w.coins,u.id]);await pool.query('UPDATE properties SET owner_id=$1 WHERE id=$2',[u.id,p.id]);p.owner=u.username}else{p.owner=u.username;await saveWorld(u.id,w)}return res.json({message:'Congratulations! You bought '+p.name+'.',world:w,property:p})
-}catch(e){next(e)}});
-const presence=new Map(),towns=new Map(),defaultTown=()=>({coins:35,nature:0,restored:[],buildings:[],updatedAt:Date.now()}),town=id=>{if(!towns.has(id))towns.set(id,defaultTown());return towns.get(id)};
-async function logEvent(uid,tid,type,payload){if(pool)await pool.query('INSERT INTO town_events(player_id,town_id,event_type,payload) VALUES($1,$2,$3,$4)',[uid,tid,type,JSON.stringify(payload||{})])}
-io.use(async(s,next)=>{if(!pool)return next(Error('Persistent multiplayer is not configured yet.'));try{const token=s.handshake.auth&&s.handshake.auth.token;if(!token)return next(Error('Sign in to join the shared town.'));const c=jwt.verify(token,secret,{issuer:'willowvale'}),u=await getUser(c.sub);if(!u)return next(Error('Account not found.'));s.data.user={id:u.id,username:u.username};next()}catch{next(Error('Sign in to join the shared town.'))}});
-io.on('connection',s=>{s.on('town:join',async p=>{const tid=String(p&&p.townId||'willowvale').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,64)||'willowvale';s.data.townId=tid;s.join(tid);if(!presence.has(tid))presence.set(tid,new Set());presence.get(tid).add(s.id);s.emit('town:state',{world:await getWorld(s.data.user.id),town:town(tid)});io.to(tid).emit('town:presence',{count:presence.get(tid).size})});
-s.on('town:action',async p=>{try{const action=String(p&&p.action||''),tid=s.data.townId||'willowvale',allowedActions=['restore','plant','harvest','fish','sell','build','greet','visit-hearth','visit-bridge'];if(!allowedActions.includes(action))return s.emit('town:error',{message:'That activity is not available.'});const w=await getWorld(s.data.user.id),t=town(tid),message={restore:'A neighbour restored a patch of nature!',plant:'Someone planted a garden!',harvest:'Fresh crops were harvested!',fish:'Someone caught a fish!',sell:'Goods arrived at the market!',build:'A new cottage was added to town!',greet:'Neighbours are making friends!','visit-hearth':'The Town Hearth is glowing!','visit-bridge':'A neighbour crossed Willow Bridge!'}[action];if(action==='restore'){const id=String(p.patchId??'0').slice(0,12);if(!w.restored.includes(id)){w.restored.push(id);w.nature=Math.min(999999,w.nature+1);w.coins=Math.min(999999,w.coins+3)}}if(action==='plant'&&w.inventory.seeds>0){w.inventory.seeds--;w.inventory.crops++}if(action==='harvest'&&w.inventory.crops>0){w.coins=Math.min(999999,w.coins+5);w.inventory.crops--}if(action==='fish')w.inventory.fish=Math.min(999,w.inventory.fish+1);if(action==='sell'){const earned=w.inventory.crops*6+w.inventory.fish*8;w.coins=Math.min(999999,w.coins+earned);w.inventory.crops=0;w.inventory.fish=0}if(action==='build'){if(w.coins<10)return s.emit('town:error',{message:'You need 10 coins to build.'});w.coins-=10;t.buildings.push({id:crypto.randomUUID(),x:Math.max(-24,Math.min(24,Number(p.x)||0)),z:Math.max(-24,Math.min(24,Number(p.z)||0)),type:'cottage',owner:s.data.user.username})}w.updatedAt=Date.now();t.updatedAt=Date.now();await saveWorld(s.data.user.id,w);await logEvent(s.data.user.id,tid,action,{username:s.data.user.username});io.to(tid).emit('town:action',{user:s.data.user.username,action,message,town:{coins:t.coins,nature:t.nature,restored:t.restored,buildings:t.buildings,updatedAt:t.updatedAt}});s.emit('town:state',{world:w,town:t})}catch(e){console.error('town action failed',e.message);s.emit('town:error',{message:'Could not save that action. Try again.'})}});
-s.on('disconnect',()=>{const tid=s.data.townId,set=presence.get(tid);if(set){set.delete(s.id);io.to(tid).emit('town:presence',{count:set.size});if(!set.size)presence.delete(tid)}})});
-app.use((e,_q,res,_n)=>{console.error(e.message);if(!res.headersSent)res.status(e.message==='Origin not allowed'?403:500).json({error:e.message==='Origin not allowed'?'Origin not allowed.':'Something went wrong. Please try again.'})});
-const port=Number(process.env.PORT)||3000;initDb().then(()=>server.listen(port,'0.0.0.0',()=>console.log('Willowvale listening on '+port))).catch(e=>{console.error('Startup failed',e);process.exit(1)});
-process.on('SIGTERM',async()=>{server.close();if(pool)await pool.end();process.exit(0)});
+// Willowvale server: serves the game, keeps accounts and cloud saves in MongoDB, and shows who's online.
+// With no MONGODB_URI the game still runs; accounts stay switched off so nobody loses progress.
+const express = require('express'), http = require('http'), crypto = require('crypto'), cors = require('cors'), helmet = require('helmet');
+const bcrypt = require('bcryptjs'), jwt = require('jsonwebtoken'), { rateLimit } = require('express-rate-limit'), { MongoClient } = require('mongodb'), { Server } = require('socket.io');
+
+const app = express(), server = http.createServer(app), production = process.env.NODE_ENV === 'production';
+if (production && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)) throw Error('Set JWT_SECRET to at least 32 random characters.');
+const secret = process.env.JWT_SECRET || crypto.randomBytes(48).toString('hex');
+const allowed = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+const isLocalWebViewOrigin = origin => { try { const u = new URL(origin); return u.hostname === 'localhost' && ['http:', 'https:', 'capacitor:'].includes(u.protocol); } catch { return false; } };
+const corsOptions = { origin: (origin, cb) => (!origin || !allowed.length || allowed.includes(origin) || isLocalWebViewOrigin(origin) ? cb(null, true) : cb(Error('Origin not allowed'))), methods: ['GET', 'POST', 'PUT', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization'] };
+
+app.set('trust proxy', 1); app.disable('x-powered-by');
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+app.use(cors(corsOptions));
+app.use('/api/save', express.json({ limit: '600kb' }));
+app.use(express.json({ limit: '24kb' }));
+app.use(express.static('public', { maxAge: 0, setHeaders: (res, path) => { if (path.endsWith('.html')) res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate'); } }));
+app.use('/api/auth', rateLimit({ windowMs: 900000, limit: 20, standardHeaders: true, legacyHeaders: false }));
+app.use('/api/save', rateLimit({ windowMs: 60000, limit: 30, standardHeaders: true, legacyHeaders: false }));
+const io = new Server(server, { cors: corsOptions, maxHttpBufferSize: 100000, pingInterval: 25000, pingTimeout: 20000 });
+
+// ---------- storage ----------
+let db = null, players = null, saves = null;
+async function initDb() {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) { console.warn('MONGODB_URI missing: accounts and cloud saves are switched off (guest play still works).'); return; }
+  const client = uri.startsWith('memory://') ? new (require('./lib/memdb').MemoryClient)() : new MongoClient(uri, { serverSelectionTimeoutMS: 8000, maxPoolSize: 10 });
+  await client.connect();
+  db = client.db(process.env.MONGODB_DB || 'willowvale');
+  players = db.collection('players'); saves = db.collection('saves');
+  await players.createIndex({ usernameLower: 1 }, { unique: true });
+  console.log('MongoDB connected');
+  process.on('SIGTERM', async () => { server.close(); await client.close(); process.exit(0); });
+}
+const requireStore = (_req, res, next) => (db ? next() : res.status(503).json({ error: 'Accounts aren’t switched on for this town yet. You can keep playing as a guest; your progress stays on this device.' }));
+
+const tokenFor = u => jwt.sign({ sub: u._id, username: u.username }, secret, { expiresIn: '30d', issuer: 'willowvale' });
+function claims(req) { const h = req.headers.authorization || ''; if (!h.startsWith('Bearer ')) return null; try { return jwt.verify(h.slice(7), secret, { issuer: 'willowvale' }); } catch { return null; } }
+async function currentUser(req) { const c = claims(req); if (!c) return null; return players.findOne({ _id: c.sub }, { projection: { passwordHash: 0 } }); }
+const publicUser = u => ({ id: u._id, username: u.username });
+async function saveMeta(id) { const s = await saves.findOne({ _id: id }, { projection: { data: 0 } }); return s ? { version: s.version, updatedAt: s.updatedAt, day: s.day, coins: s.coins } : null; }
+
+// A save is the player's own game state. Keep it a plain object of a sensible size with a sensible wallet.
+function cleanSave(body) {
+  const data = body && body.data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const p = data.progress;
+  if (!p || typeof p !== 'object') return null;
+  const coins = Number(p.coins);
+  if (!Number.isFinite(coins) || coins < 0 || coins > 10000000) return null;
+  return { data, coins: Math.floor(coins), day: Math.max(1, Math.floor((Number(p.clock) || 0) / 1440) + 1) };
+}
+
+// ---------- routes ----------
+app.get('/healthz', async (_q, res) => {
+  if (!db) return res.json({ ok: true, service: 'willowvale', database: 'not-configured', accounts: false });
+  try { await db.command({ ping: 1 }); res.json({ ok: true, service: 'willowvale', database: 'connected', accounts: true }); }
+  catch { res.status(503).json({ ok: false, service: 'willowvale', database: 'unavailable' }); }
+});
+
+const adminLimiter = rateLimit({ windowMs: 900000, limit: 8, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many tries. Wait 15 minutes.' } });
+app.post('/api/admin/verify', adminLimiter, (req, res) => {
+  const want = process.env.ADMIN_KEY || '';
+  if (want.length < 12) return res.status(404).json({ error: 'Admin mode is not set up on this server.' });
+  const a = crypto.createHash('sha256').update(String(req.body.key || '')).digest(), b = crypto.createHash('sha256').update(want).digest();
+  if (!crypto.timingSafeEqual(a, b)) return res.status(401).json({ error: 'That admin key is not right.' });
+  res.json({ ok: true, token: jwt.sign({ role: 'admin' }, secret, { expiresIn: '12h', issuer: 'willowvale-admin' }) });
+});
+app.get('/api/admin/check', (req, res) => { const h = req.headers.authorization || ''; try { const c = jwt.verify(h.slice(7), secret, { issuer: 'willowvale-admin' }); res.json({ ok: c.role === 'admin' }); } catch { res.status(401).json({ ok: false }); } });
+
+const NICK = /^[a-zA-Z0-9_]{3,20}$/;
+app.post('/api/auth/register', requireStore, async (req, res, next) => {
+  try {
+    const username = String(req.body.username || '').trim(), password = String(req.body.password || '');
+    if (!NICK.test(username)) return res.status(400).json({ error: 'Nickname must be 3–20 letters, numbers or underscores.' });
+    if (password.length < 8 || password.length > 128) return res.status(400).json({ error: 'Password must be 8–128 characters.' });
+    const u = { _id: crypto.randomUUID(), username, usernameLower: username.toLowerCase(), passwordHash: await bcrypt.hash(password, 12), createdAt: new Date() };
+    try { await players.insertOne(u); } catch (e) { if (e.code === 11000) return res.status(409).json({ error: 'That nickname is already taken.' }); throw e; }
+    res.status(201).json({ token: tokenFor(u), user: publicUser(u), save: null });
+  } catch (e) { next(e); }
+});
+app.post('/api/auth/login', requireStore, async (req, res, next) => {
+  try {
+    const username = String(req.body.username || '').trim(), password = String(req.body.password || '');
+    const u = await players.findOne({ usernameLower: username.toLowerCase() });
+    if (!u || !(await bcrypt.compare(password, u.passwordHash))) return res.status(401).json({ error: 'Nickname or password is incorrect.' });
+    res.json({ token: tokenFor(u), user: publicUser(u), save: await saveMeta(u._id) });
+  } catch (e) { next(e); }
+});
+app.get('/api/me', requireStore, async (req, res, next) => {
+  try { const u = await currentUser(req); if (!u) return res.status(401).json({ error: 'Please sign in again.' }); res.json({ user: publicUser(u), save: await saveMeta(u._id) }); } catch (e) { next(e); }
+});
+
+// Cloud save: one save per account. A write must name the version it was based on, so two devices
+// can't silently overwrite each other; the loser gets the newer save back and the player chooses.
+app.get('/api/save', requireStore, async (req, res, next) => {
+  try { const u = await currentUser(req); if (!u) return res.status(401).json({ error: 'Please sign in again.' }); const s = await saves.findOne({ _id: u._id }); res.json(s ? { data: s.data, version: s.version, updatedAt: s.updatedAt } : { data: null, version: 0 }); } catch (e) { next(e); }
+});
+app.put('/api/save', requireStore, async (req, res, next) => {
+  try {
+    const u = await currentUser(req); if (!u) return res.status(401).json({ error: 'Please sign in again.' });
+    const clean = cleanSave(req.body); if (!clean) return res.status(400).json({ error: 'That save doesn’t look right.' });
+    const base = Math.max(0, Math.floor(Number(req.body.baseVersion) || 0)), now = new Date();
+    const filter = base === 0 ? { _id: u._id, version: { $exists: false } } : { _id: u._id, version: base };
+    let r;
+    if (base === 0) {
+      try { await saves.insertOne({ _id: u._id, ...clean, version: 1, updatedAt: now }); r = { version: 1 }; }
+      catch (e) { if (e.code !== 11000) throw e; r = null; }
+    } else {
+      const upd = await saves.findOneAndUpdate(filter, { $set: { ...clean, updatedAt: now }, $inc: { version: 1 } }, { returnDocument: 'after', projection: { version: 1 } });
+      r = upd ? { version: upd.version } : null;
+    }
+    if (!r) { const s = await saves.findOne({ _id: u._id }); return res.status(409).json({ error: 'A newer save exists.', data: s && s.data, version: s ? s.version : 0, updatedAt: s && s.updatedAt }); }
+    res.json({ ok: true, version: r.version, updatedAt: now });
+  } catch (e) { next(e); }
+});
+// Delete everything about an account (asked for by players or parents).
+app.delete('/api/account', requireStore, async (req, res, next) => {
+  try {
+    const c = claims(req); if (!c) return res.status(401).json({ error: 'Please sign in again.' });
+    const u = await players.findOne({ _id: c.sub }); if (!u) return res.status(404).json({ error: 'Account not found.' });
+    if (!(await bcrypt.compare(String(req.body.password || ''), u.passwordHash))) return res.status(401).json({ error: 'That password is not right.' });
+    await saves.deleteOne({ _id: u._id }); await players.deleteOne({ _id: u._id });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// ---------- who's online (presence only; no chat, no shared economy) ----------
+const presence = new Map();
+io.use(async (s, next) => {
+  if (!db) return next(Error('Accounts are switched off.'));
+  try { const c = jwt.verify((s.handshake.auth && s.handshake.auth.token) || '', secret, { issuer: 'willowvale' }); const u = await players.findOne({ _id: c.sub }, { projection: { username: 1 } }); if (!u) return next(Error('Account not found.')); s.data.user = { id: u._id, username: u.username }; next(); }
+  catch { next(Error('Sign in to see who’s online.')); }
+});
+io.on('connection', s => {
+  s.on('town:join', p => {
+    const tid = String((p && p.townId) || 'willowvale').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) || 'willowvale';
+    if (s.data.townId) { s.leave(s.data.townId); const old = presence.get(s.data.townId); if (old) { old.delete(s.id); io.to(s.data.townId).emit('town:presence', { count: old.size }); } }
+    s.data.townId = tid; s.join(tid);
+    if (!presence.has(tid)) presence.set(tid, new Set());
+    presence.get(tid).add(s.id);
+    io.to(tid).emit('town:presence', { count: presence.get(tid).size });
+  });
+  s.on('disconnect', () => { const tid = s.data.townId, set = presence.get(tid); if (set) { set.delete(s.id); io.to(tid).emit('town:presence', { count: set.size }); if (!set.size) presence.delete(tid); } });
+});
+
+app.use((e, _q, res, _n) => { console.error(e.message); if (!res.headersSent) res.status(e.message === 'Origin not allowed' ? 403 : e.type === 'entity.too.large' ? 413 : 500).json({ error: e.message === 'Origin not allowed' ? 'Origin not allowed.' : 'Something went wrong. Please try again.' }); });
+const port = Number(process.env.PORT) || 3000;
+initDb().catch(e => console.error('MongoDB connection failed, accounts are off:', e.message)).finally(() => server.listen(port, '0.0.0.0', () => console.log('Willowvale listening on ' + port)));
+module.exports = { app, server, cleanSave };
