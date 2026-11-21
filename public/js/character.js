@@ -70,7 +70,11 @@ const BARE = new Set(['towel', 'swim']);
 
 // Draws an animal standing with its feet at (0,0).
 // o: t, walk, moving, dir ('front' | 'back'), flip, seed, wave, happy, pose ('stand'|'sit'|'dance'),
-//    asleep, shadow, arms ('hold'|'stir'|'chop'|'scrub'|'eat'|'type'|'read'|'remote'), prop, override ('sleep'|'towel'), shake
+//    sitK (0..1, how far into the seat), ground (sitting on the floor), turn (face three-quarters toward
+//    where they're heading instead of straight at the camera), asleep, shadow,
+//    arms ('hold'|'stir'|'chop'|'scrub'|'wash'|'eat'|'sip'|'type'|'read'|'remote'|'pour'|'toss'|'talk'|'clap'|'browse'|'hug'|'cheer'|'lap'),
+//    prop, override ('sleep'|'towel'), shake
+const smooth = k => k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k);
 export function drawAnimal(ctx, species, outfit, o = {}) {
   const S = SPECIES[species] || SPECIES.fox;
   let look = normLook(outfit);
@@ -79,12 +83,19 @@ export function drawAnimal(ctx, species, outfit, o = {}) {
   const pawCol = look.markings === 'socks' ? '#FFFFFF' : fur;
   const t = o.t || 0, walk = o.walk || 0, moving = !!o.moving, back = o.dir === 'back';
   const ink = '#2B223866', seed = o.seed || 0;
-  const step = moving ? Math.sin(walk) : 0, bob = moving ? Math.abs(Math.cos(walk)) * 2.5 : Math.sin(t * 2 + seed) * 0.8;
   const pose = o.pose || 'stand';
+  const sitK = pose === 'sit' ? (o.sitK == null ? 1 : o.sitK) : 0, seated = sitK > 0.5;
+  const step = moving ? Math.sin(walk) : 0, bob = moving ? Math.abs(Math.cos(walk)) * 2.5 : Math.sin(t * 2 + seed) * (seated ? 0.5 : 0.8);
+  // three-quarter turn: the face slides toward where they're looking (local -x is forward), and now and
+  // then an idle character glances the other way
+  const idle = !moving && !o.arms && !o.asleep && pose !== 'dance';
+  const glance = idle ? smooth((Math.sin(t * 0.37 + seed * 1.9) - 0.82) / 0.12) : 0;
+  const faceX = back ? 0 : (o.turn ? -3.2 : 0) + glance * (o.turn ? 5.4 : 2.6);
   ctx.save();
   if (o.flip) ctx.scale(-1, 1);
   if (o.shadow !== false) { ctx.fillStyle = 'rgba(33,56,79,.22)'; ctx.beginPath(); ctx.ellipse(0, 0, 15, 5.5, 0, 0, 7); ctx.fill(); }
-  if (pose === 'sit') ctx.translate(0, 9);
+  if (sitK) ctx.translate(0, (o.ground ? 15 : 9) * smooth(sitK));
+  if (moving && !back) ctx.rotate(o.turn ? -0.05 : 0);
   if (pose === 'dance') { const style = seed % 3; ctx.rotate(style === 0 ? Math.sin(t * 6) * 0.14 : style === 1 ? Math.sin(t * 3) * 0.08 : 0); if (style === 2) ctx.translate(Math.sin(t * 5) * 3, 0); }
   if (o.shake) ctx.rotate(Math.sin(t * 40) * 0.12 * o.shake);
   ctx.translate(0, -bob - (pose === 'dance' ? Math.abs(Math.sin(t * 6)) * 4 : 0));
@@ -105,15 +116,28 @@ export function drawAnimal(ctx, species, outfit, o = {}) {
   const bottomType = look.top === 'dress' || look.top === 'overalls' ? (look.top === 'overalls' ? 'trousers' : 'none') : look.bottom;
   const legColor = bottomType === 'trousers' || bottomType === 'pyjamas' ? look.bottomColor : fur;
   const legY = -12;
+  // seated from the front: shins hang down in front of the seat (feet swing a little); the lap is drawn
+  // over the body later. From behind, the seat hides the legs.
+  const knee = o.turn ? -3.6 : -1.2;
+  const swing = side => (o.ground ? 0 : Math.sin(t * 2.2 + seed + side * 1.3) * 1.1);
   const leg = (x, lift) => {
-    if (pose === 'sit') { ellipse(ctx, x, legY + 2, 4.6, 4.2, legColor, ink, 1.2); return; }
+    if (seated) {
+      if (back) return;
+      const side = Math.sign(x);
+      if (o.ground) { ellipse(ctx, x * 1.15 + knee * 1.6, legY + 6, 6, 3.8, legColor, ink, 1.2); return; }
+      ellipse(ctx, x + knee, legY + 8 + swing(side), 3.7, 5, legColor, ink, 1.2);
+      if (bottomType === 'pyjamas') ellipse(ctx, x + knee, legY + 8 + swing(side), 0.9, 0.9, look.top2, null);
+      return;
+    }
     ellipse(ctx, x, legY + 6 - lift, 4.2, 6.5, legColor, ink, 1.2);
     if (bottomType === 'shorts') ellipse(ctx, x, legY + 2 - lift, 4.4, 3.4, look.bottomColor, null);
     if (bottomType === 'pyjamas') for (let k = 0; k < 2; k++) ellipse(ctx, x - 1 + k * 2, legY + 4 + k * 3 - lift, 0.9, 0.9, look.top2, null);
   };
   const shoe = (x, lift) => {
-    const y = pose === 'sit' ? legY + 6 : -1.5 - lift;
-    if (pose === 'sit' && back) return;
+    if (seated && back) return;
+    const side = Math.sign(x) || 1;
+    if (seated) x = o.ground ? x * 1.3 + knee * 2.4 : x + knee - 0.5;
+    const y = seated ? (o.ground ? legY + 8 : legY + 13 + swing(side)) : -1.5 - lift;
     if (look.shoes === 'none') { ellipse(ctx, x, y, 4.6, 2.6, darken(pawCol, 0.15), null); return; }
     if (look.shoes === 'boots' || look.shoes === 'wellies') { ellipse(ctx, x, y - 2.5, 4.5, 4.6, look.shoeColor, ink, 1); ellipse(ctx, x, y, 5.2, 2.6, look.shoeColor, null); if (look.shoes === 'wellies') ellipse(ctx, x, y - 6, 4.6, 1.2, lighten(look.shoeColor, 0.3), null); return; }
     if (look.shoes === 'sandals') { ellipse(ctx, x, y, 4.8, 2.6, pawCol, null); ctx.strokeStyle = look.shoeColor; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(x - 4, y - 1); ctx.lineTo(x + 4, y - 1); ctx.stroke(); return; }
@@ -151,6 +175,13 @@ export function drawAnimal(ctx, species, outfit, o = {}) {
   if (look.acc === 'backpack' && back) { ctx.fillStyle = look.accColor; roundRect(ctx, -8, -32, 16, 17, 5); ctx.fill(); ctx.stroke(); }
   if (look.acc === 'backpack' && !back) { ctx.strokeStyle = look.accColor; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(-6, -33); ctx.lineTo(-7, -18); ctx.moveTo(6, -33); ctx.lineTo(7, -18); ctx.stroke(); }
 
+  // ---- lap (seated, facing us): thighs come toward the camera over the bottom of the body
+  if (seated && !back) {
+    const lapCol = top === 'dress' ? look.topColor : top === 'towel' ? '#FFFFFF' : bottomType === 'none' ? fur : look.bottomColor;
+    for (const side of [-1, 1]) ellipse(ctx, side * 4.6 + knee * 0.7, -10.5, 5.2, 4.4, lapCol, ink, 1.2);
+    if (top === 'dress' || bottomType === 'skirt') { ctx.fillStyle = lapCol; roundRect(ctx, -9 + knee * 0.7, -15, 18, 7, 3.5); ctx.fill(); }
+  }
+
   // ---- arms
   const sw = moving ? Math.sin(walk) * 0.6 : pose === 'dance' ? Math.sin(t * 6) * 1.2 : Math.sin(t * 1.6 + seed) * 0.08;
   const arms = o.arms || (o.wave ? 'wave' : null);
@@ -164,7 +195,17 @@ export function drawAnimal(ctx, species, outfit, o = {}) {
       case 'chop': return side === 1 ? 0.5 + Math.abs(Math.sin(t * 8)) * 0.45 : -0.55;
       case 'scrub': return side * (2.6 + Math.sin(t * 9 + side) * 0.25);
       case 'eat': return side === 1 ? 0.35 + Math.max(0, Math.sin(t * 2.4)) * 1.9 : -0.6;
-      default: return side * (0.18 + sw * side);
+      case 'wash': return side * (0.78 + Math.sin(t * 10 + side * 1.6) * 0.16);
+      case 'sip': return side === 1 ? 0.9 + 1.75 * smooth((Math.sin(t * 1.3 + seed) - 0.35) / 0.4) : -0.45;
+      case 'pour': return side === 1 ? 1.15 + Math.sin(t * 1.6) * 0.07 : -0.2;
+      case 'toss': return side === 1 ? -0.3 - 2.1 * smooth(Math.sin(t * 2.6)) : -0.18;
+      case 'talk': return side * (-0.15 - Math.max(0, Math.sin(t * 3.6 + (side > 0 ? 0 : 2.2))) * 0.85);
+      case 'clap': return side * (0.95 + Math.sin(t * 11) * 0.3);
+      case 'browse': return side === 1 ? 1.35 + Math.sin(t * 1.8 + seed) * 0.3 : -0.25;
+      case 'hug': return side * 1.15;
+      case 'cheer': return side * (-2.45 + Math.sin(t * 8 + side) * 0.25);
+      case 'lap': return side * 0.4;
+      default: return seated ? side * 0.4 : side * (0.18 + sw * side);
     }
   };
   const sleeve = BARE.has(top) ? fur : look.top === 'dress' ? look.topColor : top === 'overalls' ? look.top2 : look.topColor;
@@ -224,6 +265,7 @@ export function drawAnimal(ctx, species, outfit, o = {}) {
   if (look.hair === 'pigtails') { ctx.fillStyle = hc; ctx.beginPath(); ctx.arc(0, -3, 14.5, Math.PI * 1.1, Math.PI * 1.9); ctx.quadraticCurveTo(0, -9, -13, -8); ctx.fill(); }
   if (look.hair === 'spiky') { ctx.fillStyle = hc; ctx.beginPath(); ctx.moveTo(-8, -10); for (let k = 0; k < 5; k++) { ctx.lineTo(-8 + k * 4 + 2, -22 - (k % 2) * 3); ctx.lineTo(-8 + (k + 1) * 4, -11); } ctx.closePath(); ctx.fill(); }
   if (!back) {
+    ctx.save(); ctx.translate(faceX, 0);
     if (S.wool) ellipse(ctx, 0, 3, 10.5, 10, fur, null);
     if (S.mask) { ellipse(ctx, -6, -1, 6.5, 4.5, '#4A4E58', null, 1, -0.2); ellipse(ctx, 6, -1, 6.5, 4.5, '#4A4E58', null, 1, 0.2); }
     if (look.markings === 'patch') ellipse(ctx, 6, -1.5, 6, 5, darken(fur, 0.3), null);
@@ -247,8 +289,9 @@ export function drawAnimal(ctx, species, outfit, o = {}) {
     else if (o.happy) { ctx.arc(0, 5.5, 3, 0.1, Math.PI - 0.1); } else { ctx.moveTo(-2.5, 6.6); ctx.quadraticCurveTo(-1.2, 8, 0, 6.6); ctx.quadraticCurveTo(1.2, 8, 2.5, 6.6); }
     ctx.stroke();
     if (look.acc === 'glasses') { ctx.strokeStyle = look.accColor; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(-6, -1.5, 4.6, 0, 7); ctx.moveTo(10.6, -1.5); ctx.arc(6, -1.5, 4.6, 0, 7); ctx.moveTo(-1.4, -2); ctx.lineTo(1.4, -2); ctx.stroke(); }
+    ctx.restore();
   }
-  if (look.acc === 'cap') { ctx.fillStyle = look.accColor; ctx.beginPath(); ctx.arc(0, -6, 13.5, Math.PI, 0); ctx.fill(); if (!back) ellipse(ctx, 5, -6, 11, 3, darken(look.accColor, 0.15), null); }
+  if (look.acc === 'cap') { ctx.fillStyle = look.accColor; ctx.beginPath(); ctx.arc(0, -6, 13.5, Math.PI, 0); ctx.fill(); if (!back) ellipse(ctx, 5 + faceX * 1.6, -6, 11, 3, darken(look.accColor, 0.15), null); }
   if (look.acc === 'beret') { ellipse(ctx, -2, -13, 13, 5.5, look.accColor, ink, 1.2, -0.2); ellipse(ctx, -2, -18, 1.8, 1.8, look.accColor, null); }
   if (look.acc === 'bow') { ctx.save(); ctx.translate(-9, -11); ctx.fillStyle = look.accColor; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-6, -4); ctx.lineTo(-6, 4); ctx.closePath(); ctx.moveTo(0, 0); ctx.lineTo(6, -4); ctx.lineTo(6, 4); ctx.closePath(); ctx.fill(); ellipse(ctx, 0, 0, 2, 2, darken(look.accColor, 0.2), null); ctx.restore(); }
   if (look.acc === 'crown') { for (let k = 0; k < 7; k++) { const a = Math.PI * (1.1 + k * 0.13); ellipse(ctx, Math.cos(a) * 14, Math.sin(a) * 13, 2.6, 2.6, ['#F0587A', '#FFC83D', '#FFFFFF', '#8E7CE0'][k % 4], null); } }
@@ -272,6 +315,12 @@ function drawProp(ctx, prop, hand, t) {
   else if (prop === 'knife') { ctx.fillStyle = '#E8E3D8'; roundRect(ctx, lx - 10, ly + 2, 20, 5, 2); ctx.fill(); ellipse(ctx, lx - 3, ly + 3, 2.2, 1.6, '#3FA86A', null); ellipse(ctx, lx + 2, ly + 3, 2.2, 1.6, '#F0587A', null); ctx.strokeStyle = '#A0AEC0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx - 7, ry + 2); ctx.stroke(); }
   else if (prop === 'remote') { ctx.fillStyle = '#34476B'; roundRect(ctx, rx - 2, ry - 7, 4, 9, 1.5); ctx.fill(); ellipse(ctx, rx, ry - 5, 0.9, 0.9, '#F0587A', null); }
   else if (prop === 'sponge') { ctx.fillStyle = '#FFC83D'; roundRect(ctx, rx - 3.5, ry - 3, 7, 5, 1.5); ctx.fill(); for (let k = 0; k < 3; k++) ellipse(ctx, rx + Math.sin(t * 5 + k) * 6, ry - 6 - k * 3, 2, 2, 'rgba(255,255,255,.9)', '#BFE3F2', 0.8); }
+  else if (prop === 'cup') { ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = '#C9D6E2'; ctx.lineWidth = 1; roundRect(ctx, rx - 4, ry - 7, 8, 7, 2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(rx + 4.5, ry - 3.5, 2.2, -1.4, 1.4); ctx.stroke(); ctx.fillStyle = '#B9733F'; ctx.fillRect(rx - 3, ry - 6.5, 6, 1.6); ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.2; for (const k of [-1.5, 1.5]) { ctx.beginPath(); ctx.moveTo(rx + k, ry - 9); ctx.quadraticCurveTo(rx + k + Math.sin(t * 3 + k) * 2, ry - 12, rx + k, ry - 15); ctx.stroke(); } }
+  else if (prop === 'can') { ctx.save(); ctx.translate(rx, ry); ctx.rotate(-0.35); ctx.fillStyle = '#3FA86A'; roundRect(ctx, -2, -5, 11, 9, 3); ctx.fill(); ctx.strokeStyle = '#2E7D4F'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(-1, -2); ctx.lineTo(-9, -6); ctx.stroke(); ctx.beginPath(); ctx.arc(4, -6, 3.5, Math.PI, 0); ctx.stroke(); ctx.restore(); ctx.fillStyle = '#7FC8DD'; for (let k = 0; k < 4; k++) { const ph = (t * 1.8 + k / 4) % 1; ellipse(ctx, rx - 9 - k * 0.6, ry - 6 + ph * 22, 1, 1.6, '#7FC8DD', null); } }
+  else if (prop === 'letter') { const x = (rx + lx) / 2, y = (ry + ly) / 2 - 3; ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = '#C9D6E2'; ctx.lineWidth = 1; roundRect(ctx, x - 7, y - 5, 14, 10, 1.5); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x - 7, y - 5); ctx.lineTo(x, y + 1); ctx.lineTo(x + 7, y - 5); ctx.stroke(); ellipse(ctx, x, y + 1, 1.6, 1.6, '#F0587A', null); }
+  else if (prop === 'coin') { if (ry < -36) { const ph = (t * 2.6 / (Math.PI * 2)) % 1; ellipse(ctx, rx - 4, ry - 6 - Math.sin(ph * Math.PI) * 8, 2.6, 2.6, '#FFC83D', '#C9962A', 1); } else ellipse(ctx, rx, ry - 1, 2.4, 2.4, '#FFC83D', '#C9962A', 1); }
+  else if (prop === 'popcorn') { const x = lx + 3, y = ly - 1; ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.moveTo(x - 5, y - 6); ctx.lineTo(x + 5, y - 6); ctx.lineTo(x + 4, y + 4); ctx.lineTo(x - 4, y + 4); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#E8504A'; ctx.fillRect(x - 2.5, y - 6, 1.6, 10); ctx.fillRect(x + 1, y - 6, 1.6, 10); for (const [a, b] of [[-3, -7], [0, -8.5], [3, -7], [-1.5, -9.5], [1.5, -10]]) ellipse(ctx, x + a, y + b, 2, 1.8, '#FFF3C4', null); if (ry < -34) ellipse(ctx, rx, ry - 1, 1.6, 1.5, '#FFF3C4', null); }
+  else if (prop === 'bun') { ellipse(ctx, rx, ry - 2, 4.6, 3.8, '#FFF8EE', '#E3D5C2', 1); ctx.strokeStyle = '#E3D5C2'; ctx.beginPath(); ctx.moveTo(rx - 1.5, ry - 4.5); ctx.lineTo(rx, ry - 3); ctx.lineTo(rx + 1.5, ry - 4.5); ctx.stroke(); }
   else if (prop === 'phone') { ctx.fillStyle = '#26395A'; roundRect(ctx, rx - 3, ry - 8, 6, 10, 1.5); ctx.fill(); ctx.fillStyle = '#7FC3E8'; ctx.fillRect(rx - 2, ry - 7, 4, 7); }
   ctx.restore();
 }

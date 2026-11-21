@@ -200,11 +200,20 @@ const roomCenter = () => world.roomSize ? [HOME_O[0] + world.roomSize[0] / 2, HO
 // ---------- characters ----------
 class Walker {
   constructor(x, y, species, outfit, opts = {}) {
-    Object.assign(this, { x, y, species, outfit, path: [], dir: 'front', flip: false, walk: 0, moving: false, speed: opts.speed || 2, seed: opts.seed || 0, emote: null, emoteLife: 0, name: opts.name || '', wait: 1 + Math.random() * 3, wave: 0 });
+    Object.assign(this, { x, y, species, outfit, path: [], dir: 'front', flip: false, walk: 0, moving: false, speed: opts.speed || 2, seed: opts.seed || 0, emote: null, emoteLife: 0, name: opts.name || '', wait: 1 + Math.random() * 3, wave: 0, ox: 0, oy: 0, sitK: 0 });
+  }
+  // Jump to a spot (a seat, a bed) but let the body glide there on screen instead of popping.
+  snapTo(x, y) { this.ox += this.x - x; this.oy += this.y - y; if (Math.hypot(this.ox, this.oy) > 3) this.ox = this.oy = 0; this.x = x; this.y = y; }
+  tick(dt) {
+    const k = 1 - Math.exp(-dt * 10); this.ox -= this.ox * k; this.oy -= this.oy * k;
+    const seat = this.pose === 'sit' || this.pose === 'ground' ? 1 : 0;
+    this.sitK += (seat - this.sitK) * (1 - Math.exp(-dt * 8)); if (Math.abs(seat - this.sitK) < 0.01) this.sitK = seat;
+    if (seat) this.lastSeat = this.pose;
   }
   go(path, onArrive) { this.path = path || []; this.onArrive = onArrive || null; if (!this.path.length && onArrive) { const f = onArrive; this.onArrive = null; f(); } }
   face(tx, ty) { const dx = tx - this.x, dy = ty - this.y, sdx = dx - dy, sdy = dx + dy; this.dir = sdy >= -0.2 ? 'front' : 'back'; this.flip = sdx > 0; }
   update(dt) {
+    this.tick(dt);
     if (this.emote) { this.emoteLife -= dt; if (this.emoteLife <= 0) this.emote = null; }
     if (this.wave > 0) this.wave -= dt;
     if (!this.path.length) { this.moving = false; return; }
@@ -691,13 +700,20 @@ function enterVenue(v) {
   }
   const free = rw.seats.slice().sort(() => Math.random() - 0.5);
   const inside = cityNpcs.filter(n => n !== worker && n.task && n.task.place === v.id);
-  for (const n of inside) { const seat = free.shift(); if (!seat) break; const c = cloneNpc(n, seat.use[0], seat.use[1]); seatAt(c, seat); people.push(c); }
+  for (const n of inside) { const seat = free.shift(); if (!seat) break; const c = cloneNpc(n, seat.use[0], seat.use[1]); seatAt(c, seat); c.sitK = 1; people.push(c); }
   const extra = Math.max(0, Math.min(free.length, 2 + (hashStr(v.id + dayOf(S.progress.clock)) % 2)) - inside.length);
-  for (let k = 0; k < extra; k++) { const seat = free.shift(); if (!seat) break; const c = visitorNpc(hashStr(v.id) + k * 17 + 5, seat.use[0], seat.use[1], 'Visitor'); seatAt(c, seat); people.push(c); }
+  for (let k = 0; k < extra; k++) { const seat = free.shift(); if (!seat) break; const c = visitorNpc(hashStr(v.id) + k * 17 + 5, seat.use[0], seat.use[1], 'Visitor'); seatAt(c, seat); c.sitK = 1; people.push(c); }
   ROOM.npcs = people;
   fadeTo(() => { setScene('venue', ...rw.insideDoor); player.face(player.x - 1, player.y - 1); toast(`Welcome to ${v.name}!`); markVisited(v); });
 }
-function seatAt(c, seat) { c.seat = seat; seat.taken = c; c.x = seat.use[0]; c.y = seat.use[1]; c.pose = seat.virtual ? null : 'sit'; if (seat.look) c.face(...seat.look); c.stay = 30 + Math.random() * 60; c.emoteT = 1 + Math.random() * 4; }
+// What people do once seated, by kind of place.
+const SEAT_DOING = { cafe: ['sip', 'cup'], restaurant: ['eat', 'bowl'], library: ['read', 'book'], cinema: ['eat', 'popcorn'], office: ['type', null], lab: ['stir', null], workshop: ['chop', null] };
+function seatAt(c, seat) {
+  c.seat = seat; seat.taken = c; c.snapTo(seat.use[0], seat.use[1]); c.pose = seat.virtual ? null : 'sit'; if (seat.look) c.face(...seat.look);
+  const doing = !seat.virtual && ROOM && SEAT_DOING[ROOM.world.kit];
+  c.arms = doing ? doing[0] : null; c.prop = doing ? doing[1] : null;
+  c.stay = 30 + Math.random() * 60; c.emoteT = 1 + Math.random() * 4;
+}
 function markVisited(v) { bumpStat('visits'); S.progress.places = S.progress.places || {}; if (!S.progress.places[v.id]) { S.progress.places[v.id] = 1; saveProgress(); checkAchievements(); } }
 // Life inside: the worker serves and waves, customers eat, chat and come and go.
 function interiorThink(n, dt) {
@@ -716,7 +732,7 @@ function interiorThink(n, dt) {
     n.stay -= dt;
     if (n.emoteT <= 0) { n.emoteT = 3 + Math.random() * 4; n.say(({ cafe: ['😋', '☕', '💬', '😂'], restaurant: ['😋', '🍜', '🥟', '💬'], library: ['📖', '🤓', '💡'], museum: ['😮', '📸'], cinema: ['😂', '😮', '🍿'], office: ['⌨️', '💡'], lab: ['💥', '🤓'], workshop: ['🎨', '✨'] }[kit] || ['😊', '💬'])[Math.floor(Math.random() * 3.99) % 4] || '😊', 1.8); }
     if (n.stay <= 0 && !n.orig) { // visitors drift off and new ones wander in
-      n.seat.taken = null; n.seat = null; n.pose = null; n.leaving = true;
+      n.seat.taken = null; n.seat = null; n.pose = null; n.arms = null; n.prop = null; n.leaving = true;
       const out = ROOM.world.outsideDoor; const p = findPath(world, n.x, n.y, out[0], out[1]); if (p) n.go(p, () => { n.gone = true; }); else n.gone = true;
     }
   }
@@ -821,8 +837,8 @@ function npcVisible(n) { return n.pose !== 'inside'; }
 function npcEnd(n) {
   const t = n.task; if (!t) return;
   if (t.bench) benchTaken.delete(t.bench);
-  if (t.partner && t.partner.task && t.partner.task.partner === n) { const p = t.partner; p.task = null; p.pose = null; p.wait = 1 + Math.random() * 2; }
-  n.task = null; n.pose = null; n.arms = null; n.path = []; n.onArrive = null; n.wait = 1 + Math.random() * 3; n.doing = 'Out for a walk';
+  if (t.partner && t.partner.task && t.partner.task.partner === n) { const p = t.partner; p.task = null; p.pose = null; p.arms = null; p.wait = 1 + Math.random() * 2; }
+  n.task = null; n.pose = null; n.arms = null; n.prop = null; n.path = []; n.onArrive = null; n.wait = 1 + Math.random() * 3; n.doing = 'Out for a walk';
   if (n.baseSpeed) n.speed = n.baseSpeed;
 }
 // A morning jog: twice round the ring lane.
@@ -847,10 +863,12 @@ function npcStart(n, task) {
     if (n.task !== task) return;
     task.phase = 'do'; task.t = 0; task.emoteT = 1 + Math.random() * 2;
     if (task.pose === 'inside') n.pose = 'inside';
-    else if (task.pose === 'sit') { n.x = task.seat[0]; n.y = task.seat[1]; n.pose = 'sit'; }
+    else if (task.pose === 'sit') { n.snapTo(task.seat[0], task.seat[1]); n.pose = 'sit'; }
     else if (task.look) n.face(...task.look);
-    if (task.kind === 'chat') { const q = task.partner; if (!q.task || q.task.partner !== n) { npcEnd(n); return; } q.task.phase = 'do'; q.task.t = 0; n.face(q.x, q.y); q.face(n.x, n.y); }
+    if (task.pose === 'ground') { n.pose = 'ground'; if (task.look) n.face(...task.look); }
+    if (task.kind === 'chat') { const q = task.partner; if (!q.task || q.task.partner !== n) { npcEnd(n); return; } q.task.phase = 'do'; q.task.t = 0; n.face(q.x, q.y); q.face(n.x, n.y); n.arms = 'talk'; q.arms = 'talk'; }
     if (task.arms) n.arms = task.arms;
+    if (task.prop) n.prop = task.prop;
   });
 }
 function npcDecide(n) {
@@ -919,8 +937,8 @@ function npcOffers(n, o, add, scoreGain) {
     if (def.special || def.job || def.hearts || def.needSkill || def.pose === 'jog') continue;
     let dd = dest;
     if (o.flatArt || o.flat) dd = [o.i + 0.5 + Math.random() * (o.w - 1), o.j + 0.5 + Math.random() * (o.d - 1)];
-    const wet = (weatherNow() === 'rain' || weatherNow() === 'snow') && (def.pose === 'stand' || o.flatArt || o.flat || o.kind === 'bench' || o.kind === 'fountain') ? 0.25 : 1;
-    add(scoreGain(def.gain) * traitMult(n, def.id) * wet / (1 + d / 14), { kind: 'act', label: word, dest: dd, pose: def.pose === 'stand' ? 'stand' : 'inside', mins: def.mins, gain: def.gain, emotes: def.emotes, arms: def.arms, look: [o.i + (o.w || 1) / 2, o.j + (o.d || 1) / 2], place: o.kind === 'venue' ? o.id : o.kind });
+    const wet = (weatherNow() === 'rain' || weatherNow() === 'snow') && (def.pose === 'stand' || def.pose === 'ground' || o.flatArt || o.flat || o.kind === 'bench' || o.kind === 'fountain') ? 0.25 : 1;
+    add(scoreGain(def.gain) * traitMult(n, def.id) * wet / (1 + d / 14), { kind: 'act', label: word, dest: dd, pose: def.pose === 'stand' || def.pose === 'ground' ? def.pose : 'inside', mins: def.mins, gain: def.gain, emotes: def.emotes, arms: def.arms, prop: def.prop, look: [o.i + (o.w || 1) / 2, o.j + (o.d || 1) / 2], place: o.kind === 'venue' ? o.id : o.kind });
   }
 }
 function npcThink(n, dt, gm) {
@@ -1230,16 +1248,21 @@ function drawPond(i, j, sx, sy, z) {
   ctx.beginPath(); edgeLines(i, j, (a, b) => world.get(a, b) !== T.POND); ctx.stroke();
 }
 
+// How a character is drawn this frame: seated blend, three-quarter turn, glide offset.
+function charOpts(c) {
+  const sit = c.sitK > 0.02 && c.pose !== 'sleep';
+  return { t: time, walk: c.walk, moving: c.moving, dir: c.pose === 'sleep' || c.faceFront ? 'front' : c.dir, flip: c.flip, seed: c.seed, turn: !c.faceFront && c.pose !== 'sleep', wave: c.wave > 0, happy: c.wave > 0 || !!c.emote, pose: sit ? 'sit' : c.pose === 'sleep' ? 'stand' : c.pose, sitK: c.sitK, ground: (c.pose || c.lastSeat) === 'ground', asleep: c.pose === 'sleep', shadow: c.pose !== 'sleep', arms: c.arms, prop: c.prop, override: c.override, blanket: c.pose === 'sleep' ? c.blanket : null, shake: c.shake > 0 ? Math.min(1, c.shake) : 0, saved: c.saved };
+}
 function drawThing(t, z) {
   if (t.char) {
     const c = t.char;
     if (c.pose === 'inside') return;
-    const [sx, sy] = toScreen(c.x, c.y);
+    const [sx, sy] = toScreen(c.x + (c.ox || 0), c.y + (c.oy || 0));
     if (c.boat) drawRowboat(sx, sy, z * 1.15);
     ctx.save(); ctx.translate(sx, sy - (c.boat ? 8 * z : 0) + (c.boat ? Math.sin(time * 1.6) * 2 * z : 0)); ctx.scale(z * 1.15, z * 1.15);
     if (c.pose === 'sleep') { ctx.translate(0, -24); ctx.rotate(c.flip ? 1.25 : -1.25); ctx.translate(0, 26); }
     if (c !== player) setTimeout0.push(() => drawRequestBadge(c, sx, sy, z));
-    A.drawAnimal(ctx, c.species, c.outfit, { t: time, walk: c.walk, moving: c.moving, dir: c.pose === 'sleep' || c.faceFront ? 'front' : c.dir, flip: c.flip, seed: c.seed, wave: c.wave > 0, happy: c.wave > 0 || !!c.emote, pose: c.pose === 'sleep' ? 'stand' : c.pose, asleep: c.pose === 'sleep', shadow: c.pose !== 'sleep', arms: c.arms, prop: c.prop, override: c.override, blanket: c.pose === 'sleep' ? c.blanket : null, shake: c.shake > 0 ? Math.min(1, c.shake) : 0, saved: c.saved });
+    A.drawAnimal(ctx, c.species, c.outfit, charOpts(c));
     ctx.restore();
     return;
   }
@@ -1272,7 +1295,7 @@ function drawBalconyPeople(t, sx, sy, z) {
     const [px, py] = A.P(b[0], b[1], b[2]);
     ctx.save(); ctx.translate(sx + px * z, sy + py * z); ctx.scale(z * 0.72, z * 0.72);
     const waving = ((time + seed % 9) % 7) < 1.3;
-    A.drawAnimal(ctx, SPECIES_LIST[seed % SPECIES_LIST.length], look, { t: time, dir: 'front', flip: seed % 2 === 0, seed, wave: waving, happy: waving, shadow: false });
+    A.drawAnimal(ctx, SPECIES_LIST[seed % SPECIES_LIST.length], look, { t: time, dir: 'front', flip: seed % 2 === 0, seed, turn: true, wave: waving, happy: waving, shadow: false });
     ctx.restore();
   });
 }
@@ -1299,14 +1322,14 @@ function drawFx(z) {
 // When a building stands between the camera and the player, show the player through it.
 function drawPlayerIfHidden(z) {
   const k = drawn.findIndex(t => t.char === player);
-  if (k < 0) return;
-  const [sx, sy] = toScreen(player.x, player.y);
+  if (k < 0 || player.sitK > 0.4 || player.pose === 'sleep') return;
+  const [sx, sy] = toScreen(player.x + player.ox, player.y + player.oy);
   const probes = [[sx, sy - 30 * z], [sx, sy - 60 * z], [sx, sy - 8 * z]];
   const hidden = drawn.slice(k + 1).some(t => t.sprite && t.sx !== undefined && !t.centered && probes.some(([px, py]) => t.sprite.hit((px - t.sx) / z, (py - t.sy) / z)));
   if (!hidden) return;
   ctx.save(); ctx.globalAlpha = 0.5;
   ctx.translate(sx, sy); ctx.scale(z * 1.15, z * 1.15);
-  A.drawAnimal(ctx, player.species, player.outfit, { t: time, walk: player.walk, moving: player.moving, dir: player.faceFront ? 'front' : player.dir, flip: player.flip, seed: player.seed, shadow: false, arms: player.arms, prop: player.prop, override: player.override, pose: player.pose === 'sleep' ? 'stand' : player.pose });
+  A.drawAnimal(ctx, player.species, player.outfit, { ...charOpts(player), shadow: false });
   ctx.restore();
 }
 
@@ -1377,7 +1400,7 @@ function update(dt) {
     if (ok(nx, ny)) { player.x = nx; player.y = ny; }
     else if (ok(nx, player.y)) player.x = nx;
     else if (ok(player.x, ny)) player.y = ny;
-    player.face(player.x + kx, player.y + ky); player.moving = true; player.walk += sp * 5.2;
+    player.face(player.x + kx, player.y + ky); player.moving = true; player.walk += sp * 5.2; player.tick(simDt);
     hideHint();
   } else player.update(simDt);
   updateNearby();
@@ -1665,8 +1688,8 @@ function queueAction(def, target) {
   if (def.special === 'game') { const d = approachOf(target.o); const go = () => { player.face(...(target.o.look || d)); if (S.coins < 1) { toast('A game costs ✦ 1.'); return; } setCoins(S.coins - 1, true); GAME.play(target.o.game, res => gameDone(target.o.game, res), (S.progress.highscores || {})[target.o.game] || 0); }; if (near(...d, 1.3)) go(); else walkTo(...d, go); return; }
   if (target && target.o && target.o.kind === 'furn' && target.o.venue && !def.steps) {
     const sitting = !!target.o.use && target.o.type !== 'treadmill';
-    const arms = def.arms || { eat: 'eat', tea: 'hold', read: 'read', games: 'type', experiment: 'stir', craft: 'chop', cookclass: 'stir' }[def.id] || null;
-    const prop = def.prop || { eat: 'bowl', tea: 'bowl', read: 'book' }[def.id] || null;
+    const arms = def.arms || { eat: 'eat', tea: 'sip', read: 'read', games: 'type', experiment: 'stir', craft: 'chop', cookclass: 'stir' }[def.id] || null;
+    const prop = def.prop || { eat: 'bowl', tea: 'cup', read: 'book' }[def.id] || null;
     def = { ...def, pose: def.pose === 'inside' || def.pose === 'stand' ? (sitting ? 'sit' : 'stand') : def.pose, arms, prop };
   }
   if (def.special === 'market' || def.special === 'craft' || def.special === 'restore') { const d = approachOf(target.o); const go = () => (def.special === 'market' ? showMarket() : def.special === 'craft' ? showCraft() : showRestore()); if (near(...d, 1.6)) go(); else walkTo(...d, go); return; }
@@ -1691,7 +1714,7 @@ function cancelQueued(k) {
 }
 function standUp() {
   const u = player.using; player.using = null; player.pose = null;
-  if (u && u.stand) { player.x = u.stand[0]; player.y = u.stand[1]; }
+  if (u && u.stand) player.snapTo(u.stand[0], u.stand[1]);
 }
 function startNext() {
   if (!queue.length) { act = null; renderQueue(); return; }
@@ -1734,7 +1757,7 @@ function beginDoing() {
   if (n) { n.busy = 9999; n.path = []; player.face(n.x, n.y); n.face(player.x, player.y); n.wave = 1.2; }
   else if (o) {
     if (o.use && (step.pose === 'sit' || step.pose === 'sleep' || step.pose === 'shower')) {
-      player.using = o; player.x = o.use[0]; player.y = o.use[1];
+      player.using = o; player.snapTo(o.use[0], o.use[1]);
       if (o.look) player.face(...o.look);
       if (step.pose === 'sleep') player.flip = false;
     } else if (o.look) player.face(...o.look);
@@ -1742,7 +1765,7 @@ function beginDoing() {
   }
   player.pose = step.pose === 'chat' || step.pose === 'stand' ? null : step.pose === 'shower' ? null : step.pose;
   if (step.pose === 'sit' && !(o && o.use) && o && o.kind !== 'bench') player.pose = null;
-  if (step.pose === 'sit' && o && o.kind === 'bench') { player.x = o.i + 0.5; player.y = o.j + 0.5; player.pose = 'sit'; }
+  if (step.pose === 'sit' && o && o.kind === 'bench') { player.snapTo(o.i + 0.5, o.j + 0.5); player.pose = 'sit'; }
   const def = act.item.def;
   staffReact(def);
   player.arms = step.arms || null; player.prop = step.prop || null;
@@ -1872,7 +1895,7 @@ function tickNeeds(gm, curDef) {
     let rate = nd.decay;
     if (curDef && curDef.slow && curDef.slow[nd.k] !== undefined) rate *= curDef.slow[nd.k];
     if (curDef && curDef.gain && curDef.gain[nd.k]) rate = 0;
-    if (nd.k === 'comfort' && player.pose === 'sit') rate = 0;
+    if (nd.k === 'comfort' && (player.pose === 'sit' || player.pose === 'ground')) rate = 0;
     if (nd.k === 'energy' && player.pose === 'sleep') rate = 0;
     if (nd.k === 'energy') rate *= 1 - 0.03 * skillLv('fitness');
     N2[nd.k] = Math.max(0, N2[nd.k] - rate * hrs);
@@ -2950,4 +2973,4 @@ $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 700);
 
 // Small read-only hook for automated play-testing.
-window.__willowvale = { state: S, screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { S.progress.clock = m; }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
+window.__willowvale = { state: S, cancel: () => cancelActions(), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { S.progress.clock = m; }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
