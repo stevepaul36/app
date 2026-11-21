@@ -1,9 +1,12 @@
+# Matches the live free web service. Accounts and cloud saves use a free MongoDB Atlas (M0) cluster:
+# set MONGODB_URI in the Render dashboard (it is never stored in this file). Without it the game runs
+# in guest mode with progress kept on each device.
 services:
   - type: web
     name: willowvale-animal-town
     runtime: node
-    plan: starter
-    buildCommand: npm install
+    plan: free
+    buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /healthz
     envVars:
@@ -11,14 +14,9 @@ services:
         value: production
       - key: JWT_SECRET
         generateValue: true
-      - key: DATABASE_URL
-        fromDatabase:
-          name: willowvale-db
-          property: connectionString
+      - key: MONGODB_URI
+        sync: false
+      - key: ADMIN_KEY
+        sync: false
       - key: ALLOWED_ORIGINS
         value: https://willowvale-animal-town.onrender.com
-databases:
-  - name: willowvale-db
-    plan: basic-256mb
-    databaseName: willowvale
-    user: willowvale

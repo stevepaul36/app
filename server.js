@@ -7,7 +7,12 @@ const bcrypt = require('bcryptjs'), jwt = require('jsonwebtoken'), { rateLimit }
 const app = express(), server = http.createServer(app), production = process.env.NODE_ENV === 'production';
 if (production && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)) throw Error('Set JWT_SECRET to at least 32 random characters.');
 const secret = process.env.JWT_SECRET || crypto.randomBytes(48).toString('hex');
-const allowed = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+// Which websites may call the API. In production an empty ALLOWED_ORIGINS no longer means "anyone":
+// it falls back to this service's own address (Render sets RENDER_EXTERNAL_URL). The Android app's
+// local web view (http(s)://localhost, capacitor://localhost) is always allowed.
+const isProd = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
+let allowed = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+if (!allowed.length && isProd) allowed = [process.env.RENDER_EXTERNAL_URL || 'https://willowvale-animal-town.onrender.com'];
 const isLocalWebViewOrigin = origin => { try { const u = new URL(origin); return u.hostname === 'localhost' && ['http:', 'https:', 'capacitor:'].includes(u.protocol); } catch { return false; } };
 const corsOptions = { origin: (origin, cb) => (!origin || !allowed.length || allowed.includes(origin) || isLocalWebViewOrigin(origin) ? cb(null, true) : cb(Error('Origin not allowed'))), methods: ['GET', 'POST', 'PUT', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization'] };
 
@@ -43,14 +48,35 @@ const publicUser = u => ({ id: u._id, username: u.username });
 async function saveMeta(id) { const s = await saves.findOne({ _id: id }, { projection: { data: 0 } }); return s ? { version: s.version, updatedAt: s.updatedAt, day: s.day, coins: s.coins } : null; }
 
 // A save is the player's own game state. Keep it a plain object of a sensible size with a sensible wallet.
+// Saves belong to one player's own world, so the server checks their shape rather than replaying every
+// coin. That is fine while nothing in a save affects other players; anything shared (trading, rankings)
+// must be checked on the server instead.
+const SAVE_SCHEMA = 1;
+const isPlain = v => !!v && typeof v === 'object' && !Array.isArray(v);
+// Walk the save: plain JSON only, sane sizes, and no keys MongoDB would treat as operators or paths.
+function saneJson(v, depth = 0, budget = { n: 0 }) {
+  if (++budget.n > 20000 || depth > 8) return false;
+  if (v === null || typeof v === 'boolean') return true;
+  if (typeof v === 'number') return Number.isFinite(v);
+  if (typeof v === 'string') return v.length <= 500;
+  if (Array.isArray(v)) return v.length <= 2000 && v.every(x => saneJson(x, depth + 1, budget));
+  if (isPlain(v)) return Object.keys(v).every(k => k.length <= 80 && !k.startsWith('$') && !k.includes('.') && saneJson(v[k], depth + 1, budget));
+  return false;
+}
+// Bring older saves up to date. Version 1 is the first cloud format, so there is nothing to change yet.
+function migrateSave(data) { return { ...data, schema: SAVE_SCHEMA }; }
 function cleanSave(body) {
   const data = body && body.data;
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  if (!isPlain(data) || !isPlain(data.progress)) return null;
+  if (Object.keys(data).some(k => !['progress', 'profile', 'schema'].includes(k))) return null;
+  if (data.profile != null && !isPlain(data.profile)) return null;
+  if (data.schema != null && (!Number.isInteger(data.schema) || data.schema < 1 || data.schema > SAVE_SCHEMA)) return null;
+  if (!saneJson(data)) return null;
   const p = data.progress;
-  if (!p || typeof p !== 'object') return null;
   const coins = Number(p.coins);
   if (!Number.isFinite(coins) || coins < 0 || coins > 10000000) return null;
-  return { data, coins: Math.floor(coins), day: Math.max(1, Math.floor((Number(p.clock) || 0) / 1440) + 1) };
+  if (p.clock != null && (typeof p.clock !== 'number' || p.clock < 0)) return null;
+  return { data: migrateSave(data), coins: Math.floor(coins), day: Math.max(1, Math.floor((Number(p.clock) || 0) / 1440) + 1) };
 }
 
 // ---------- routes ----------
@@ -148,5 +174,5 @@ io.on('connection', s => {
 
 app.use((e, _q, res, _n) => { console.error(e.message); if (!res.headersSent) res.status(e.message === 'Origin not allowed' ? 403 : e.type === 'entity.too.large' ? 413 : 500).json({ error: e.message === 'Origin not allowed' ? 'Origin not allowed.' : 'Something went wrong. Please try again.' }); });
 const port = Number(process.env.PORT) || 3000;
-initDb().catch(e => console.error('MongoDB connection failed, accounts are off:', e.message)).finally(() => server.listen(port, '0.0.0.0', () => console.log('Willowvale listening on ' + port)));
+if (require.main === module) initDb().catch(e => console.error('MongoDB connection failed, accounts are off:', e.message)).finally(() => server.listen(port, '0.0.0.0', () => console.log('Willowvale listening on ' + port)));
 module.exports = { app, server, cleanSave };

@@ -2055,7 +2055,7 @@ async function showHomes(filter = 'all') {
   body.append(tabs);
   const mineElsewhere = Object.entries(S.progress.homes).filter(([, x]) => x.city !== C.id);
   if (mineElsewhere.length) body.append(h(`<div class="notice"><b>Your other homes</b><span>${mineElsewhere.map(([, x]) => `${esc(x.name)} in ${esc(cityMeta(x.city).name)}`).join(' · ')}</span></div>`));
-  body.append(h(`<p class="lead">Rent a home in any town to sleep, cook and relax there. Rent is paid each morning with coins.</p>`));
+  body.append(h(`<p class="lead">Rent a home in any town to sleep, cook and relax there. Rent is paid each morning with coins. These homes are in your own world, so other players never take them.</p>`));
   const homes = world.objects.filter(o => o.home && (filter === 'all' || o.kind === filter));
   for (const o of homes) body.append(homeCard(o));
 }
