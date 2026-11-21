@@ -121,13 +121,38 @@ export const SEASONS = [
   { name: 'Spring', icon: '🌸' }, { name: 'Summer', icon: '☀️' }, { name: 'Autumn', icon: '🍂' }, { name: 'Winter', icon: '❄️' },
 ];
 export const seasonOf = day => Math.floor((Math.max(1, day) - 1) / 7) % 4;
-// The same day always has the same weather.
+// A well-mixed hash so neighbouring days don't get look-alike weather (the plain generator's first
+// value barely changes from one day to the next, which made the first days of every game rainy).
+export function hash32(n) {
+  let x = (n | 0) ^ 0x9E3779B9;
+  x = Math.imul(x ^ (x >>> 16), 0x85EBCA6B); x = Math.imul(x ^ (x >>> 13), 0xC2B2AE35); x ^= x >>> 16;
+  return (x >>> 0) / 4294967296;
+}
+function rawWeather(day) {
+  const r = hash32(day * 7919 + 17), s = seasonOf(day);
+  if (s === 3) return r < 0.3 ? 'snow' : r < 0.55 ? 'cloudy' : 'sunny';
+  if (r < (s === 0 ? 0.24 : s === 2 ? 0.22 : 0.14)) return 'rain';
+  return r < 0.5 ? 'cloudy' : 'sunny';
+}
+// The same day always has the same weather. A new game starts with two sunny days, and rain or snow
+// never lasts more than two days in a row.
 export function weatherOf(day) {
-  const r = seeded(day * 2654435761)();
-  const s = seasonOf(day);
-  if (s === 3) return r < 0.4 ? 'snow' : r < 0.6 ? 'cloudy' : 'sunny';
-  if (r < (s === 0 ? 0.32 : s === 2 ? 0.3 : 0.18)) return 'rain';
-  return r < 0.45 ? 'cloudy' : 'sunny';
+  if (day <= 2) return 'sunny';
+  const w = rawWeather(day);
+  if ((w === 'rain' || w === 'snow') && rawWeather(day - 1) === w && rawWeather(day - 2) === w) return 'cloudy';
+  return w;
+}
+// Rain and snow come in a spell of a few hours; the rest of that day is cloudy.
+export function showerOf(day) {
+  const h = hash32(day * 104729 + 3);
+  const start = (6 + Math.floor(h * 11)) * 60, length = (3 + Math.floor(hash32(day * 31 + 7) * 4)) * 60;
+  return { start, end: start + length };
+}
+export function weatherAt(day, minute) {
+  const w = weatherOf(day);
+  if (w !== 'rain' && w !== 'snow') return w;
+  const { start, end } = showerOf(day), m = ((minute % 1440) + 1440) % 1440;
+  return m >= start && m < end ? w : 'cloudy';
 }
 export const WEATHER = { sunny: { icon: '☀️', name: 'Sunny' }, cloudy: { icon: '⛅', name: 'Cloudy' }, rain: { icon: '🌧️', name: 'Rainy' }, snow: { icon: '🌨️', name: 'Snowy' } };
 

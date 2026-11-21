@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ITEMS, CROPS, RECIPES, growPlot, plotStage, craft, canCraft, recipeKnown, weatherOf, seasonOf, requestFor, questsFor, RESTORE, harvestCount } from '../public/js/life.js';
+import { ITEMS, CROPS, RECIPES, growPlot, plotStage, craft, canCraft, recipeKnown, weatherOf, weatherAt, showerOf, seasonOf, requestFor, questsFor, RESTORE, harvestCount } from '../public/js/life.js';
 
 test('every recipe, crop and restoration step uses real items', () => {
   for (const r of RECIPES) { assert.ok(ITEMS[r.id], r.id); for (const k of Object.keys(r.needs)) assert.ok(ITEMS[k], k); }
@@ -34,4 +34,21 @@ test('weather, requests and quests are the same all day', () => {
   assert.deepEqual(requestFor('Pip', 5), requestFor('Pip', 5));
   const q = questsFor(9); assert.equal(q.length, 3); assert.equal(new Set(q.map(x => x.id)).size, 3);
   let asks = 0; for (let d = 1; d < 40; d++) if (requestFor('Marlow', d)) asks++; assert.ok(asks > 4 && asks < 30);
+});
+
+test('weather: sunny start, no long wet streaks, rain comes in showers', () => {
+  assert.equal(weatherOf(1), 'sunny'); assert.equal(weatherOf(2), 'sunny');
+  let wet = 0, kinds = new Set();
+  for (let d = 1; d <= 400; d++) {
+    const w = weatherOf(d); kinds.add(w);
+    if (w === 'rain') wet++;
+    if (d > 2 && (w === 'rain' || w === 'snow')) assert.ok(!(weatherOf(d - 1) === w && weatherOf(d - 2) === w), 'three wet days in a row at day ' + d);
+    if (w === 'rain' || w === 'snow') {
+      const { start, end } = showerOf(d);
+      assert.ok(end - start >= 180 && end - start <= 360);
+      assert.equal(weatherAt(d, start - 1), 'cloudy'); assert.equal(weatherAt(d, start + 10), w); assert.equal(weatherAt(d, end), 'cloudy');
+    } else assert.equal(weatherAt(d, 720), w);
+  }
+  assert.ok(wet / 400 < 0.25, 'too much rain: ' + wet);
+  assert.ok(kinds.has('sunny') && kinds.has('cloudy') && kinds.has('rain') && kinds.has('snow'));
 });
