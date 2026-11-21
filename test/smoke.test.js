@@ -9,7 +9,7 @@ function startServer(env) {
   let logs = '';
   const child = spawn(process.execPath, ['server.js'], { env: { ...process.env, NODE_ENV: 'test', PORT: String(port), JWT_SECRET: 'test-secret-that-is-long-enough-for-smoke-tests-123456', MONGODB_URI: '', ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.on('data', b => { logs += b; }); child.stderr.on('data', b => { logs += b; });
-  const ready = (async () => { for (let i = 0; i < 60; i++) { if (child.exitCode !== null) throw new Error('Server exited. ' + logs); try { await fetch(base + '/healthz', { signal: AbortSignal.timeout(500) }); return; } catch { /* not yet */ } await wait(250); } throw new Error('Server did not start. ' + logs); })();
+  const ready = (async () => { for (let i = 0; i < 180; i++) { if (child.exitCode !== null) throw new Error('Server exited. ' + logs); try { await fetch(base + '/healthz', { signal: AbortSignal.timeout(1000) }); return; } catch { /* not yet */ } await wait(250); } throw new Error('Server did not start. ' + logs); })();
   return { child, base, ready };
 }
 const json = (base, path, method = 'GET', body, token) => fetch(base + path, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: 'Bearer ' + token } : {}) }, body: body ? JSON.stringify(body) : undefined });
