@@ -302,7 +302,10 @@ const DRAW = {
     for (const [x, y] of [[0.65, 0.1], [0.65, 1.8], [0.15, 0.1], [0.15, 1.8]]) box(ctx, x, y, 0, 0.08, 0.08, 32, '#34476B');
     box(ctx, 0.1, 0.05, 32, 0.8, 1.9, 4, '#FFFFFF');
     box(ctx, 0.55, 0.55, 36, 0.12, 0.9, 40, '#26304A');
-    const sc = faceI(0.55, 0.55, 36, 0.12, 0.9, 40); rectOn(ctx, sc, 0.06, 0.1, 0.94, 0.92, '#7FC3E8', null, 0.01); rectOn(ctx, sc, 0.1, 0.5, 0.5, 0.85, '#B8E4F7', null, 0.012);
+    // the screen faces the chair, so from here we see the monitor's back
+    const sc = faceI(0.55, 0.55, 36, 0.12, 0.9, 40); rectOn(ctx, sc, 0.08, 0.12, 0.92, 0.9, '#34476B', null, 0.01);
+    { const [x, y] = P(...fp(sc, 0.5, 0.55, 0.012)); ctx.fillStyle = '#8E7CE0'; ctx.beginPath(); ctx.arc(x, y, 3.2, 0, 7); ctx.fill(); }
+    box(ctx, 0.6, 0.92, 32, 0.05, 0.16, 6, '#26304A');
     poly(ctx, [[0.25, 0.65, 36.2], [0.45, 0.65, 36.2], [0.45, 1.35, 36.2], [0.25, 1.35, 36.2]], '#D9E2EC', '#A0AEC0', 1);
     // chair
     for (const [x, y] of [[-0.6, 0.35], [-0.6, 0.65], [-0.3, 0.35], [-0.3, 0.65]]) box(ctx, x, y, 0, 0.05, 0.05, 16, '#34476B');
@@ -362,6 +365,12 @@ export function drawFurnitureLive(ctx, f, sx, sy, zoom, t, on) {
     const [mx, my] = P(...fp(fc, 0.3 + 0.4 * ((Math.sin(t * 0.7) + 1) / 2), 0.4, 0.03));
     ctx.font = `${Math.round(30 * zoom)}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText(['🐉', '🚀', '🦄', '🐳'][Math.floor(t / 2.5) % 4], sx + mx * zoom, sy + my * zoom);
     ctx.restore();
+  }
+  if (f.type === 'desk' && on) {
+    // light from the screen spills onto the wall and the desk
+    const [px, py] = P(0.5, 1, 56), x = sx + px * zoom, y = sy + py * zoom, r = 44 * zoom, g = ctx.createRadialGradient(x, y, 2, x, y, r);
+    g.addColorStop(0, `rgba(160,215,245,${0.4 + Math.sin(t * 5) * 0.06})`); g.addColorStop(1, 'rgba(160,215,245,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
   }
   if (f.type === 'tv' && on) {
     const sc = faceJ(0.25, 0.42, 22, 1.5, 0.08, 56), cols = ['#7FC3E8', '#FFC83D', '#F0587A', '#3FA86A'], c = cols[Math.floor(t * 1.5) % cols.length];
