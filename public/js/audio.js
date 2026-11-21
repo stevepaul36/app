@@ -1,7 +1,7 @@
 // Sound effects and music made live with Web Audio, so there are no audio files to download.
 // Browsers only allow sound after the player has touched the screen, so unlock() runs on the first tap.
 let ac = null, master = null, musicBus = null, sfxBus = null;
-const state = { music: true, sfx: true, scene: 'home', night: false };
+const state = { music: true, sfx: true, musicVol: 1, sfxVol: 1, scene: 'home', night: false };
 const loops = new Map();
 
 export function unlock() {
@@ -10,16 +10,18 @@ export function unlock() {
   if (!AC) return;
   ac = new AC();
   master = ac.createGain(); master.gain.value = 0.8; master.connect(ac.destination);
-  musicBus = ac.createGain(); musicBus.gain.value = state.music ? 0.22 : 0; musicBus.connect(master);
-  sfxBus = ac.createGain(); sfxBus.gain.value = state.sfx ? 0.6 : 0; sfxBus.connect(master);
+  musicBus = ac.createGain(); musicBus.gain.value = state.music ? 0.22 * state.musicVol : 0; musicBus.connect(master);
+  sfxBus = ac.createGain(); sfxBus.gain.value = state.sfx ? 0.6 * state.sfxVol : 0; sfxBus.connect(master);
   startMusic();
 }
-export function setPrefs({ music, sfx }) {
+export function setPrefs({ music, sfx, musicVol, sfxVol }) {
   if (music !== undefined) state.music = music;
+  if (musicVol !== undefined) state.musicVol = musicVol;
+  if (sfxVol !== undefined) state.sfxVol = sfxVol;
   if (sfx !== undefined) state.sfx = sfx;
   if (!ac) return;
-  musicBus.gain.setTargetAtTime(state.music ? 0.22 : 0, ac.currentTime, 0.3);
-  sfxBus.gain.setTargetAtTime(state.sfx ? 0.6 : 0, ac.currentTime, 0.05);
+  musicBus.gain.setTargetAtTime(state.music ? 0.22 * state.musicVol : 0, ac.currentTime, 0.3);
+  sfxBus.gain.setTargetAtTime(state.sfx ? 0.6 * state.sfxVol : 0, ac.currentTime, 0.05);
 }
 export function setScene(scene, night) { state.scene = scene; state.night = !!night; }
 // Each town has its own flavour of tune: a different scale and voice for the melody.

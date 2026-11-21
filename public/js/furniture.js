@@ -33,11 +33,35 @@ export function wallSprite(w) {
 export function furnitureSprite(f, part) {
   const t = f.type;
   if (t === 'sofa' && part) return spriteFor(f.w, f.d, 60, ctx => couch(ctx, f.w, '#F0587A', part));
-  const tall = { barcounter: 90, pastrycase: 60, menuboard: 130, cafetable: 50, cafechair: 50, shelf: 110, shelf2: 70, till: 70, arcadecab: 110, claw: 120, prizes: 80, stool: 40, exhibit: 110, screen: 130, seat: 50, popcorn: 90, treadmill: 70, weights: 70, mat: 10, officedesk: 80, labbench: 80, crafttable: 60, wardrobe: 120, bed: 60, bookshelf: 110, shower: 110, fridge: 110, sink: 100, tv: 80, sofa: 50, armchair: 50, desk: 80, plant: 80, floorlamp: 110, radio: 50, nightstand: 60, mailbox: 50 }[t] || 50;
+  const tall = { plot: 20, workbench: 80, d_plantpot: 70, d_lamp: 110, d_stool: 40, d_bookstack: 50, d_teddy: 60, d_aquarium: 80, d_vase: 70, d_jackolantern: 50, d_rug: 6, d_shellchime: 120, barcounter: 90, pastrycase: 60, menuboard: 130, cafetable: 50, cafechair: 50, shelf: 110, shelf2: 70, till: 70, arcadecab: 110, claw: 120, prizes: 80, stool: 40, exhibit: 110, screen: 130, seat: 50, popcorn: 90, treadmill: 70, weights: 70, mat: 10, officedesk: 80, labbench: 80, crafttable: 60, wardrobe: 120, bed: 60, bookshelf: 110, shower: 110, fridge: 110, sink: 100, tv: 80, sofa: 50, armchair: 50, desk: 80, plant: 80, floorlamp: 110, radio: 50, nightstand: 60, mailbox: 50 }[t] || 50;
   return spriteFor(f.w, f.d, tall, ctx => DRAW[t] && DRAW[t](ctx, f));
 }
 
 const DRAW = {
+  plot(ctx) {
+    poly(ctx, [[0.04, 0.04, 0], [0.96, 0.04, 0], [0.96, 0.96, 0], [0.04, 0.96, 0]], '#A0703E');
+    poly(ctx, [[0.12, 0.12, 2], [0.88, 0.12, 2], [0.88, 0.88, 2], [0.12, 0.88, 2]], '#7A5236');
+    for (let k = 0; k < 3; k++) poly(ctx, [[0.18, 0.25 + k * 0.25, 2.2], [0.82, 0.25 + k * 0.25, 2.2]], null, '#5E3A26', 1.2);
+  },
+  workbench(ctx) {
+    box(ctx, 0.08, 0.15, 0, 0.84, 0.7, 34, '#B98448');
+    box(ctx, 0.05, 0.12, 34, 0.9, 0.76, 5, '#D9A86A');
+    for (const [x, y] of [[0.1, 0.17], [0.86, 0.17], [0.1, 0.8], [0.86, 0.8]]) box(ctx, x, y, 0, 0.05, 0.05, 34, '#7A5236');
+    const [hx, hy] = P(0.35, 0.45, 39); ctx.fillStyle = '#7A8798'; ctx.save(); ctx.translate(hx, hy); ctx.rotate(-0.5); ctx.fillRect(-2, -12, 4, 14); ctx.fillStyle = '#C0C8D2'; ctx.fillRect(-7, -15, 14, 6); ctx.restore();
+    const [sx, sy] = P(0.7, 0.4, 39); ctx.fillStyle = '#C9A866'; ctx.fillRect(sx - 9, sy - 3, 18, 4); ctx.fillStyle = '#A07850'; ctx.fillRect(sx - 6, sy - 6, 14, 3);
+    box(ctx, 0.15, 0.05, 39, 0.7, 0.06, 36, '#8C5A3C');
+    const pb = faceJ(0.15, 0.05, 39, 0.7, 0.06, 36); for (let k = 0; k < 4; k++) { const [x, y] = P(...fp(pb, 0.15 + k * 0.23, 0.6, 0.02)); ctx.fillStyle = ['#7A8798', '#F0587A', '#FFC83D', '#3FA86A'][k]; ctx.fillRect(x - 1.5, y - 10, 3, 12); }
+  },
+  d_plantpot(ctx) { const [x, y] = P(0.5, 0.5, 0); ctx.fillStyle = '#C9672E'; ctx.beginPath(); ctx.moveTo(x - 12, y - 20); ctx.lineTo(x + 12, y - 20); ctx.lineTo(x + 9, y); ctx.lineTo(x - 9, y); ctx.closePath(); ctx.fill(); blob(ctx, x, y - 32, 13, '#4FAE5A'); blob(ctx, x - 9, y - 27, 9, '#5FC07E'); blob(ctx, x + 9, y - 28, 9, '#3F9A5C'); },
+  d_lamp(ctx) { const [x, y] = P(0.5, 0.5, 0); ctx.fillStyle = '#7A5236'; ctx.beginPath(); ctx.ellipse(x, y, 9, 4, 0, 0, 7); ctx.fill(); ctx.fillRect(x - 1.5, y - 66, 3, 66); ctx.fillStyle = '#FFE9A6'; ctx.beginPath(); ctx.moveTo(x - 14, y - 64); ctx.lineTo(x + 14, y - 64); ctx.lineTo(x + 9, y - 84); ctx.lineTo(x - 9, y - 84); ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#C9A866'; ctx.stroke(); },
+  d_stool(ctx) { DRAW.stool(ctx); },
+  d_bookstack(ctx) { for (let k = 0; k < 5; k++) { const [x, y] = P(0.5, 0.5, k * 6); ctx.fillStyle = ['#F0587A', '#2E9BD6', '#FFC83D', '#3FA86A', '#8E7CE0'][k]; ctx.save(); ctx.translate(x, y); ctx.rotate((k % 2 ? 0.08 : -0.06)); ctx.fillRect(-14, -6, 28, 6); ctx.fillStyle = '#FFFFFF66'; ctx.fillRect(-12, -5, 3, 4); ctx.restore(); } },
+  d_teddy(ctx) { const [x, y] = P(0.5, 0.5, 0); const b = '#C98A4B'; blob(ctx, x, y - 14, 13, b); blob(ctx, x, y - 34, 11, b); blob(ctx, x - 9, y - 43, 4.5, b); blob(ctx, x + 9, y - 43, 4.5, b); blob(ctx, x, y - 31, 4.5, '#F2D3A6'); blob(ctx, x - 4, y - 37, 1.6, '#26395A'); blob(ctx, x + 4, y - 37, 1.6, '#26395A'); ctx.fillStyle = '#F0587A'; ctx.fillRect(x - 6, y - 25, 12, 3); },
+  d_aquarium(ctx) { box(ctx, 0.12, 0.25, 0, 0.76, 0.5, 26, '#8C5A3C'); box(ctx, 0.12, 0.25, 26, 0.76, 0.5, 40, '#9ED8F5', { topColor: '#C8EEFA' }); const f = faceJ(0.12, 0.25, 26, 0.76, 0.5, 40); for (let k = 0; k < 3; k++) { const [x, y] = P(...fp(f, 0.2 + k * 0.3, 0.3 + (k % 2) * 0.3, 0.02)); ctx.fillStyle = k === 1 ? '#FFC83D' : '#F28C28'; ctx.beginPath(); ctx.ellipse(x, y, 5, 3, 0, 0, 7); ctx.fill(); } for (let k = 0; k < 4; k++) { const [x, y] = P(...fp(f, 0.1 + k * 0.25, 0.05, 0.02)); ctx.fillStyle = '#3FA86A'; ctx.fillRect(x - 1, y - 12, 2, 12); } },
+  d_vase(ctx) { const [x, y] = P(0.5, 0.5, 0); ctx.fillStyle = '#5BC0EB'; ctx.beginPath(); ctx.ellipse(x, y - 12, 10, 13, 0, 0, 7); ctx.fill(); ctx.fillRect(x - 5, y - 30, 10, 8); for (let k = 0; k < 5; k++) { ctx.strokeStyle = '#3F9A5C'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, y - 28); ctx.lineTo(x - 12 + k * 6, y - 46 - (k % 2) * 6); ctx.stroke(); blob(ctx, x - 12 + k * 6, y - 47 - (k % 2) * 6, 4, ['#F0587A', '#FFC83D', '#F7A8C4', '#8E7CE0', '#FFFFFF'][k]); } },
+  d_jackolantern(ctx) { const [x, y] = P(0.5, 0.5, 0); ctx.fillStyle = '#F28C28'; ctx.beginPath(); ctx.ellipse(x, y - 14, 17, 14, 0, 0, 7); ctx.fill(); ctx.strokeStyle = '#C9672E'; ctx.lineWidth = 1.5; for (const dx of [-7, 0, 7]) { ctx.beginPath(); ctx.ellipse(x + dx, y - 14, 4, 13, 0, 0, 7); ctx.stroke(); } ctx.fillStyle = '#FFE07A'; ctx.beginPath(); ctx.moveTo(x - 9, y - 18); ctx.lineTo(x - 5, y - 23); ctx.lineTo(x - 2, y - 18); ctx.fill(); ctx.beginPath(); ctx.moveTo(x + 2, y - 18); ctx.lineTo(x + 5, y - 23); ctx.lineTo(x + 9, y - 18); ctx.fill(); ctx.fillRect(x - 8, y - 12, 16, 3); ctx.fillStyle = '#3F9A5C'; ctx.fillRect(x - 2, y - 32, 4, 6); },
+  d_rug(ctx) { const [x, y] = P(0.5, 0.5, 0.5); ctx.fillStyle = '#F7A8C4'; ctx.beginPath(); ctx.ellipse(x, y, 52, 26, 0, 0, 7); ctx.fill(); ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y, 40, 20, 0, 0, 7); ctx.stroke(); ctx.fillStyle = '#E86A9A'; ctx.beginPath(); ctx.ellipse(x, y, 22, 11, 0, 0, 7); ctx.fill(); },
+  d_shellchime(ctx) { const [x, y] = P(0.5, 0.5, 0); ctx.fillStyle = '#8C5A3C'; ctx.fillRect(x - 1.5, y - 90, 3, 90); ctx.fillRect(x - 14, y - 90, 28, 3); for (let k = 0; k < 4; k++) { ctx.strokeStyle = '#C9B795'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x - 12 + k * 8, y - 87); ctx.lineTo(x - 12 + k * 8, y - 70 + k % 2 * 6); ctx.stroke(); blob(ctx, x - 12 + k * 8, y - 67 + k % 2 * 6, 3.5, ['#F7E3C0', '#F7A8C4', '#FFFFFF', '#F2D3A6'][k]); } },
   barcounter(ctx, f) {
     const fc = box(ctx, 0.02, 0.12, 0, f.w - 0.04, 0.76, 38, '#8C5A3C');
     box(ctx, 0, 0.08, 38, f.w, 0.84, 5, '#F2E6D6');

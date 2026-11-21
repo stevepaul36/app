@@ -780,7 +780,44 @@ export function cityBuildingSprite(o) {
 }
 
 // ---------- landmarks ----------
+// The Old Garden in its five looks: overgrown, cleared, paths, flower beds, and finished with a gazebo.
+function oldGarden(ctx, o) {
+  const st = o.stage || 0, W2 = o.w, D2 = o.d;
+  poly(ctx, [[0, 0, 0], [W2, 0, 0], [W2, D2, 0], [0, D2, 0]], st === 0 ? '#9DB36A' : '#B9D98A', '#7F9A55');
+  const r = rng(321);
+  // fence: broken at first, mended later
+  for (let k = 0; k <= 12; k++) { const t = k / 12; for (const [x, y] of [[t * W2, 0.02], [0.02, t * D2]]) { if (st === 0 && r() < 0.35) continue; const [px, py] = P(x, y, 0); ctx.fillStyle = st === 0 ? '#9C8160' : '#FFF4E0'; ctx.fillRect(px - 1.5, py - (st === 0 ? 10 + r() * 6 : 18), 3, st === 0 ? 10 + r() * 6 : 18); } }
+  if (st === 0) {
+    for (let k = 0; k < 16; k++) { const [x, y] = P(0.2 + r() * (W2 - 0.4), 0.2 + r() * (D2 - 0.4), 0); ctx.fillStyle = ['#6E8A3E', '#5E7A34', '#7F9A55'][k % 3]; ctx.beginPath(); ctx.ellipse(x, y - 6, 9 + r() * 6, 7 + r() * 4, 0, 0, 7); ctx.fill(); ctx.strokeStyle = '#8C5A3C'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x - 6, y - 8); ctx.lineTo(x + 6, y - 14); ctx.stroke(); }
+    for (let k = 0; k < 4; k++) { const [x, y] = P(0.4 + r() * 2.2, 0.4 + r() * 2.2, 0); ctx.fillStyle = '#A0A8B0'; ctx.beginPath(); ctx.ellipse(x, y - 4, 8, 5, 0, 0, 7); ctx.fill(); }
+    const [sx, sy] = P(W2 - 0.4, D2 - 0.3, 0); ctx.fillStyle = '#C9A866'; ctx.fillRect(sx - 1.5, sy - 30, 3, 30); ctx.fillStyle = '#FFF4E0'; ctx.save(); ctx.translate(sx, sy - 30); ctx.rotate(-0.15); ctx.fillRect(-16, -10, 32, 14); ctx.fillStyle = '#7A5236'; ctx.font = '700 8px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('HELP ME', 0, 0); ctx.restore();
+    return;
+  }
+  if (st >= 1) { for (let k = 0; k < 3; k++) box(ctx, 0.25 + k * 0.18, D2 - 0.55, k * 6, 0.35, 0.3, 6, '#A0A8B0'); }
+  if (st >= 2) {
+    const path = [[0.3, D2 / 2], [W2 / 2, D2 / 2], [W2 / 2, 0.3], [W2 - 0.3, D2 / 2], [W2 / 2, D2 - 0.3]];
+    poly(ctx, [[0.1, D2 / 2 - 0.25, 0.3], [W2 - 0.1, D2 / 2 - 0.25, 0.3], [W2 - 0.1, D2 / 2 + 0.25, 0.3], [0.1, D2 / 2 + 0.25, 0.3]], '#E8DCC6');
+    poly(ctx, [[W2 / 2 - 0.25, 0.1, 0.3], [W2 / 2 + 0.25, 0.1, 0.3], [W2 / 2 + 0.25, D2 - 0.1, 0.3], [W2 / 2 - 0.25, D2 - 0.1, 0.3]], '#E8DCC6');
+    for (let k = 0; k < 18; k++) { const t = k / 17; dot(ctx, [0.1 + t * (W2 - 0.2), D2 / 2 - 0.3, 1], 2, '#F7E3C0'); dot(ctx, [W2 / 2 + 0.3, 0.1 + t * (D2 - 0.2), 1], 2, '#F7E3C0'); }
+    void path;
+  }
+  if (st >= 3) for (const [a, b] of [[0.6, 0.6], [W2 - 0.6, 0.6], [0.6, D2 - 0.6], [W2 - 0.6, D2 - 0.6]]) {
+    const [x, y] = P(a, b, 0); ctx.fillStyle = '#7A5236'; ctx.beginPath(); ctx.ellipse(x, y, 26, 13, 0, 0, 7); ctx.fill();
+    for (let k = 0; k < 9; k++) { const fx = x + (r() - 0.5) * 36, fy = y + (r() - 0.5) * 16; ctx.strokeStyle = '#3F9A5C'; ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx, fy - 9); ctx.stroke(); blob(ctx, fx, fy - 10, 3.5, ['#F0587A', '#FFC83D', '#F7A8C4', '#8E7CE0', '#FFFFFF'][k % 5]); }
+  }
+  if (st >= 4) {
+    const cx = W2 / 2, cy = D2 / 2;
+    for (const [a, b] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) box(ctx, cx + a - 0.04, cy + b - 0.04, 0, 0.08, 0.08, 48, '#FFFFFF');
+    const pts = Array.from({ length: 6 }, (_, k) => [cx + Math.cos(k / 6 * 6.283) * 0.85, cy + Math.sin(k / 6 * 6.283) * 0.85, 48]);
+    for (let k = 0; k < 6; k++) poly(ctx, [pts[k], pts[(k + 1) % 6], [cx, cy, 78]], lit('#3FA86A', [Math.cos(k + 0.5), Math.sin(k + 0.5), 0.8]), '#2E7D4F');
+    blob(ctx, ...P(cx, cy, 82), 4, '#F2C14E');
+    const [lx, ly] = P(cx, cy, 44); ctx.fillStyle = 'rgba(255,240,150,.9)'; ctx.beginPath(); ctx.arc(lx, ly, 5, 0, 7); ctx.fill();
+  }
+}
+export const oldGardenTop = st => (st >= 4 ? 90 : st >= 3 ? 30 : 25);
+
 const LM = {
+  oldgarden: oldGarden,
   bandstand(ctx, o) {
     const cx = o.w / 2, cy = o.d / 2, r = 0.85;
     const ring = n => Array.from({ length: n }, (_, k) => [cx + Math.cos(k / n * Math.PI * 2) * r, cy + Math.sin(k / n * Math.PI * 2) * r]);
@@ -882,8 +919,8 @@ const LM = {
     ctx.fillStyle = '#9ED8F5'; roundRect(ctx, x + 2, y - 28, 14, 10, 3); ctx.fill();
   },
 };
-const LM_TALL = { bandstand: 120, holo: 170, atom: 160, pagoda: 300, bigsakura: 250, rangoli: 30, paifang: 130, turbine: 200, rickshaw: 60 };
-export const LM_TOP = { bandstand: 105, holo: 150, atom: 145, pagoda: 290, bigsakura: 230, rangoli: 20, paifang: 120, turbine: 0, rickshaw: 0 };
+const LM_TALL = { oldgarden: 120, bandstand: 120, holo: 170, atom: 160, pagoda: 300, bigsakura: 250, rangoli: 30, paifang: 130, turbine: 200, rickshaw: 60 };
+export const LM_TOP = { oldgarden: 40, bandstand: 105, holo: 150, atom: 145, pagoda: 290, bigsakura: 230, rangoli: 20, paifang: 120, turbine: 0, rickshaw: 0 };
 export function landmarkSprite(o) {
   const [a, b, c, d] = bounds(o.w, o.d, LM_TALL[o.lm] || 150);
   return new Sprite(a - 40, b, c + 40, d, ctx => LM[o.lm]?.(ctx, o));
