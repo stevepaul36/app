@@ -22,8 +22,8 @@ app.use(cors(corsOptions));
 app.use('/api/save', express.json({ limit: '600kb' }));
 app.use(express.json({ limit: '24kb' }));
 app.use(express.static('public', { maxAge: 0, setHeaders: (res, path) => { if (path.endsWith('.html')) res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate'); } }));
-app.use('/api/auth', rateLimit({ windowMs: 900000, limit: 20, standardHeaders: true, legacyHeaders: false }));
-app.use('/api/save', rateLimit({ windowMs: 60000, limit: 30, standardHeaders: true, legacyHeaders: false }));
+app.use('/api/auth', rateLimit({ windowMs: 900000, limit: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many tries. Please wait 15 minutes and try again.' } }));
+app.use('/api/save', rateLimit({ windowMs: 60000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Saving too often. Your game will save again in a minute.' } }));
 const io = new Server(server, { cors: corsOptions, maxHttpBufferSize: 100000, pingInterval: 25000, pingTimeout: 20000 });
 
 // ---------- storage ----------
@@ -97,10 +97,14 @@ app.post('/api/admin/verify', adminLimiter, (req, res) => {
 app.get('/api/admin/check', (req, res) => { const h = req.headers.authorization || ''; try { const c = jwt.verify(h.slice(7), secret, { issuer: 'willowvale-admin' }); res.json({ ok: c.role === 'admin' }); } catch { res.status(401).json({ ok: false }); } });
 
 const NICK = /^[a-zA-Z0-9_]{3,20}$/;
+// Nicknames are shown to other players, so a few obviously unkind words are refused.
+const RUDE = ['fuck', 'shit', 'bitch', 'cunt', 'dick', 'pussy', 'nigg', 'fag', 'slut', 'whore', 'rape', 'nazi', 'porn', 'sex', 'kill', 'stupid', 'idiot', 'hate', 'admin', 'moderator', 'willowvale'];
+const niceNick = n => { const l = n.toLowerCase().replace(/[_0-9]/g, m => ({ 0: 'o', 1: 'i', 3: 'e', 4: 'a', 5: 's', 7: 't', _: '' })[m] ?? ''); return !RUDE.some(w => l.includes(w)); };
 app.post('/api/auth/register', requireStore, async (req, res, next) => {
   try {
     const username = String(req.body.username || '').trim(), password = String(req.body.password || '');
     if (!NICK.test(username)) return res.status(400).json({ error: 'Nickname must be 3–20 letters, numbers or underscores.' });
+    if (!niceNick(username)) return res.status(400).json({ error: 'Please pick a different nickname. Other players will see it.' });
     if (password.length < 8 || password.length > 128) return res.status(400).json({ error: 'Password must be 8–128 characters.' });
     const u = { _id: crypto.randomUUID(), username, usernameLower: username.toLowerCase(), passwordHash: await bcrypt.hash(password, 12), createdAt: new Date() };
     try { await players.insertOne(u); } catch (e) { if (e.code === 11000) return res.status(409).json({ error: 'That nickname is already taken.' }); throw e; }
@@ -153,23 +157,73 @@ app.delete('/api/account', requireStore, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// ---------- who's online (presence only; no chat, no shared economy) ----------
-const presence = new Map();
+// ---------- shared towns ----------
+// Players in the same town see each other walk around and can send emoji bubbles. Homes, coins and
+// progress stay in each player's own save. Children's game rules: no typed text ever crosses the
+// wire — only positions, looks and emojis — and names are server-assigned (account nickname or
+// "Visitor"). Guests can join too, so towns feel alive without an account.
+const towns = new Map(); // townId -> Map(socketId -> peer)
+const cleanTown = t => String(t || 'willowvale').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) || 'willowvale';
+const EMOJI = /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator})(?:️|⃣|\p{Emoji_Modifier}|‍(?:\p{Extended_Pictographic}|\p{Regional_Indicator})|\p{Regional_Indicator})*$/u;
+const cleanEmojis = e => Array.isArray(e) && e.length >= 1 && e.length <= 3 && e.every(x => typeof x === 'string' && x.length <= 14 && EMOJI.test(x)) ? e.slice() : null;
+const SPECIES = /^[a-z]{2,16}$/;
+function cleanLook(look) {
+  if (!isPlain(look) || JSON.stringify(look).length > 800 || !saneJson(look)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(look)) if (/^[a-zA-Z0-9_]{1,24}$/.test(k) && (typeof v === 'string' ? v.length <= 32 && /^[#a-zA-Z0-9_ -]*$/.test(v) : typeof v === 'number' && Number.isFinite(v))) out[k] = v;
+  return out;
+}
+const num = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+const peerView = (id, p) => ({ id, name: p.name, species: p.species, look: p.look, x: p.x, y: p.y, scene: p.scene, moving: p.moving });
+function leaveTown(s) {
+  const tid = s.data.townId; if (!tid) return;
+  const room = towns.get(tid); s.leave(tid); s.data.townId = null;
+  if (room) { room.delete(s.id); s.to(tid).emit('p:leave', { id: s.id }); io.to(tid).emit('town:presence', { count: room.size }); if (!room.size) towns.delete(tid); }
+}
 io.use(async (s, next) => {
-  if (!db) return next(Error('Accounts are switched off.'));
-  try { const c = jwt.verify((s.handshake.auth && s.handshake.auth.token) || '', secret, { issuer: 'willowvale' }); const u = await players.findOne({ _id: c.sub }, { projection: { username: 1 } }); if (!u) return next(Error('Account not found.')); s.data.user = { id: u._id, username: u.username }; next(); }
-  catch { next(Error('Sign in to see who’s online.')); }
+  s.data.user = null;
+  const token = s.handshake.auth && s.handshake.auth.token;
+  if (token && db) {
+    try { const c = jwt.verify(token, secret, { issuer: 'willowvale' }); const u = await players.findOne({ _id: c.sub }, { projection: { username: 1 } }); if (u) s.data.user = { id: u._id, username: u.username }; }
+    catch { /* expired or bad token: join as a visitor */ }
+  }
+  next();
 });
 io.on('connection', s => {
+  let lastState = 0, lastEmote = 0, burst = 0;
   s.on('town:join', p => {
-    const tid = String((p && p.townId) || 'willowvale').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) || 'willowvale';
-    if (s.data.townId) { s.leave(s.data.townId); const old = presence.get(s.data.townId); if (old) { old.delete(s.id); io.to(s.data.townId).emit('town:presence', { count: old.size }); } }
-    s.data.townId = tid; s.join(tid);
-    if (!presence.has(tid)) presence.set(tid, new Set());
-    presence.get(tid).add(s.id);
-    io.to(tid).emit('town:presence', { count: presence.get(tid).size });
+    p = isPlain(p) ? p : {};
+    leaveTown(s);
+    const tid = cleanTown(p.townId);
+    const peer = { name: s.data.user ? s.data.user.username : 'Visitor', species: SPECIES.test(p.species) ? p.species : 'fox', look: cleanLook(p.look), x: num(p.x, 0, 200) ? p.x : 0, y: num(p.y, 0, 200) ? p.y : 0, scene: p.scene === 'city' ? 'city' : 'away', moving: false };
+    if (!towns.has(tid)) towns.set(tid, new Map());
+    const room = towns.get(tid);
+    if (room.size >= 40) { s.emit('town:error', { message: 'This town is very busy right now. You can still play; other players will show up when it is quieter.' }); return; }
+    s.emit('p:list', [...room].map(([id, q]) => peerView(id, q)));
+    room.set(s.id, peer); s.data.townId = tid; s.join(tid);
+    s.to(tid).emit('p:join', peerView(s.id, peer));
+    io.to(tid).emit('town:presence', { count: room.size });
   });
-  s.on('disconnect', () => { const tid = s.data.townId, set = presence.get(tid); if (set) { set.delete(s.id); io.to(tid).emit('town:presence', { count: set.size }); if (!set.size) presence.delete(tid); } });
+  s.on('p:state', p => {
+    const room = towns.get(s.data.townId), me = room && room.get(s.id); if (!me || !isPlain(p)) return;
+    const now = Date.now(); if (now - lastState < 60) return; lastState = now;
+    if (num(p.x, 0, 200) && num(p.y, 0, 200)) { me.x = p.x; me.y = p.y; }
+    me.scene = p.scene === 'city' ? 'city' : 'away'; me.moving = !!p.moving;
+    s.to(s.data.townId).volatile.emit('p:state', { id: s.id, x: me.x, y: me.y, scene: me.scene, moving: me.moving });
+  });
+  s.on('p:look', p => {
+    const room = towns.get(s.data.townId), me = room && room.get(s.id); if (!me || !isPlain(p)) return;
+    if (SPECIES.test(p.species)) me.species = p.species; me.look = cleanLook(p.look);
+    s.to(s.data.townId).emit('p:look', { id: s.id, species: me.species, look: me.look });
+  });
+  s.on('p:emote', p => {
+    const room = towns.get(s.data.townId), me = room && room.get(s.id); if (!me || !isPlain(p)) return;
+    const now = Date.now(); burst = now - lastEmote > 8000 ? 0 : burst + 1; if (now - lastEmote < 900 || burst > 6) return; lastEmote = now;
+    const e = cleanEmojis(p.e); if (!e) return;
+    const to = typeof p.to === 'string' && room.has(p.to) ? p.to : null;
+    s.to(s.data.townId).emit('p:emote', { id: s.id, e, to });
+  });
+  s.on('disconnect', () => leaveTown(s));
 });
 
 app.use((e, _q, res, _n) => { console.error(e.message); if (!res.headersSent) res.status(e.message === 'Origin not allowed' ? 403 : e.type === 'entity.too.large' ? 413 : 500).json({ error: e.message === 'Origin not allowed' ? 'Origin not allowed.' : 'Something went wrong. Please try again.' }); });
