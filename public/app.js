@@ -784,7 +784,7 @@ function useCity(id) {
   cityWorld = C.world; cityThings = C.things; cityFlats = C.flats; cityNpcs = C.npcs; myHome = C.myHome; venuesById = C.venuesById;
   S.progress.city = id;
   SND.setCity(id);
-  if (typeof socket !== 'undefined' && socket && socket.connected) socket.emit('town:join', { townId: id });
+  if (typeof socket !== 'undefined' && socket && socket.connected) joinTown();
 }
 if (!cityMeta(S.progress.city) || !cityOpen(S.progress.city)) S.progress.city = 'willowvale';
 useCity(S.progress.city);
@@ -1156,7 +1156,7 @@ function drawFrame(now) {
     if (!onScreen(sx, sy, 330 * z)) continue;
     list.push(t);
   }
-  const chars = [player, ...npcs].map(c => {
+  const chars = [player, ...npcs, ...shownPeers()].map(c => {
     if (c.using && c.using.type === 'sofa') return { char: c, box: [c.x - 0.2, c.y - 0.25, c.x + 0.2, c.y + 0.25] };
     if (c.using) { const u = c.using; return { char: c, box: [u.i + 0.02, u.j + 0.02, u.i + u.w + 0.02, u.j + u.d + 0.02] }; }
     return { char: c, box: [c.x - 0.25, c.y - 0.25, c.x + 0.25, c.y + 0.25] };
@@ -1175,12 +1175,13 @@ function drawFrame(now) {
     const f = Math.abs(Math.sin(time * 14 + b.seed)) * 0.8 + 0.2;
     ctx.fillStyle = b.col; ctx.beginPath(); ctx.ellipse(sx - 3 * z * f, sy, 3.5 * z * f, 3 * z, 0, 0, 7); ctx.ellipse(sx + 3 * z * f, sy, 3.5 * z * f, 3 * z, 0, 0, 7); ctx.fill();
   }
-  for (const c of [player, ...npcs]) {
+  for (const c of [player, ...npcs, ...shownPeers()]) {
     if (!c.emote) continue;
     const [sx, sy] = toScreen(c.x, c.y);
     A.drawEmote(ctx, sx, sy - 74 * z, Math.max(0.7, z), c.emote, c.emoteLife);
   }
   drawLabels(z);
+  drawPeerNames(z);
   if (!indoor) drawBirds(dt);
   for (let k = pops.length - 1; k >= 0; k--) {
     const p = pops[k]; p.life -= dt;
@@ -1408,6 +1409,7 @@ function update(dt) {
   if (player.moving) { const st = Math.floor(player.walk / 3.14); if (st !== update.lastStep) { update.lastStep = st; SND.sfx('step'); if (st % 8 === 0) addXP('fitness', 1); } }
   if (!onboardingOpen) autonomy(dt);
   for (const n of cityNpcs) { npcThink(n, simDt, gm); n.update(simDt); }
+  tickPeers(dt);
   interiorTick(simDt);
   updateHudClock();
   // camera
@@ -1621,9 +1623,14 @@ let pieTarget = null;
 function showPie(target, sx, sy) {
   const o = target.o, n = target.npc;
   const opts = [];
-  let defs = n ? (n.generic ? [] : actionsFor('neighbour')) : actionsFor(kindKey(o));
+  let defs = n ? (n.generic || n.peer ? [] : actionsFor('neighbour')) : actionsFor(kindKey(o));
+  if (n && n.peer) {
+    opts.push({ icon: '👋', label: `Wave to ${n.name}`, run: () => sendEmote(['👋'], n) });
+    opts.push({ icon: '💬', label: 'Send emojis', run: () => showPeerChat(n) });
+    opts.push({ icon: '🚶', label: 'Walk over', run: () => { const i = Math.floor(n.x), j = Math.floor(n.y); const spot = [[i + 1, j], [i, j + 1], [i - 1, j], [i, j - 1]].find(([a, b]) => world.walkable(a, b)); if (spot) walkTo(spot[0] + 0.5, spot[1] + 0.5, () => player.face(n.x, n.y)); } });
+  }
   if (o && o.type === 'plot') plotOptions(o).forEach(x => opts.push(x));
-  if (n && !n.generic) { const rq = requestOpen(n); if (rq) { const got = have(rq.item); opts.push({ icon: ITEMS[rq.item].icon, label: `Give ${rq.n} ${itemName(rq.item, rq.n)}`, note: `+${rq.coins} ✦`, disabled: got < rq.n ? `You have ${got}` : '', run: () => deliverRequest(n, rq) }); } }
+  if (n && !n.generic && !n.peer) { const rq = requestOpen(n); if (rq) { const got = have(rq.item); opts.push({ icon: ITEMS[rq.item].icon, label: `Give ${rq.n} ${itemName(rq.item, rq.n)}`, note: `+${rq.coins} ✦`, disabled: got < rq.n ? `You have ${got}` : '', run: () => deliverRequest(n, rq) }); } }
   if (o && o.kind === 'furn' && o.venue) defs = defs.filter(d => !d.special && (!o.only || o.only.includes(d.id)) && !(o.use && d.job));
   if (o && o.kind === 'furn' && o.game) defs = [{ id: 'play', label: `Play ${GAMES[o.game].name}`, icon: GAMES[o.game].icon, special: 'game', coins: -1 }];
   if (n && n.generic) opts.push({ icon: '👋', label: 'Say hi', run: () => { n.busy = 3; n.face(player.x, player.y); n.say(['👋', '😊', '💛'][Math.floor(Math.random() * 3)], 2); player.say('👋', 1.5); SND.sfx('chat'); } });
@@ -1637,7 +1644,8 @@ function showPie(target, sx, sy) {
     if (def.needSkill) for (const [k, lv] of Object.entries(def.needSkill)) if (skillLv(k) < lv) disabled = `Needs ${SKILLS.find(x => x.k === k).label} ${lv}`;
     opts.push({ icon: def.icon, label: def.label, note, disabled, run: () => queueAction(def, n ? { npc: n } : { o }) });
   }
-  if (n && !n.generic) { opts.unshift({ icon: '💬', label: 'Emoji chat', run: () => meetThen(n, () => showEmojiChat(n)) }); opts.push({ icon: '🎁', label: 'Gifts & friendship', run: () => { n.busy = 4; showNeighbour(n); } }); }
+  if (n && (n.generic || n.peer)) { /* their options are added above */ }
+  else if (n) { opts.unshift({ icon: '💬', label: 'Emoji chat', run: () => meetThen(n, () => showEmojiChat(n)) }); opts.push({ icon: '🎁', label: 'Gifts & friendship', run: () => { n.busy = 4; showNeighbour(n); } }); }
   else if (o.kind === 'venue') opts.push({ icon: '⭐', label: visitedToday(o.id) ? 'Today’s activity ✓' : `Today: ${o.activity.title}`, run: () => visitThenSheet(o, () => showVenue(o)) });
   else if (o.home) opts.push({ icon: '🏠', label: homeIsMine(o) ? 'Your home' : 'See the listing', run: () => showHome(o) });
   else if (o.kind === 'busstop') opts.push({ icon: '🛍️', label: 'Coin shop', run: () => showShop() });
@@ -1652,6 +1660,7 @@ function showPie(target, sx, sy) {
   const R = Math.min(118, Math.max(92, opts.length * 22));
   const cx = Math.max(R * 0.5 + 70, Math.min(W - R * 0.5 - 70, sx)), cy = Math.max(R + 70, Math.min(H - R - 110, sy));
   ring.style.left = cx + 'px'; ring.style.top = cy + 'px';
+  pie.classList.remove('hidden'); // visible first, so the buttons can be measured
   opts.forEach((op, k) => {
     const a = -Math.PI / 2 + (opts.length === 1 ? 0 : (k / opts.length) * Math.PI * 2);
     const b = document.createElement('button');
@@ -1660,6 +1669,11 @@ function showPie(target, sx, sy) {
     b.innerHTML = `<span class="pie-icon">${esc(op.icon)}</span><span class="pie-label">${esc(op.label)}${op.note ? ` <em>${esc(op.note)}</em>` : ''}${op.disabled ? `<small>${esc(op.disabled)}</small>` : ''}</span>`;
     b.onclick = e => { e.stopPropagation(); closePie(); op.run(); };
     ring.append(b);
+    // keep every button fully on screen, even on narrow phones
+    const bw = b.offsetWidth, bh = b.offsetHeight; let x = Math.cos(a) * R, y = Math.sin(a) * R;
+    x += Math.max(0, 8 - (cx + x - bw / 2)) - Math.max(0, cx + x + bw / 2 - (W - 8));
+    y += Math.max(0, 60 - (cy + y - bh / 2)) - Math.max(0, cy + y + bh / 2 - (H - 96));
+    b.style.setProperty('--x', x + 'px'); b.style.setProperty('--y', y + 'px');
   });
   const center = h(`<div class="pie-center"><b>${esc(n ? n.name : displayName(o))}</b></div>`);
   ring.append(center);
@@ -1908,7 +1922,7 @@ function updateHudClock() {
   updateQueueProgress();
   if (++hudTick % 10) return;
   SND.setScene(sceneName, isNight(hourOf(S.progress.clock)));
-  $('clock-time').textContent = `${L.WEATHER[weatherNow()].icon} ${clockText(S.progress.clock)}`;
+  { const w = weatherNow(), hr = hourOf(S.progress.clock), night = hr < 6 || hr >= 20; $('clock-time').textContent = `${night && w === 'sunny' ? '🌙' : night && w === 'cloudy' ? '☁️' : L.WEATHER[w].icon} ${clockText(S.progress.clock)}`; }
   $('clock').title = `${L.SEASONS[L.seasonOf(gameDay())].name}, ${L.WEATHER[weatherNow()].name.toLowerCase()}`;
   const m = mood(S.progress.needs);
   $('mood-ring').style.setProperty('--m', moodColor(m));
@@ -1961,6 +1975,7 @@ function hideHint() { $('hint').classList.add('hidden'); }
 function h(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; }
 
 function openSheet(name, kicker, title, body, opts = {}) {
+  if (typeof closePie === 'function') closePie();
   if (!S.sheet) SND.sfx('open');
   S.sheet = name; hideHint();
   $('sheet-kicker').textContent = kicker || '';
@@ -2159,7 +2174,7 @@ function showFriends() {
   }
 }
 function showNeighbour(n) {
-  const f = friendship(n.name), wants = n.data.wants, have = S.progress.inventory[wants] || 0, met = f.day === today();
+  const f = friendship(n.name), wants = n.data.wants, haveWant = S.progress.inventory[wants] || 0, met = f.day === today();
   const el = h(`<div class="neighbour">
     <div class="neighbour-hero"><div class="portrait-wrap"></div><div class="bubble"><p>“${esc(n.data.line)}”</p></div></div>
     <div class="friend-row"><span>${esc(friendLevel(f.hearts || 0))}</span>${hearts(f.hearts)}</div>
@@ -2168,8 +2183,8 @@ function showNeighbour(n) {
     ${(f.mem || []).length ? `<h4 class="group-title">Things ${esc(n.name)} remembers</h4><ul class="log">${f.mem.map(m => `<li><b>${esc(m.text)}</b><span>Day ${m.day}</span></li>`).join('')}</ul>` : ''}
     <div class="actions-col">
       <button class="btn btn-primary btn-wide" data-a="hello" ${met ? 'disabled' : ''}>${met ? 'You said hello today ✓' : 'Say hello'}</button>
-      <button class="btn btn-sun btn-wide" data-a="give" ${have < 1 || f.gift === today() ? 'disabled' : ''}>${f.gift === today() ? 'Gift given today ✓' : `Give 1 ${ITEMS[wants].icon} ${itemName(wants, 1)} · +10 ✦`}</button>
-      ${have < 1 && f.gift !== today() ? `<p class="hint-text">${esc(n.name)} would love a ${itemName(wants, 1)}. ${wants === 'fish' ? 'Try fishing at the marina.' : wants === 'berries' ? 'The café gives berries.' : wants === 'flowers' ? 'The library and clinic give flowers.' : 'Make one at the community centre.'}</p>` : ''}
+      <button class="btn btn-sun btn-wide" data-a="give" ${haveWant < 1 || f.gift === today() ? 'disabled' : ''}>${f.gift === today() ? 'Gift given today ✓' : `Give 1 ${ITEMS[wants].icon} ${itemName(wants, 1)} · +10 ✦`}</button>
+      ${haveWant < 1 && f.gift !== today() ? `<p class="hint-text">${esc(n.name)} would love a ${itemName(wants, 1)}. ${wants === 'fish' ? 'Try fishing at the marina.' : wants === 'berries' ? 'The café gives berries.' : wants === 'flowers' ? 'The library and clinic give flowers.' : 'Make one at the community centre.'}</p>` : ''}
     </div></div>`);
   el.querySelector('.portrait-wrap').append(portrait(n.species, n.outfit, 104, { full: true, wave: true, t: time }));
   const bump = (k, fn) => { const cur = friendship(n.name); fn(cur); S.progress.friends[n.name] = cur; saveProgress(); };
@@ -2374,6 +2389,7 @@ function applyProfile() {
   $('player-name').textContent = S.user ? S.user.username : S.profile.name;
   A.drawPortrait($('hud-avatar'), S.profile.species, S.profile.look, { size: 40 });
   store.set('willowvale_player_v2', S.profile);
+  if (typeof socket !== 'undefined' && socket && socket.connected) socket.emit('p:look', { species: S.profile.species, look: S.profile.look });
 }
 function showProfile(message) {
   const state = { ...S.profile };
@@ -2399,26 +2415,38 @@ function showProfile(message) {
       <p class="lead">With an account your game saves online, so you can carry on from another phone or computer. Use a nickname, never your real name. No email needed.</p>
       <label class="field"><span>Nickname</span><input id="auth-username" autocomplete="username" maxlength="20" placeholder="3–20 letters, numbers or _"></label>
       <label class="field"><span>Password</span><input id="auth-password" type="password" autocomplete="current-password" placeholder="8 or more characters"></label>
+      <label class="check"><input type="checkbox" id="auth-show"> Show password</label>
       <p class="form-error" id="auth-error" role="alert"></p>
-      <div class="row2"><button class="btn btn-primary" id="signup-button">Create account</button><button class="btn btn-ghost" id="login-button">Log in</button></div>`;
+      <div class="row2"><button class="btn btn-primary" id="signup-button">Create account</button><button class="btn btn-ghost" id="login-button">Log in</button></div>
+      <p class="fine">Other players will see your nickname. Pick something kind, and keep your password secret.</p>`;
     acc.querySelector('#signup-button').onclick = () => auth('register');
     acc.querySelector('#login-button').onclick = () => auth('login');
+    acc.querySelector('#auth-show').onchange = e => { $('auth-password').type = e.target.checked ? 'text' : 'password'; };
+    acc.querySelector('#auth-password').addEventListener('keydown', e => { if (e.key === 'Enter') auth('login'); });
   }
   openSheet('profile', 'You', 'Your character', el, { tab: 'explore' });
 }
+let authBusy = false;
 async function auth(type) {
+  if (authBusy) return; // a double tap must not send two requests
   const u = $('auth-username').value.trim(), p = $('auth-password').value, err = $('auth-error');
   err.textContent = '';
-  if (!/^[a-zA-Z0-9_]{3,20}$/.test(u)) { err.textContent = 'Nicknames are 3–20 letters, numbers or underscores.'; return; }
+  if (!/^[a-zA-Z0-9_]{3,20}$/.test(u)) { err.textContent = 'Nicknames are 3–20 letters, numbers or underscores, with no spaces.'; return; }
   if (p.length < 8) { err.textContent = 'Passwords need at least 8 characters.'; return; }
+  const btns = ['signup-button', 'login-button'].map(id => document.getElementById(id)).filter(Boolean);
+  const btn = document.getElementById(type === 'register' ? 'signup-button' : 'login-button'), label = btn ? btn.textContent : '';
+  authBusy = true; btns.forEach(b => { b.disabled = true; }); if (btn) btn.textContent = type === 'register' ? 'Creating…' : 'Logging in…';
+  const slow = setTimeout(() => { if (authBusy) err.textContent = 'The town server is waking up. This can take up to a minute the first time…'; }, 4000);
   try {
     const d = await request('/api/auth/' + type, 'POST', { username: u, password: p });
     S.token = d.token; try { localStorage.setItem('willowvale_token', S.token); } catch { /* ignore */ }
-    S.user = d.user; applyProfile(); connect();
+    S.user = d.user; if (S.profile) applyProfile(); connect();
     toast(type === 'register' ? `Welcome to Willowvale, ${u}! Your game now saves to the cloud.` : `Welcome back, ${u}!`);
     closeSheet(); cloudAfterLogin();
   } catch (e) {
-    err.textContent = e.message;
+    err.textContent = /fetch|network|load failed/i.test(e.message) ? 'Can’t reach the town server. Check your internet and try again.' : e.message;
+  } finally {
+    clearTimeout(slow); authBusy = false; btns.forEach(b => { b.disabled = false; }); if (btn) btn.textContent = label;
   }
 }
 // ---------- cloud saves ----------
@@ -2462,6 +2490,7 @@ function applyCloud(data, version) {
   toast('Loading your cloud save…'); setTimeout(() => location.reload(), 500);
 }
 function chooseSave(r) {
+  if (!r || !r.data) { CLOUD.version = (r && r.version) || 0; CLOUD.ready = true; CLOUD.dirty = true; CLOUD.state = 'offline'; return; }
   CLOUD.state = 'conflict';
   const cp = r.data.progress || {}, cday = dayOf(cp.clock || 0), lday = dayOf(S.progress.clock || 0);
   const el = h(`<div class="choose-save"><p class="lead">There’s a save in the cloud and a different one on this device. Which one do you want to keep playing?</p>
@@ -2489,14 +2518,18 @@ async function cloudPush() {
   })();
   return pushing;
 }
-setInterval(() => { if (S.token && CLOUD.ready && CLOUD.dirty) cloudPush(); }, 20000);
+setInterval(() => {
+  if (!S.token) return;
+  if (CLOUD.state === 'conflict' && S.sheet !== 'choose-save') { CLOUD.state = 'offline'; cloudAfterLogin(); return; }
+  if (CLOUD.ready && CLOUD.dirty) cloudPush();
+}, 20000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && S.token && CLOUD.ready && CLOUD.dirty) cloudPush(); });
 window.addEventListener('online', () => { if (S.token) (CLOUD.ready ? cloudPush() : cloudAfterLogin()); });
 
 async function logout() {
   if (CLOUD.dirty && S.token) await cloudPush().catch(() => {});
   S.token = ''; S.user = null; try { localStorage.removeItem('willowvale_token'); } catch { /* ignore */ }
-  if (socket) socket.disconnect(); S.online = 'guest'; $('online-dot').className = 'online-dot';
+  S.online = 'guest'; $('online-dot').className = 'online-dot'; setTimeout(connect, 0);
   Object.assign(CLOUD, { version: 0, user: null, state: 'off', ready: false }); storeCloud();
   applyProfile(); toast('Logged out. Your game is still on this device.');
 }
@@ -2618,19 +2651,121 @@ function loadIo() {
   if (typeof window.io === 'function') return Promise.resolve(true);
   return new Promise(r => { const s = document.createElement('script'); s.src = API_BASE + '/socket.io/socket.io.js'; s.onload = () => r(true); s.onerror = () => r(false); document.head.append(s); });
 }
+// Everyone joins their town's shared streets, signed in or not (signed-in players show their nickname).
 async function connect() {
-  if (!S.token || !(await loadIo())) return;
-  if (socket) socket.disconnect();
-  socket = window.io(API_BASE || undefined, { auth: { token: S.token } });
-  socket.on('connect', () => { S.online = 'live'; $('online-dot').className = 'online-dot live'; socket.emit('town:join', { townId: C ? C.id : 'willowvale' }); });
+  if (!(await loadIo())) return;
+  if (socket) { socket.removeAllListeners(); socket.disconnect(); }
+  peers.clear();
+  socket = window.io(API_BASE || undefined, { auth: S.token ? { token: S.token } : {}, transports: ['websocket', 'polling'] });
+  socket.on('connect', () => { S.online = 'live'; $('online-dot').className = 'online-dot live'; joinTown(); });
+  socket.on('disconnect', () => { S.online = 'offline'; $('online-dot').className = 'online-dot'; peers.clear(); TOWN.count = 1; });
   socket.on('connect_error', () => { S.online = 'offline'; $('online-dot').className = 'online-dot'; });
-  socket.on('town:presence', d => { $('online-dot').title = d.count + ' player' + (d.count === 1 ? '' : 's') + ' in town'; });
+  socket.on('town:presence', d => { TOWN.count = d.count; $('online-dot').title = d.count + ' player' + (d.count === 1 ? '' : 's') + ' in town'; });
   socket.on('town:error', d => toast(d.message));
+  socket.on('p:list', list => { peers.clear(); for (const d of list) addPeer(d, true); });
+  socket.on('p:join', d => addPeer(d));
+  socket.on('p:leave', d => { const p = peers.get(d.id); if (p) peers.delete(d.id); });
+  socket.on('p:state', d => { const p = peers.get(d.id); if (!p) return; p.tx = d.x; p.ty = d.y; p.scene = d.scene; p.remoteMoving = d.moving; p.seen = performance.now(); });
+  socket.on('p:look', d => { const p = peers.get(d.id); if (!p) return; p.species = A.SPECIES[d.species] ? d.species : 'fox'; p.outfit = A.normLook(d.look || {}); });
+  socket.on('p:emote', d => {
+    const p = peers.get(d.id); if (!p) return;
+    p.say(d.e[0], 3); p.wave = d.e.includes('👋') ? 0.9 : 0; p.seen = performance.now();
+    const log = peerLogs.get(p.id) || []; log.push({ me: false, e: d.e }); peerLogs.set(p.id, log.slice(-30));
+    if (S.sheet === 'peer:' + p.id) renderPeerLog(p);
+    else if (d.to === socket.id) { toast(`${p.name} ${d.e.join(' ')}`); SND.sfx('chat'); }
+  });
+}
+const TOWN = { count: 1, sent: { x: 0, y: 0, scene: '', t: 0 } };
+function joinTown() {
+  if (!socket || !socket.connected) return;
+  peers.clear();
+  socket.emit('town:join', { townId: C ? C.id : 'willowvale', species: S.profile ? S.profile.species : 'fox', look: S.profile ? S.profile.look : {}, x: player.x, y: player.y, scene: myScene() });
+  TOWN.sent = { x: player.x, y: player.y, scene: myScene(), t: performance.now() };
+}
+
+// ---------- other players ----------
+const peers = new Map(), peerLogs = new Map();
+const myScene = () => sceneName === 'city' ? 'city' : 'away';
+function addPeer(d, quiet) {
+  const p = new Walker(d.x, d.y, A.SPECIES[d.species] ? d.species : 'fox', A.normLook(d.look || {}), { name: d.name, seed: hashStr(d.id) % 97, speed: 4 });
+  Object.assign(p, { peer: true, id: d.id, tx: d.x, ty: d.y, scene: d.scene, remoteMoving: d.moving, seen: performance.now() });
+  peers.set(d.id, p);
+  if (!quiet && d.scene === 'city' && sceneName === 'city') toast(`👋 ${d.name} arrived in ${C ? C.meta.name : 'town'}`);
+}
+const shownPeers = () => sceneName === 'city' ? [...peers.values()].filter(p => p.scene === 'city') : [];
+function tickPeers(dt) {
+  const now = performance.now();
+  for (const [id, p] of peers) {
+    if (now - p.seen > 45000) { peers.delete(id); continue; }
+    const dx = p.tx - p.x, dy = p.ty - p.y, d = Math.hypot(dx, dy);
+    if (d > 6) { p.x = p.tx; p.y = p.ty; }
+    else if (d > 0.01) { const k = Math.min(1, dt * 7); p.x += dx * k; p.y += dy * k; if (d > 0.04) p.face(p.tx, p.ty); }
+    p.moving = d > 0.04 || (p.remoteMoving && d > 0.01);
+    if (p.moving) p.walk += Math.max(d, 0.05) * 9;
+    if (p.emote) { p.emoteLife -= dt; if (p.emoteLife <= 0) p.emote = null; }
+    if (p.wave > 0) p.wave -= dt;
+    p.tick(dt);
+  }
+  // send my position a few times a second while it changes, and a heartbeat otherwise
+  if (!socket || !socket.connected) return;
+  const s = TOWN.sent, sc = myScene(), moved = Math.hypot(player.x - s.x, player.y - s.y) > 0.04;
+  if ((moved || sc !== s.scene || player.moving !== s.moving) && now - s.t > 140 || now - s.t > 4000) {
+    socket.emit('p:state', { x: +player.x.toFixed(2), y: +player.y.toFixed(2), scene: sc, moving: player.moving });
+    TOWN.sent = { x: player.x, y: player.y, scene: sc, moving: player.moving, t: now };
+  }
+}
+function drawPeerNames(z) {
+  const list = shownPeers(); if (!list.length) return;
+  ctx.save();
+  ctx.font = `800 ${Math.round(Math.max(11, 12 * Math.min(1.3, z * 1.3)))}px "Baloo 2", system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const p of list) {
+    const [sx, sy] = toScreen(p.x, p.y); if (sx < -60 || sy < -60 || sx > W + 60 || sy > H + 60) continue;
+    const y = sy - 92 * z - (p.emote ? 30 * z : 0), w = ctx.measureText(p.name).width + 16;
+    ctx.fillStyle = 'rgba(38,57,90,.82)'; roundRectPath(sx - w / 2, y - 10, w, 20, 10); ctx.fill();
+    ctx.fillStyle = '#FFFFFF'; ctx.fillText(p.name, sx, y + 1);
+  }
+  ctx.restore();
+}
+function roundRectPath(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function sendEmote(e, to) {
+  player.say(e[0], 2.4); SND.sfx('chat');
+  if (to) { to.face(player.x, player.y); player.face(to.x, to.y); const log = peerLogs.get(to.id) || []; log.push({ me: true, e }); peerLogs.set(to.id, log.slice(-30)); }
+  if (socket && socket.connected) socket.emit('p:emote', { e, to: to ? to.id : null });
+  S.progress.needs.social = Math.min(100, S.progress.needs.social + 3);
+}
+function renderPeerLog(p) {
+  const el = document.getElementById('pchat-log'); if (!el) return;
+  const log = peerLogs.get(p.id) || [];
+  el.innerHTML = log.length ? log.map(m => `<div class="bubble-row ${m.me ? 'me' : ''}"><span class="ebubble">${m.e.join(' ')}</span></div>`).join('') : '<p class="fine">Say hello with 👋</p>';
+  el.scrollTop = el.scrollHeight;
+}
+function showPeerChat(p) {
+  const unlocked = unlockedSet(S.progress);
+  let draft = [];
+  const el = h(`<div class="echat">
+    <div class="echat-who"><div class="portrait-wrap"></div><p class="lead"><b>${esc(p.name)}</b> is another player in ${esc(C ? C.meta.name : 'town')}. Send up to three emojis.</p></div>
+    <div class="echat-log" id="pchat-log" aria-live="polite"></div>
+    <div class="echat-compose"><div class="echat-draft" id="pchat-draft" aria-label="Your message"></div><button class="btn btn-small btn-ghost" id="pchat-clear">Clear</button><button class="btn btn-primary" id="pchat-send" disabled>Send</button></div>
+    <div class="echat-grid" id="pchat-grid"></div>
+    <p class="fine">Players can only send emojis to each other, never words.</p></div>`);
+  el.querySelector('.portrait-wrap').append(portrait(p.species, p.outfit, 64, { full: true, t: time }));
+  const draftEl = el.querySelector('#pchat-draft'), sendBtn = el.querySelector('#pchat-send');
+  const renderDraft = () => { draftEl.textContent = draft.join(' ') || '…'; sendBtn.disabled = !draft.length; };
+  for (const e of [...STARTER, ...ACHIEVEMENTS.flatMap(a => a.emojis), ...Object.values(SIGNATURE)]) {
+    if (!unlocked.has(e)) continue;
+    const b = h(`<button class="ekey" aria-label="${e}">${e}</button>`);
+    b.onclick = () => { if (draft.length < 3) { draft.push(e); SND.sfx('tap'); renderDraft(); } };
+    el.querySelector('#pchat-grid').append(b);
+  }
+  el.querySelector('#pchat-clear').onclick = () => { draft = []; renderDraft(); };
+  sendBtn.onclick = () => { if (!draft.length) return; if (!peers.has(p.id)) { toast(`${p.name} has left town.`); return; } sendEmote(draft.slice(), p); draft = []; renderDraft(); renderPeerLog(p); };
+  openSheet('peer:' + p.id, 'Emoji chat', p.name, el, { tab: 'friends' });
+  renderPeerLog(p); renderDraft();
 }
 async function restoreSession() {
-  if (!S.token) return;
-  try { const d = await request('/api/me'); S.user = d.user; applyProfile(); connect(); cloudAfterLogin(); }
-  catch (e) { if (/sign in again|not found/i.test(e.message)) { S.token = ''; try { localStorage.removeItem('willowvale_token'); } catch { /* ignore */ } } else { CLOUD.state = 'offline'; } }
+  if (!S.token) { connect(); return; }
+  try { const d = await request('/api/me'); S.user = d.user; if (S.profile) applyProfile(); connect(); cloudAfterLogin(); }
+  catch (e) { if (/sign in again|not found/i.test(e.message)) { S.token = ''; try { localStorage.removeItem('willowvale_token'); } catch { /* ignore */ } } else { CLOUD.state = 'offline'; } connect(); }
 }
 
 // ---------- career ----------
@@ -2818,7 +2953,7 @@ let idle = 0;
 function autonomy(dt) {
   if (!S.settings.freewill || act || queue.length || player.moving || joy.vx || joy.vy || keys.size || S.sheet || pieTarget || player.shake > 0) { idle = 0; return; }
   idle += dt;
-  if (idle < 10) return;
+  if (idle < 30) return; // long enough that looking around or chatting is never interrupted
   idle = 0;
   const N2 = S.progress.needs;
   if (Math.min(...NEEDS.map(nd => N2[nd.k])) > 55) return;
@@ -2848,6 +2983,7 @@ window.addEventListener('pointerdown', () => SND.unlock(), { capture: true });
 window.addEventListener('keydown', () => SND.unlock(), { capture: true });
 document.querySelectorAll('.dock-item').forEach(b => b.onclick = () => {
   const m = b.dataset.mode;
+  closePie();
   if (S.sheet && document.querySelector('.dock-item.active') === b && m !== 'explore') { closeSheet(); return; }
   ({ explore: closeSheet, homes: () => showHomes(), places: showPlaces, friends: showFriends, journal: showJournal })[m]();
 });
@@ -2973,4 +3109,4 @@ $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 700);
 
 // Small read-only hook for automated play-testing.
-window.__willowvale = { state: S, cancel: () => cancelActions(), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { S.progress.clock = m; }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
+window.__willowvale = { state: S, cancel: () => cancelActions(), peers: () => shownPeers().map(p => ({ name: p.name, x: +p.x.toFixed(2), y: +p.y.toFixed(2), emote: p.emote || null })), allPeers: () => [...peers.values()].map(p => ({ name: p.name, scene: p.scene })), emoteTo: e => sendEmote(e, [...peers.values()][0]), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { S.progress.clock = m; }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); if (!f) return false; const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); if (!t) return false; queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
