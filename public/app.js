@@ -27,10 +27,24 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 
 
 // ---------- persistent state ----------
+// A save can come back damaged (an old version, a half-written write, a hand-edited cloud save).
+// Drop any part that has the wrong type so the setup below fills it with a fresh default.
+const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+const SHAPE_LISTS = ['done', 'achievements', 'owned', 'packs', 'decor', 'plots'];
+const SHAPE_MAPS = ['visits', 'friends', 'daily', 'stats', 'places', 'skills', 'jobs', 'visited', 'unlocked', 'homes', 'found', 'restore', 'picked', 'needs'];
+function fixShape(p) {
+  for (const k of SHAPE_LISTS) if (k in p && !Array.isArray(p[k])) delete p[k];
+  for (const k of SHAPE_MAPS) if (k in p && !isObj(p[k])) delete p[k];
+  for (const [k, v] of Object.entries(p.inventory)) if (!Number.isFinite(v) || v < 0) p.inventory[k] = 0;
+  p.coins = Number.isFinite(p.coins) && p.coins >= 0 ? Math.floor(p.coins) : 35;
+  if (!Number.isFinite(p.clock) || p.clock < 0) delete p.clock;
+  if (typeof p.city !== 'string') delete p.city;
+  return p;
+}
 function loadProgress() {
   const base = { coins: 35, inventory: { berries: 2, fish: 0, flowers: 1, crafts: 0, seed_carrot: 3, seed_tulip: 2, wood: 2 }, starter: 1, visits: {}, friends: {}, done: [], daily: {} };
   const v2 = store.get('willowvale_progress_v2', null);
-  if (v2) return Object.assign(base, v2, { inventory: Object.assign(base.inventory, v2.inventory || {}) });
+  if (v2 && typeof v2 === 'object' && !Array.isArray(v2)) return fixShape(Object.assign(base, v2, { inventory: Object.assign(base.inventory, isObj(v2.inventory) ? v2.inventory : {}) }));
   const v1 = store.get('willowvale_progress_v1', null);
   if (v1 && v1.inventory) Object.assign(base.inventory, v1.inventory);
   return base;
@@ -38,7 +52,7 @@ function loadProgress() {
 const S = {
   token: safeGet('willowvale_token') || '',
   user: null,
-  profile: store.get('willowvale_player_v2', null),
+  profile: (v => isObj(v) && typeof v.species === 'string' ? v : null)(store.get('willowvale_player_v2', null)),
   progress: loadProgress(),
   settings: Object.assign({ labels: true, reduced: false, music: true, sfx: true, freewill: true }, store.get('willowvale_settings_v2', {})),
   coins: 0,

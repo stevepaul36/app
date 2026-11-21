@@ -22,7 +22,7 @@ app.use(cors(corsOptions));
 app.use('/api/save', express.json({ limit: '600kb' }));
 app.use(express.json({ limit: '24kb' }));
 app.use(express.static('public', { maxAge: 0, setHeaders: (res, path) => { if (path.endsWith('.html')) res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate'); } }));
-app.use('/api/auth', rateLimit({ windowMs: 900000, limit: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many tries. Please wait 15 minutes and try again.' } }));
+app.use('/api/auth', rateLimit({ windowMs: 900000, limit: 20, skipSuccessfulRequests: true, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many tries. Please wait 15 minutes and try again.' } }));
 app.use('/api/save', rateLimit({ windowMs: 60000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Saving too often. Your game will save again in a minute.' } }));
 const io = new Server(server, { cors: corsOptions, maxHttpBufferSize: 100000, pingInterval: 25000, pingTimeout: 20000 });
 
@@ -98,8 +98,21 @@ app.get('/api/admin/check', (req, res) => { const h = req.headers.authorization 
 
 const NICK = /^[a-zA-Z0-9_]{3,20}$/;
 // Nicknames are shown to other players, so a few obviously unkind words are refused.
-const RUDE = ['fuck', 'shit', 'bitch', 'cunt', 'dick', 'pussy', 'nigg', 'fag', 'slut', 'whore', 'rape', 'nazi', 'porn', 'sex', 'kill', 'stupid', 'idiot', 'hate', 'admin', 'moderator', 'willowvale'];
-const niceNick = n => { const l = n.toLowerCase().replace(/[_0-9]/g, m => ({ 0: 'o', 1: 'i', 3: 'e', 4: 'a', 5: 's', 7: 't', _: '' })[m] ?? ''); return !RUDE.some(w => l.includes(w)); };
+// Words refused anywhere inside a nickname: no ordinary word contains these.
+const RUDE = ['fuck', 'shit', 'bitch', 'cunt', 'pussy', 'nigg', 'slut', 'whore', 'nazi', 'porn', 'moderator', 'willowvale'];
+// Short words that also hide inside harmless ones (Dickens, Sussex, skills, whatever) are refused only
+// as a whole word: the entire nickname, or a part split off by _ or a digit.
+const RUDE_WORDS = ['dick', 'fag', 'rape', 'sex', 'sexy', 'kill', 'killer', 'stupid', 'idiot', 'hate', 'admin', 'dumb', 'ugly', 'loser'];
+const niceNick = n => {
+  // Read the nickname both ways a "1" can stand for a letter (i or l), with other look-alike digits swapped in.
+  const views = ['i', 'l'].map(one => n.toLowerCase().replace(/[0-9]/g, m => ({ 0: 'o', 1: one, 3: 'e', 4: 'a', 5: 's', 7: 't' })[m] ?? '_'));
+  return !views.some(v => {
+    const flat = v.replace(/_/g, '');
+    const squeezed = flat.replace(/(.)\1+/g, '$1'); // fuuuck -> fuck
+    if (RUDE.some(w => flat.includes(w) || squeezed.includes(w))) return true;
+    return [flat, ...v.split(/_+/)].some(p => RUDE_WORDS.includes(p));
+  });
+};
 app.post('/api/auth/register', requireStore, async (req, res, next) => {
   try {
     const username = String(req.body.username || '').trim(), password = String(req.body.password || '');
@@ -170,7 +183,7 @@ const SPECIES = /^[a-z]{2,16}$/;
 function cleanLook(look) {
   if (!isPlain(look) || JSON.stringify(look).length > 800 || !saneJson(look)) return {};
   const out = {};
-  for (const [k, v] of Object.entries(look)) if (/^[a-zA-Z0-9_]{1,24}$/.test(k) && (typeof v === 'string' ? v.length <= 32 && /^[#a-zA-Z0-9_ -]*$/.test(v) : typeof v === 'number' && Number.isFinite(v))) out[k] = v;
+  for (const [k, v] of Object.entries(look)) if (/^[a-zA-Z0-9_]{1,24}$/.test(k) && (typeof v === 'string' ? v.length <= 24 && /^(#[0-9a-fA-F]{3,8}|[a-zA-Z0-9_-]*)$/.test(v) : typeof v === 'number' && Number.isFinite(v))) out[k] = v;
   return out;
 }
 const num = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
@@ -190,11 +203,15 @@ io.use(async (s, next) => {
   next();
 });
 io.on('connection', s => {
-  let lastState = 0, lastEmote = 0, burst = 0;
+  let lastState = 0, lastEmote = 0, burst = 0, lastJoin = 0, lastLook = 0, joins = 0, joinWindow = 0, lookTimer = null;
   s.on('town:join', p => {
     p = isPlain(p) ? p : {};
+    // Changing town always goes through; re-joining the same town is limited, and so is a burst of joins.
+    const tid = cleanTown(p.townId), now = Date.now();
+    if (now - joinWindow > 10000) { joinWindow = now; joins = 0; }
+    if (++joins > 12 || (tid === s.data.townId && now - lastJoin < 1500)) return;
+    lastJoin = now;
     leaveTown(s);
-    const tid = cleanTown(p.townId);
     const peer = { name: s.data.user ? s.data.user.username : 'Visitor', species: SPECIES.test(p.species) ? p.species : 'fox', look: cleanLook(p.look), x: num(p.x, 0, 200) ? p.x : 0, y: num(p.y, 0, 200) ? p.y : 0, scene: p.scene === 'city' ? 'city' : 'away', moving: false };
     if (!towns.has(tid)) towns.set(tid, new Map());
     const room = towns.get(tid);
@@ -214,19 +231,22 @@ io.on('connection', s => {
   s.on('p:look', p => {
     const room = towns.get(s.data.townId), me = room && room.get(s.id); if (!me || !isPlain(p)) return;
     if (SPECIES.test(p.species)) me.species = p.species; me.look = cleanLook(p.look);
-    s.to(s.data.townId).emit('p:look', { id: s.id, species: me.species, look: me.look });
+    // Send at most one look change a second; quick changes in the wardrobe still end on the last one.
+    const send = () => { lookTimer = null; lastLook = Date.now(); const r = towns.get(s.data.townId), m = r && r.get(s.id); if (m) s.to(s.data.townId).emit('p:look', { id: s.id, species: m.species, look: m.look }); };
+    const wait = 1000 - (Date.now() - lastLook);
+    if (wait <= 0) send(); else if (!lookTimer) lookTimer = setTimeout(send, wait);
   });
   s.on('p:emote', p => {
     const room = towns.get(s.data.townId), me = room && room.get(s.id); if (!me || !isPlain(p)) return;
-    const now = Date.now(); burst = now - lastEmote > 8000 ? 0 : burst + 1; if (now - lastEmote < 900 || burst > 6) return; lastEmote = now;
     const e = cleanEmojis(p.e); if (!e) return;
+    const now = Date.now(); burst = now - lastEmote > 8000 ? 0 : burst + 1; if (now - lastEmote < 900 || burst > 6) return; lastEmote = now;
     const to = typeof p.to === 'string' && room.has(p.to) ? p.to : null;
     s.to(s.data.townId).emit('p:emote', { id: s.id, e, to });
   });
-  s.on('disconnect', () => leaveTown(s));
+  s.on('disconnect', () => { clearTimeout(lookTimer); leaveTown(s); });
 });
 
-app.use((e, _q, res, _n) => { console.error(e.message); if (!res.headersSent) res.status(e.message === 'Origin not allowed' ? 403 : e.type === 'entity.too.large' ? 413 : 500).json({ error: e.message === 'Origin not allowed' ? 'Origin not allowed.' : 'Something went wrong. Please try again.' }); });
+app.use((e, _q, res, _n) => { console.error(e.message); if (!res.headersSent) res.status(e.message === 'Origin not allowed' ? 403 : e.type === 'entity.too.large' ? 413 : e.type === 'entity.parse.failed' ? 400 : 500).json({ error: e.message === 'Origin not allowed' ? 'Origin not allowed.' : 'Something went wrong. Please try again.' }); });
 const port = Number(process.env.PORT) || 3000;
 if (require.main === module) initDb().catch(e => console.error('MongoDB connection failed, accounts are off:', e.message)).finally(() => server.listen(port, '0.0.0.0', () => console.log('Willowvale listening on ' + port)));
-module.exports = { app, server, cleanSave };
+module.exports = { app, server, cleanSave, niceNick, cleanLook };
