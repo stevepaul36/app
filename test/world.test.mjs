@@ -30,3 +30,19 @@ test('home IDs are unique and every home has a price and rent', () => {
   assert.equal(new Set(HOMES.map(h => h.id)).size, HOMES.length);
   for (const h of HOMES) assert.ok(h.price > 0 && h.rent > 0, h.id);
 });
+
+test('every town: homes have unique ids and names, sit on land, and every door is reachable', async () => {
+  const { buildCity, CITY_LIST } = await import('../public/js/cities.js');
+  const all = [['willowvale', world], ...CITY_LIST.filter(c => c.id !== 'willowvale').map(c => [c.id, buildCity(c.id)])];
+  for (const [id, w] of all) {
+    const homes = w.objects.filter(o => o.home);
+    assert.ok(homes.length >= 18, `${id} has only ${homes.length} homes`);
+    assert.equal(new Set(homes.map(h => h.id)).size, homes.length, `${id} home ids repeat`);
+    assert.equal(new Set(homes.map(h => h.name)).size, homes.length, `${id} home names repeat`);
+    for (const h of homes) {
+      assert.ok(h.rent > 0 && h.price > 0, `${h.name} has no price`);
+      const path = findPath(w, 22.5, 22.5, h.doorTile[0] + 0.5, h.doorTile[1] + 0.5);
+      assert.ok(path, `${id}: no path to ${h.name}`);
+    }
+  }
+});
