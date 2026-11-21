@@ -487,6 +487,16 @@ body.decorating .ctl-decor { background: #FFC83D; }
 .decor-item:disabled { opacity: .45; }
 body.decorating .joystick, body.decorating .ctl-run, body.decorating .ctl-act, body.decorating .ctl-cam, body.decorating #queue { opacity: .3; pointer-events: none; }
 
+/* cloud saves */
+.choose-save { display: grid; gap: 10px; }
+.save-pick { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center; text-align: left; padding: 14px; border: 0; border-radius: 18px; background: var(--mist); font: inherit; color: var(--ink); cursor: pointer; box-shadow: inset 0 0 0 2px #DDE6EE; }
+.save-pick:hover, .save-pick:focus-visible { box-shadow: inset 0 0 0 3px var(--leaf); }
+.save-pick span { grid-row: span 2; font-size: 30px; }
+.save-pick b { font: 800 17px var(--display); }
+.save-pick small { color: var(--ink-2); }
+details.danger { margin-top: 14px; padding: 10px 12px; border-radius: 14px; background: #FFF1F1; }
+details.danger summary { cursor: pointer; font-weight: 800; color: #B03A48; }
+
 /* ---------- larger screens ---------- */
 @media (min-width: 820px) {
   .hud { top: 16px; left: 16px; right: 16px; }
