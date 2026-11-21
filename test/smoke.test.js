@@ -52,3 +52,22 @@ describe('accounts and cloud saves', () => {
     r = await json(srv.base, '/api/me', 'GET', null, token); assert.equal(r.status, 401);
   });
 });
+
+describe('Save checks', () => {
+  const { cleanSave } = require('../server.js');
+  const good = { progress: { coins: 50, clock: 3000, homes: { a: 1 } }, profile: { name: 'Rowan' } };
+  test('accepts a normal save and stamps the format version', () => {
+    const r = cleanSave({ data: good });
+    assert.equal(r.coins, 50); assert.equal(r.day, 3); assert.equal(r.data.schema, 1);
+  });
+  test('rejects saves that are not plain game data', () => {
+    assert.equal(cleanSave({ data: { ...good, admin: true } }), null);
+    assert.equal(cleanSave({ data: { progress: { coins: 5, $where: 'x' } } }), null);
+    assert.equal(cleanSave({ data: { progress: { coins: 5, 'a.b': 1 } } }), null);
+    assert.equal(cleanSave({ data: { progress: { coins: 5, note: 'x'.repeat(501) } } }), null);
+    assert.equal(cleanSave({ data: { progress: { coins: 5, clock: -1 } } }), null);
+    assert.equal(cleanSave({ data: { ...good, schema: 99 } }), null);
+    let deep = {}; const root = deep; for (let k = 0; k < 12; k++) { deep.x = {}; deep = deep.x; }
+    assert.equal(cleanSave({ data: { progress: { coins: 5, root } } }), null);
+  });
+});
