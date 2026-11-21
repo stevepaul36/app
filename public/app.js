@@ -1954,7 +1954,7 @@ function addItem(k, n) {
 }
 const have = k => S.progress.inventory[k] || 0;
 const gameDay = () => dayOf(S.progress.clock);
-const weatherNow = () => L.weatherOf(gameDay());
+const weatherNow = () => L.weatherAt(gameDay(), S.progress.clock || 0);
 const raining = () => weatherNow() === 'rain';
 function hideHint() { $('hint').classList.add('hidden'); }
 
