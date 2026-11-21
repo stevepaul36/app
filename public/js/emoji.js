@@ -33,6 +33,11 @@ export const ACHIEVEMENTS = [
   { id: 'gamer', label: 'Play 3 arcade games', emojis: ['🎮', '👾'], test: s => s.games >= 3 },
   { id: 'sailor', label: 'Take a boat out', emojis: ['🚣', '⚓'], test: s => s.boats >= 1 },
   { id: 'angler', label: 'Catch 5 fish from a boat', emojis: ['🦈', '🌊'], test: s => s.fish >= 5 },
+  { id: 'gardener', label: 'Harvest 5 crops', emojis: ['🌱', '🧑‍🌾'], test: s => s.harvests >= 5 },
+  { id: 'collector', label: 'Find 15 things for your collection book', emojis: ['📔', '🔍'], test: s => s.found >= 15 },
+  { id: 'helper', label: 'Help neighbours with 5 requests', emojis: ['🤗', '📦'], test: s => s.delivered >= 5 },
+  { id: 'decorator', label: 'Decorate your home with 3 things', emojis: ['🛋️', '🖼️'], test: s => s.decor >= 3 },
+  { id: 'restorer', label: 'Restore the Old Garden', emojis: ['🏡', '🌺'], test: s => s.restored >= 4 },
 ];
 export const ALL_EMOJIS = [...STARTER, ...ACHIEVEMENTS.flatMap(a => a.emojis), ...Object.values(CITY_PACKS).flatMap(p => p.emojis)];
 

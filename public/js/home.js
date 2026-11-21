@@ -72,12 +72,15 @@ export function buildHome() {
   add('bathrug', 1, 8, 2, 1, 'Bath mat', { flat: true });
   add('doormat', 9, 9, 1, 1, 'Front door', { flat: true, stand: [9.5, 9.5], door: true });
   add('mailbox', 11, 12, 1, 1, 'Mailbox', { stand: [10.5, 12.5], look: [11.5, 12.5] });
+  // the vegetable garden in front of the cottage, and a workbench
+  for (let k = 0; k < 6; k++) add('plot', 1 + (k % 3) * 2, 11 + Math.floor(k / 3) * 2, 1, 1, 'Garden plot', { flat: true, plot: k, stand: [1.5 + (k % 3) * 2, 11.5 + Math.floor(k / 3) * 2] });
+  add('workbench', 11, 10, 1, 1, 'Workbench', { stand: [11.5, 11.5], look: [11.5, 10.3] });
   for (const f of F) {
     if (f.flat || f.walkIn) continue;
     for (let j = f.j; j < f.j + f.d; j++) for (let i = f.i; i < f.i + f.w; i++) blocked[idx(i, j)] = 1;
   }
-  const garden = [[13, 2, 'round'], [14, 6, 'blossom'], [13, 11, 'round'], [2, 12, 'pine'], [6, 13, 'round'], [15, 13, 'palm']].map(([i, j, tree], k) => { const [a, b] = L(i, j); blocked[idx(a, b)] = 1; return { kind: 'tree', tree, i: a, j: b, w: 1, d: 1, seed: k * 31, ox: 0, oy: 0 }; });
-  const flowers = [[10, 11], [8, 11], [12, 13], [3, 11], [14, 9], [13, 4]].map(([i, j], k) => { const [a, b] = L(i, j); return { kind: 'flowers', i: a, j: b, w: 1, d: 1, seed: k * 7 + 3 }; });
+  const garden = [[13, 2, 'round'], [14, 6, 'blossom'], [13, 11, 'round'], [7, 13, 'pine'], [0, 14, 'round'], [15, 13, 'palm']].map(([i, j, tree], k) => { const [a, b] = L(i, j); blocked[idx(a, b)] = 1; return { kind: 'tree', tree, i: a, j: b, w: 1, d: 1, seed: k * 31, ox: 0, oy: 0 }; });
+  const flowers = [[10, 11], [8, 11], [12, 13], [14, 9], [13, 4]].map(([i, j], k) => { const [a, b] = L(i, j); return { kind: 'flowers', i: a, j: b, w: 1, d: 1, seed: k * 7 + 3 }; });
 
   const walkable = (i, j) => inb(i, j) && tiles[idx(i, j)] !== T.SEA && !blocked[idx(i, j)];
   return {
