@@ -1,0 +1,36 @@
+{
+  "private": true,
+  "name": "willowvale-town",
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "npm run sync && npm run build:client -- --metafile=dist/client.meta.json --minify && npm run build:server -- --metafile=dist/server.meta.json --minify",
+    "build:client": "esbuild --bundle --log-level=warning --sourcemap=linked --target=es2022 --format=esm --outdir=public --platform=browser src/client/splash.ts src/client/bridge.ts",
+    "build:server": "esbuild --bundle --log-level=warning --sourcemap=linked --target=es2023 --format=cjs --outdir=dist/server --platform=node src/server/index.ts",
+    "clean": "rm -rf dist/ public/splash.js* public/bridge.js*",
+    "format": "npm run lint -- --fix",
+    "lint": "biome check --error-on-warnings",
+    "playtest": "npm run build && devvit playtest",
+    "test": "npm run test:types && npm run lint && npm run test:unit && npm run build",
+    "test:types": "tsc --build",
+    "test:unit": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test src/**/*.test.ts",
+    "publish": "npm run clean && npm run build && devvit publish",
+    "watch": "npm run sync && sh -c 'trap \"kill 0\" exit; npm run build:client -- --watch=forever& npm run build:server -- --watch=forever& wait' --",
+    "sync": "node scripts/sync.mjs",
+    "upload": "npm run build && devvit upload"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.6",
+    "@devvit/web": "0.15.4",
+    "@fontsource/baloo-2": "^5.3.0",
+    "@fontsource/nunito": "^5.3.0",
+    "@types/node": "24.19.2",
+    "devvit": "0.15.4",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "description": "Willowvale: Animal Town as a daily game on Reddit (Devvit Web)"
+}

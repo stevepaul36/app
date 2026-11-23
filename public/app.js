@@ -15,6 +15,9 @@ import { NEEDS, freshNeeds, mood, moodLabel, moodColor, needColor, SPEEDS, GAME_
 
 const IS_NATIVE = location.protocol === 'capacitor:' || !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
 const API_BASE = IS_NATIVE ? (safeGet('willowvale_server') || 'https://willowvale-animal-town.onrender.com') : '';
+// Running inside a Reddit post (Devvit): the Reddit account replaces nicknames and passwords, saves go to
+// the post's app server, and the daily errands follow the calendar so everyone shares the same ones.
+const RD = window.WV_REDDIT || null;
 const $ = id => document.getElementById(id);
 function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function safeSet(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch { /* storage blocked */ } }
@@ -50,7 +53,7 @@ function loadProgress() {
   return base;
 }
 const S = {
-  token: safeGet('willowvale_token') || '',
+  token: RD ? (RD.user ? 'reddit' : '') : (safeGet('willowvale_token') || ''),
   user: null,
   profile: (v => isObj(v) && typeof v.species === 'string' ? v : null)(store.get('willowvale_player_v2', null)),
   progress: loadProgress(),
@@ -591,14 +594,14 @@ function showRestore() {
 
 // ---------- daily quests ----------
 function questState() {
-  const day = gameDay(), key = 'q:' + day;
+  const day = RD ? RD.dayNo : gameDay(), key = 'q:' + day;
   const st = statsView();
   if (!S.progress.daily[key]) S.progress.daily[key] = { base: Object.fromEntries(L.QUESTS.map(q => [q.stat, st[q.stat] || 0])), done: {} };
   const q = S.progress.daily[key];
   return L.questsFor(day).map(x => ({ ...x, have: Math.min(x.n, (st[x.stat] || 0) - (q.base[x.stat] || 0)), done: !!q.done[x.id] }));
 }
 function checkQuests() {
-  const day = gameDay(), key = 'q:' + day;
+  const day = RD ? RD.dayNo : gameDay(), key = 'q:' + day;
   for (const q of questState()) if (!q.done && q.have >= q.n) { S.progress.daily[key].done[q.id] = 1; setCoins(S.coins + 20, true); bumpStat('quests'); toast(`Quest done: ${q.text}! +20 ✦`); SND.sfx('done'); }
   for (const k of Object.keys(S.progress.daily)) if (k.startsWith('q:') && +k.slice(2) < day - 1) delete S.progress.daily[k];
   saveProgress();
@@ -2426,7 +2429,10 @@ function showProfile(message) {
   redraw();
   const acc = el.querySelector('.account');
   if (S.token) renderAccount(acc);
-  else {
+  else if (RD) {
+    acc.innerHTML = `<h4 class="group-title">Save your game</h4><p class="lead">Log in to Reddit and your town saves to your account, so you can carry on from any device.</p><button class="btn btn-sun" id="rd-login">Log in to Reddit</button>`;
+    acc.querySelector('#rd-login').onclick = () => RD.login();
+  } else {
     acc.innerHTML = `<h4 class="group-title">Save your game to the cloud</h4>
       <p class="lead">With an account your game saves online, so you can carry on from another phone or computer. Use a nickname, never your real name. No email needed.</p>
       <label class="field"><span>Nickname</span><input id="auth-username" autocomplete="username" maxlength="20" placeholder="3–20 letters, numbers or _"></label>
@@ -2480,9 +2486,10 @@ function renderAccount(acc) {
     <details class="danger"><summary>Delete my account</summary><p class="lead">This removes your account and cloud save for good. Your game stays on this device.</p>
       <label class="field"><span>Type your password to confirm</span><input id="del-password" type="password" autocomplete="current-password"></label>
       <p class="form-error" id="del-error" role="alert"></p><button class="btn btn-ghost" id="del-button">Delete account</button></details>`;
+  if (RD) { acc.querySelector('.row2 #logout-button').remove(); acc.querySelector('details.danger').remove(); acc.querySelector('.lead').innerHTML = `Saving to your Reddit account, <b>u/${esc(S.user?.username || RD.user?.username || '')}</b>.`; }
   acc.querySelector('#cloud-now').onclick = async () => { CLOUD.dirty = true; await cloudPush().catch(() => {}); renderAccount(acc); };
-  acc.querySelector('#logout-button').onclick = async () => { await logout(); showProfile(); };
-  acc.querySelector('#del-button').onclick = async () => {
+  if (!RD) acc.querySelector('#logout-button').onclick = async () => { await logout(); showProfile(); };
+  if (!RD) acc.querySelector('#del-button').onclick = async () => {
     try { await request('/api/account', 'DELETE', { password: acc.querySelector('#del-password').value }); await logout(); toast('Your account and cloud save were deleted.'); showProfile(); }
     catch (e) { acc.querySelector('#del-error').textContent = e.message; }
   };
@@ -2669,6 +2676,7 @@ function loadIo() {
 }
 // Everyone joins their town's shared streets, signed in or not (signed-in players show their nickname).
 async function connect() {
+  if (RD) { S.online = 'guest'; return; } // no shared streets inside Reddit yet
   if (!(await loadIo())) return;
   if (socket) { socket.removeAllListeners(); socket.disconnect(); }
   peers.clear();
@@ -3125,6 +3133,6 @@ $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 700);
 
 // Small read-only hook for automated play-testing.
-window.__willowvale = { state: S, open: k => ({ homes: showHomes, places: showPlaces, friends: showFriends, journal: showJournal, profile: showProfile, shop: showShop, island: showIsland, market: showMarket, craft: showCraft, restore: showRestore, settings: showSettings, wardrobe: showWardrobe, needs: showNeeds, districts: showDistricts, adminLogin: showAdminLogin, venue: () => showVenue(C.venues[0]), home: () => showHome(cityWorld.objects.find(o => o.home)), neighbour: () => showNeighbour(cityNpcs.find(n => !n.generic)), chat: () => showEmojiChat(cityNpcs.find(n => !n.generic)) })[k](),
+window.__willowvale = { state: S, quests: () => questState(), checkQuests: () => checkQuests(), open: k => ({ homes: showHomes, places: showPlaces, friends: showFriends, journal: showJournal, profile: showProfile, shop: showShop, island: showIsland, market: showMarket, craft: showCraft, restore: showRestore, settings: showSettings, wardrobe: showWardrobe, needs: showNeeds, districts: showDistricts, adminLogin: showAdminLogin, venue: () => showVenue(C.venues[0]), home: () => showHome(cityWorld.objects.find(o => o.home)), neighbour: () => showNeighbour(cityNpcs.find(n => !n.generic)), chat: () => showEmojiChat(cityNpcs.find(n => !n.generic)) })[k](),
   pieList: () => { const out = [], seen = new Set(); for (const t of things) { const o = t.o; if (!t.interactive || !o) continue; const key = o.type || o.kind; if (seen.has(key)) continue; seen.add(key); out.push(key); } for (const n of npcs) if (npcVisible(n) && !seen.has('npc')) { seen.add('npc'); out.push('npc'); } return out; },
   pieFor: key => { closeSheet(); if (key === 'npc') { const n = npcs.find(n => npcVisible(n)); if (n) showPie({ npc: n }, W / 2, H / 2); return !!n; } const t = things.find(t => t.interactive && t.o && (t.o.type || t.o.kind) === key); if (t) showPie({ o: t.o }, W / 2, H / 2); return !!t; }, cancel: () => cancelActions(), peers: () => shownPeers().map(p => ({ name: p.name, x: +p.x.toFixed(2), y: +p.y.toFixed(2), emote: p.emote || null })), allPeers: () => [...peers.values()].map(p => ({ name: p.name, scene: p.scene })), emoteTo: e => sendEmote(e, [...peers.values()][0]), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { S.progress.clock = m; }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); if (!f) return false; const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); if (!t) return false; queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
