@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import {createServer} from 'node:http'
 import type {AddressInfo, Server} from 'node:net'
 import {after, before, beforeEach, test} from 'node:test'
-import {type Context, redis, runWithContext} from '@devvit/web/server'
+import {type Context, reddit, redis, runWithContext} from '@devvit/web/server'
 import type {DailyRsp, SaveGetRsp, StateRsp} from '../shared/api.ts'
 import {dayNoOf, errandsFor} from '../shared/daily.ts'
 import {onReq} from './server.ts'
@@ -16,9 +16,25 @@ const H = (k: string) =>
 const Z = (k: string) =>
   zsets.get(k) ?? (zsets.set(k, new Map()).get(k) as Map<string, number>)
 const sorted = (k: string) => [...Z(k).entries()].sort((a, b) => a[1] - b[1])
+const ttl = new Map<string, number>()
 const original: {[k: string]: unknown} = {}
 const fake: {[k: string]: unknown} = {
   get: async (k: string) => kv.get(k),
+  set: async (k: string, v: string) => {
+    kv.set(k, v)
+    return 'OK'
+  },
+  del: async (...ks: string[]) => {
+    for (const k of ks) {
+      kv.delete(k)
+      hashes.delete(k)
+      zsets.delete(k)
+      ttl.delete(k)
+    }
+  },
+  expire: async (k: string, s: number) => {
+    ttl.set(k, s)
+  },
   incrBy: async (k: string, n: number) => {
     const v = Number(kv.get(k) ?? 0) + n
     kv.set(k, `${v}`)
@@ -67,6 +83,36 @@ const fake: {[k: string]: unknown} = {
   },
 }
 
+// Comments the app or a player posted, by the fake Reddit API.
+type Posted = {
+  id: string
+  parent: string
+  text: string
+  runAs?: string
+  pinned: boolean
+}
+let comments: Posted[] = []
+const redditOriginal: {[k: string]: unknown} = {}
+const fakeReddit: {[k: string]: unknown} = {
+  submitComment: async (o: {id: string; text: string; runAs?: string}) => {
+    const c: Posted = {
+      id: `t1_${comments.length + 1}`,
+      parent: o.id,
+      text: o.text,
+      runAs: o.runAs,
+      pinned: false,
+    }
+    comments.push(c)
+    return {
+      id: c.id,
+      url: `https://reddit.com/c/${c.id}`,
+      distinguish: async (sticky?: boolean) => {
+        c.pinned = !!sticky
+      },
+    }
+  },
+}
+
 let server: Server
 let url: string
 let user: {userId?: string; username?: string} = {
@@ -79,6 +125,11 @@ before(async () => {
   for (const [k, v] of Object.entries(fake)) {
     original[k] = r[k]
     r[k] = v
+  }
+  const rd = reddit as unknown as {[k: string]: unknown}
+  for (const [k, v] of Object.entries(fakeReddit)) {
+    redditOriginal[k] = rd[k]
+    rd[k] = v
   }
   server = createServer(async (req, rsp) => {
     await runWithContext(
@@ -99,12 +150,16 @@ before(async () => {
 after(async () => {
   const r = redis as unknown as {[k: string]: unknown}
   for (const [k, v] of Object.entries(original)) r[k] = v
+  const rd = reddit as unknown as {[k: string]: unknown}
+  for (const [k, v] of Object.entries(redditOriginal)) rd[k] = v
   await new Promise<void>(resolve => server.close(() => resolve()))
 })
 beforeEach(() => {
   kv.clear()
   hashes.clear()
   zsets.clear()
+  ttl.clear()
+  comments = []
   user = {userId: 't2_a', username: 'alice'}
 })
 
@@ -211,4 +266,48 @@ test('daily errands: yesterday then today makes a 2-day streak', async () => {
 
 test('unknown paths are 404', async () => {
   assert.equal((await call('nope')).status, 404)
+})
+
+test('player data expires on its own and can be deleted', async () => {
+  const dayNo = dayNoOf()
+  await call('api/save', 'PUT', {...save(10), baseVersion: 0})
+  await call('api/daily', 'POST', {
+    dayNo,
+    done: errandsFor(dayNo).map(e => e.id),
+  })
+  const month = 30 * 24 * 60 * 60
+  assert.equal(ttl.get('wv:save:t2_a'), month)
+  assert.equal(ttl.get('wv:user:t2_a'), month)
+  assert.equal(ttl.get(`wv:day:${dayNo}:names`), 3 * 24 * 60 * 60)
+  assert.equal(ttl.get(`wv:day:${dayNo}:done`), 3 * 24 * 60 * 60)
+  assert.equal((await call('api/save', 'DELETE')).status, 200)
+  assert.equal((await call('api/save')).json.version, 0)
+  assert.equal(hashes.has('wv:user:t2_a'), false)
+  user = {}
+  assert.equal((await call('api/save', 'DELETE')).status, 401)
+})
+
+test('sharing replies to the app’s pinned comment, as the player', async () => {
+  const dayNo = dayNoOf()
+  assert.equal((await call('api/share', 'POST', {})).status, 400) // not done yet
+  await call('api/daily', 'POST', {
+    dayNo,
+    done: errandsFor(dayNo).map(e => e.id),
+  })
+  assert.equal((await call('api/share', 'POST', {})).status, 200)
+  user = {userId: 't2_b', username: 'bob'}
+  await call('api/daily', 'POST', {
+    dayNo,
+    done: errandsFor(dayNo).map(e => e.id),
+  })
+  await call('api/share', 'POST', {})
+  const [pin, ...shares] = comments
+  assert.equal(pin?.parent, 't3_1')
+  assert.equal(pin?.runAs, undefined)
+  assert.equal(pin?.pinned, true)
+  assert.equal(shares.length, 2) // one pinned comment, reused
+  for (const c of shares) {
+    assert.equal(c.parent, pin?.id)
+    assert.equal(c.runAs, 'USER')
+  }
 })

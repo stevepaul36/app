@@ -7,6 +7,14 @@ import {redis} from '@devvit/web/server'
 //   wv:day:{dayNo}:names      hash userId -> username
 //   wv:user:{userId}          hash: streak, best, last (dayNo)
 //   wv:posts                  hash dayNo -> post id
+//   wv:pin:{postId}           id of the app's pinned comment that shared results reply to
+//
+// Data about a player (save, streak, finish lists with usernames) expires on its own: saves and
+// streaks 30 days after the player last played, finish lists after 3 days. Reddit asks apps to drop
+// data for deleted accounts, and a deleted account can never play again, so its data goes too.
+// Players can also delete their data from the game (DELETE api/save).
+export const PLAYER_TTL = 30 * 24 * 60 * 60
+export const DAY_TTL = 3 * 24 * 60 * 60
 const K = {
   save: (id: string) => `wv:save:${id}`,
   homes: 'wv:homes',
@@ -14,12 +22,25 @@ const K = {
   names: (d: number) => `wv:day:${d}:names`,
   user: (id: string) => `wv:user:${id}`,
   posts: 'wv:posts',
+  pin: (postId: string) => `wv:pin:${postId}`,
+}
+/** Keep a player's data for another 30 days because they're still playing. */
+async function touch(id: string): Promise<void> {
+  await Promise.all([
+    redis.expire(K.save(id), PLAYER_TTL),
+    redis.expire(K.user(id), PLAYER_TTL),
+  ])
+}
+/** Delete everything kept about a player (their save and streak). */
+export async function deletePlayer(id: string): Promise<void> {
+  await redis.del(K.save(id), K.user(id))
 }
 
 export type Save = {data: unknown; version: number; updatedAt?: string}
 export async function getSave(id: string): Promise<Save> {
   const h = await redis.hGetAll(K.save(id))
   if (!h.data) return {data: null, version: 0}
+  await touch(id)
   return {
     data: JSON.parse(h.data),
     version: Number(h.version ?? 0),
@@ -49,6 +70,7 @@ export async function putSave(
   })
   try {
     const ok = await txn.exec()
+    if (ok) await touch(id)
     return ok ? {version, updatedAt} : null
   } catch {
     return null // someone else saved in between
@@ -70,6 +92,7 @@ export async function saveStreak(id: string, s: Streak): Promise<void> {
     best: `${s.best}`,
     last: `${s.last}`,
   })
+  await redis.expire(K.user(id), PLAYER_TTL)
 }
 export async function getHomes(): Promise<number> {
   return Number((await redis.get(K.homes)) ?? 0)
@@ -93,6 +116,10 @@ export async function markDone(
   const fresh = await redis.hSetNX(K.names(dayNo), id, name)
   if (fresh !== 1) return false
   await redis.zAdd(K.done(dayNo), {member: id, score: Date.now()})
+  await Promise.all([
+    redis.expire(K.names(dayNo), DAY_TTL),
+    redis.expire(K.done(dayNo), DAY_TTL),
+  ])
   await redis.incrBy(K.homes, 1)
   return true
 }
@@ -114,4 +141,10 @@ export async function setPost(dayNo: number, postId: string): Promise<void> {
 }
 export async function releasePost(dayNo: number): Promise<void> {
   await redis.hDel(K.posts, [`${dayNo}`])
+}
+export async function getPin(postId: string): Promise<string | null> {
+  return (await redis.get(K.pin(postId))) ?? null
+}
+export async function setPin(postId: string, commentId: string): Promise<void> {
+  await redis.set(K.pin(postId), commentId)
 }

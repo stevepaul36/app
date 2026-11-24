@@ -2735,7 +2735,23 @@ function renderAccount(acc) {
     <details class="danger"><summary>Delete my account</summary><p class="lead">This removes your account and cloud save for good. Your game stays on this device.</p>
       <label class="field"><span>Type your password to confirm</span><input id="del-password" type="password" autocomplete="current-password"></label>
       <p class="form-error" id="del-error" role="alert"></p><button class="btn btn-ghost" id="del-button">Delete account</button></details>`;
-  if (RD) { acc.querySelector('.row2 #logout-button').remove(); acc.querySelector('details.danger').remove(); acc.querySelector('.lead').innerHTML = `Saving to your Reddit account, <b>u/${esc(S.user?.username || RD.user?.username || '')}</b>.`; }
+  if (RD) {
+    acc.querySelector('.row2 #logout-button').remove();
+    acc.querySelector('.lead').innerHTML = `Saving to your Reddit account, <b>u/${esc(S.user?.username || RD.user?.username || '')}</b>.`;
+    // On Reddit there's no Willowvale account to delete, but players can wipe their saved game.
+    acc.querySelector('details.danger').innerHTML = `<summary>Delete my Willowvale data</summary><p class="lead">This erases your saved game and streak from the app and this device, and you start fresh. Saved games also clear themselves after 30 days without playing.</p>
+      <p class="form-error" id="del-error" role="alert"></p><button class="btn btn-ghost" id="rd-del-button">Delete my data</button>`;
+    acc.querySelector('#rd-del-button').onclick = async e => {
+      const b = e.currentTarget;
+      if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'Tap again to delete for good'; return; }
+      try {
+        await request('/api/save', 'DELETE');
+        RESETTING = true; CLOUD.version = 0; CLOUD.dirty = false; CLOUD.savedAt = 0; storeCloud();
+        try { for (const k of ['willowvale_progress_v2', 'willowvale_progress_v1', 'willowvale_player_v2']) localStorage.removeItem(k); } catch { /* ignore */ }
+        location.reload();
+      } catch (er) { acc.querySelector('#del-error').textContent = er.message; }
+    };
+  }
   acc.querySelector('#cloud-now').onclick = async () => { CLOUD.dirty = true; await cloudPush().catch(() => {}); renderAccount(acc); };
   if (!RD) acc.querySelector('#logout-button').onclick = async () => { await logout(); showProfile(); };
   if (!RD) acc.querySelector('#del-button').onclick = async () => {
@@ -2748,7 +2764,8 @@ async function cloudAfterLogin() {
   try {
     const r = await request('/api/save');
     const sameUser = CLOUD.user === S.user?.username;
-    if (!r.data) { CLOUD.version = 0; CLOUD.user = S.user?.username; CLOUD.ready = true; CLOUD.dirty = true; await cloudPush(); return; }
+    // No cloud save yet: push this game, but wait until a new player has made their character.
+    if (!r.data) { CLOUD.version = 0; CLOUD.user = S.user?.username; CLOUD.ready = true; CLOUD.dirty = true; if (!document.body.classList.contains('onboarding-open')) await cloudPush(); return; }
     if (sameUser && CLOUD.version === r.version) { CLOUD.ready = true; CLOUD.state = 'saved'; if (CLOUD.dirty) cloudPush(); return; }
     const fresh = (S.progress.clock || 0) < 900 && !Object.keys(S.progress.places || {}).length;
     if (fresh || (sameUser && !CLOUD.dirty)) { applyCloud(r.data, r.version); return; }
@@ -2793,7 +2810,7 @@ async function cloudPush() {
 setInterval(() => {
   if (!S.token) return;
   if (CLOUD.state === 'conflict' && S.sheet !== 'choose-save') { CLOUD.state = 'offline'; cloudAfterLogin(); return; }
-  if (CLOUD.ready && CLOUD.dirty) cloudPush();
+  if (CLOUD.ready && CLOUD.dirty && !document.body.classList.contains('onboarding-open')) cloudPush();
 }, 20000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && S.token && CLOUD.ready && CLOUD.dirty) cloudPush(); });
 window.addEventListener('online', () => { if (S.token) (CLOUD.ready ? cloudPush() : cloudAfterLogin()); });

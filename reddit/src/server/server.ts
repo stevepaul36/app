@@ -22,9 +22,11 @@ import {
 } from '../shared/daily.ts'
 import {
   claimPost,
+  deletePlayer,
   finishedCount,
   firstFinishers,
   getHomes,
+  getPin,
   getSave,
   getStreak,
   markDone,
@@ -32,6 +34,7 @@ import {
   rankOf,
   releasePost,
   saveStreak,
+  setPin,
   setPost,
 } from './db.ts'
 import {cleanSave, MAX_SAVE_BYTES} from './save.ts'
@@ -87,6 +90,7 @@ async function route(req: IncomingMessage): Promise<PartialJsonValue> {
   if (path === 'api/me' && m === 'GET') return routeMe()
   if (path === 'api/save' && m === 'GET') return routeSaveGet()
   if (path === 'api/save' && m === 'PUT') return routeSavePut(req)
+  if (path === 'api/save' && m === 'DELETE') return routeSaveDelete()
   if (path === 'api/properties' && m === 'GET')
     throw new HttpError(404, 'Homes are kept in your own save.')
   // Reddit hooks
@@ -217,9 +221,11 @@ async function routeShare(): Promise<ShareRsp> {
   const rank = await rankOf(dayNo, id)
   if (rank == null) throw new HttpError(400, 'Finish today’s errands first.')
   const s = await getStreak(id)
+  // Results go in as a reply to the app's pinned comment, so they stay together under the post.
+  const pin = await pinFor(postId)
   try {
     const c = await reddit.submitComment({
-      id: postId,
+      id: pin ?? postId,
       text: shareLine(dayNo, rank, liveStreak(s, dayNo)),
       runAs: 'USER',
     })
@@ -230,6 +236,34 @@ async function routeShare(): Promise<ShareRsp> {
       403,
       'Reddit didn’t let the game post for you. Your result is copied, so you can paste it in a comment.',
     )
+  }
+}
+
+const PIN_TEXT =
+  '🏡 **Share your Willowvale results here!** Finished today’s errands? Tap “Comment as you” on the result card in the game and your result appears as a reply to this comment.'
+
+/** The app's pinned comment on a post, made the first time it's needed. Null if Reddit won't allow it. */
+type ThingId = `t1_${string}` | `t3_${string}`
+const isComment = (id: string | null): id is `t1_${string}` =>
+  !!id && id.startsWith('t1_')
+
+async function pinFor(postId: `t3_${string}`): Promise<ThingId | null> {
+  const have = await getPin(postId)
+  if (isComment(have)) return have
+  try {
+    const c = await reddit.submitComment({id: postId, text: PIN_TEXT})
+    await setPin(postId, c.id)
+    try {
+      await c.distinguish(true) // pin it; needs the app to moderate the subreddit
+    } catch (err) {
+      console.log(`pin skipped; ${err instanceof Error ? err.message : err}`)
+    }
+    return c.id
+  } catch (err) {
+    console.log(
+      `no pinned comment; ${err instanceof Error ? err.message : err}`,
+    )
+    return null
   }
 }
 
@@ -267,6 +301,12 @@ async function routeSavePut(req: IncomingMessage): Promise<SavePutRsp> {
   return {ok: true, version: r.version, updatedAt: r.updatedAt}
 }
 
+/** The player deletes their Willowvale data: save and streak. */
+async function routeSaveDelete(): Promise<{ok: true}> {
+  await deletePlayer(needUser())
+  return {ok: true}
+}
+
 // ---------- one post a day ----------
 
 async function createDailyPost(dayNo: number): Promise<string | null> {
@@ -281,6 +321,7 @@ async function createDailyPost(dayNo: number): Promise<string | null> {
       },
     })
     await setPost(dayNo, post.id)
+    await pinFor(post.id)
     return post.url
   } catch (err) {
     await releasePost(dayNo)

@@ -20,8 +20,8 @@
   "menu": {
     "items": [
       {
-        "label": "Post today's Moving Day",
-        "description": "Create today's Willowvale: Moving Day puzzle post.",
+        "label": "Post today's Willowvale",
+        "description": "Create today's Willowvale post with the daily errands.",
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/on/menu/new-post"

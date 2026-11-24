@@ -20,7 +20,8 @@ in the **Best Ported Daily Game** category.
    - keep your **🔥 daily streak** (shown in your user flair when the app moderates the subreddit),
    - see where you placed (**#1, #2…** to finish today),
    - add **one home to the town the whole subreddit is building**,
-   - share your result in the post's comments with one tap.
+   - share your result with one tap (**Comment as u/you**). It posts from your account as a reply to
+     the app's pinned comment on the post, so results stay together.
 6. Come back tomorrow for new errands. Your town is saved to your Reddit account, so you can carry on
    from any device.
 
@@ -36,13 +37,20 @@ Everything in this folder was made during the hackathon:
   the same checks and version/conflict handling as the web version.
 - **Daily errands for everyone**, picked by calendar day (UTC) from the game's own quests.
 - **Streaks, finish order, user flair, and a community town counter.**
-- **One-tap sharing** of your result as a comment.
+- **One-tap sharing** of your result, as a reply to the app's pinned comment on each daily post.
 - **A new post every day** at 00:02 UTC (scheduled task), plus a mod menu item to post one now.
 - Fonts bundled locally, and the game's own server features (multiplayer streets, nickname accounts)
   switched off inside Reddit.
 
 The game itself lives one folder up (`../public`). `npm run build` copies it into `public/` here, so
 there's one copy of the game for the web, Android and Reddit.
+
+## Your data
+
+The app keeps your saved game, your streak, and for three days the list of who finished each day's
+errands. Saved games and streaks delete themselves 30 days after you last play, and you can delete
+yours at any time in the game: **Profile → Account → Delete my Willowvale data**. Nothing is sent
+anywhere outside Reddit.
 
 ## Run it yourself
 
