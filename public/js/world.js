@@ -39,6 +39,20 @@ export const HOMES = [
   { id: 'home-12', name: 'Fernhill Garden Villa', kind: 'villa', price: 1350, rent: 68, description: 'A private garden home in the hills', i: 16, j: 28, w: 3, d: 3, look: 1 },
 ];
 
+// Extra homes, placed automatically near a part of town ('near' is the tile they aim for).
+const EXTRA_HOMES = [
+  { id: 'home-13', name: 'Bluebell Cottage', kind: 'house', price: 280, rent: 13, description: 'A small blue cottage with window boxes', w: 2, d: 2, look: 4, near: [6, 8] },
+  { id: 'home-14', name: 'Hedgehog Hollow', kind: 'house', price: 300, rent: 14, description: 'A snug home tucked behind a hedge', w: 2, d: 2, look: 1, near: [7, 36] },
+  { id: 'home-15', name: 'Poppy Row House', kind: 'house', price: 360, rent: 17, description: 'A cheerful row house with a red door', w: 2, d: 2, look: 3, near: [36, 7] },
+  { id: 'home-16', name: 'Pinecone Lodge', kind: 'house', price: 420, rent: 21, description: 'A wooden lodge among the Fernhill pines', w: 2, d: 2, look: 2, near: [14, 38] },
+  { id: 'home-17', name: 'Seashell House', kind: 'house', price: 460, rent: 23, description: 'A breezy house a short walk from the beach', w: 2, d: 2, look: 0, near: [38, 20] },
+  { id: 'home-18', name: 'Sparrow Flats', kind: 'apartment', price: 520, rent: 25, description: 'Bright flats above the busy avenue', w: 2, d: 2, look: 3, near: [35, 14] },
+  { id: 'home-19', name: 'Honeycomb Cottage', kind: 'house', price: 340, rent: 16, description: 'A golden cottage with a bee-friendly garden', w: 2, d: 2, look: 1, near: [4, 20] },
+  { id: 'home-20', name: 'Lighthouse Lane Home', kind: 'house', price: 580, rent: 29, description: 'A tall house with a view of the boats', w: 2, d: 2, look: 4, near: [26, 40] },
+  { id: 'home-21', name: 'Daisy Chain Cottage', kind: 'house', price: 260, rent: 12, description: 'A tiny cottage surrounded by daisies', w: 2, d: 2, look: 2, near: [12, 2] },
+  { id: 'home-22', name: 'Otter Bay Apartments', kind: 'apartment', price: 620, rent: 30, description: 'Waterside flats near the marina', w: 2, d: 2, look: 1, near: [40, 36] },
+];
+
 export const VENUES = [
   { id: 'cafe', name: 'The Little Acorn Café', type: 'Café', icon: '☕', i: 24, j: 11, w: 3, d: 3, color: '#F0587A',
     desc: 'Berry tea, warm pastries and the friendliest regulars in town.',
@@ -193,6 +207,34 @@ export function buildWorld() {
   const wheel = { kind: 'sunwheel', i: 31, j: 35, w: 2, d: 2, name: 'The Sunwheel' }; footprint(wheel); objects.push(wheel);
   const mill = { kind: 'windmill', i: 5, j: 30, w: 2, d: 2, name: 'Fernhill Windmill' }; footprint(mill); objects.push(mill);
 
+  // More homes for a fuller town: placed on free lots that face a road, away from the park, the
+  // Old Garden's spot and where neighbours live. Each one can be rented like the homes above.
+  const keepClear = new Set(NEIGHBOURS.map(n => n.home[0] + ',' + n.home[1]));
+  const lotFree = (i, j, w, d) => {
+    for (let y = j - 1; y <= j + d; y++) for (let x = i - 1; x <= i + w; x++) {
+      if (!inb(x, y) || blocked[idx(x, y)] || keepClear.has(x + ',' + y)) return false;
+      const inside = x >= i && x < i + w && y >= j && y < j + d;
+      if (inside && !(get(x, y) === T.GRASS || get(x, y) === T.MEADOW)) return false;
+    }
+    return true;
+  };
+  const frontsRoad = (i, j, w, d) => { for (let x = i; x < i + w; x++) if (isRoad(x, j + d) || isRoad(x, j + d + 1)) return true; for (let y = j; y < j + d; y++) if (isRoad(i + w, y) || isRoad(i + w + 1, y)) return true; return false; };
+  const placed = [];
+  for (const h of EXTRA_HOMES) {
+    let best = null;
+    for (let j = 3; j < N - 4; j++) for (let i = 3; i < N - 4; i++) {
+      const cx = i + h.w / 2, cy = j + h.d / 2;
+      if (Math.hypot(cx - 20, cy - 16) < 9) continue; // the park and the Old Garden
+      if (placed.some(([pi, pj]) => Math.hypot(pi - cx, pj - cy) < 3.2)) continue;
+      if (!lotFree(i, j, h.w, h.d) || !frontsRoad(i, j, h.w, h.d)) continue;
+      const score = Math.abs(Math.hypot(cx - h.near[0], cy - h.near[1]));
+      if (!best || score < best.score) best = { i, j, score };
+    }
+    if (!best) continue;
+    const o = place(Object.assign({}, h, { i: best.i, j: best.j, kind: h.kind, home: true }));
+    placed.push([o.i + o.w / 2, o.j + o.d / 2]);
+  }
+
   // Keep the space in front of every door clear of trees.
   const reserved = new Uint8Array(N * N);
   for (const o of objects) {
@@ -207,20 +249,20 @@ export function buildWorld() {
     const dist = districtAt(i, j);
     const nearRoad = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => isRoad(i + a, j + b));
     let treeChance = 0, kinds = ['round'];
-    if (t === T.PARK) { treeChance = 0.26; kinds = ['round', 'round', 'blossom', 'willow']; }
+    if (t === T.PARK) { treeChance = 0.32; kinds = ['round', 'round', 'blossom', 'willow']; }
     else if (t === T.GRASS || t === T.MEADOW) {
       if (dist === 'hills') { treeChance = t === T.MEADOW ? 0.08 : 0.42; kinds = ['pine', 'pine', 'round']; }
-      else if (dist === 'park') { treeChance = 0.3; kinds = ['round', 'blossom', 'pine']; }
-      else if (dist === 'downtown') { treeChance = 0.14; kinds = ['round', 'blossom']; }
-      else { treeChance = 0.12; kinds = ['palm', 'round']; }
+      else if (dist === 'park') { treeChance = 0.38; kinds = ['round', 'blossom', 'pine']; }
+      else if (dist === 'downtown') { treeChance = 0.26; kinds = ['round', 'blossom', 'round']; }
+      else { treeChance = 0.24; kinds = ['palm', 'round', 'blossom']; }
     } else if (t === T.SAND) { treeChance = 0.07; kinds = ['palm']; }
-    if (nearRoad && t !== T.SAND) treeChance *= 0.45;
+    if (nearRoad && t !== T.SAND) treeChance *= 0.6;
     const roll = rd();
     if (roll < treeChance) {
       const kind = kinds[Math.floor(rd() * kinds.length)];
       decor.push({ kind: 'tree', tree: kind, i, j, w: 1, d: 1, seed: Math.floor(rd() * 1000), ox: (rd() - 0.5) * 0.3, oy: (rd() - 0.5) * 0.3 });
       blocked[idx(i, j)] = 1;
-    } else if ((t === T.PARK || t === T.MEADOW || t === T.GRASS) && rd() < (t === T.MEADOW ? 0.4 : 0.12)) {
+    } else if ((t === T.PARK || t === T.MEADOW || t === T.GRASS) && rd() < (t === T.MEADOW ? 0.4 : 0.18)) {
       decor.push({ kind: rd() < 0.75 ? 'flowers' : 'bush', i, j, w: 1, d: 1, seed: Math.floor(rd() * 1000), ox: (rd() - 0.5) * 0.4, oy: (rd() - 0.5) * 0.4 });
     }
   }

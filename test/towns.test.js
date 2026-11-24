@@ -8,9 +8,15 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 let child, base;
 before(async () => {
   const port = 31000 + Math.floor(Math.random() * 18000); base = 'http://127.0.0.1:' + port;
-  child = spawn(process.execPath, ['server.js'], { env: { ...process.env, NODE_ENV: 'test', PORT: String(port), JWT_SECRET: 'test-secret-that-is-long-enough-for-towns-tests-1234567', MONGODB_URI: '' }, stdio: 'ignore' });
-  for (let i = 0; i < 60; i++) { try { await fetch(base + '/healthz'); return; } catch { await wait(200); } }
-  throw new Error('server did not start');
+  let logs = '';
+  child = spawn(process.execPath, ['server.js'], { env: { ...process.env, NODE_ENV: 'test', PORT: String(port), JWT_SECRET: 'test-secret-that-is-long-enough-for-towns-tests-1234567', MONGODB_URI: '' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  child.stdout.on('data', b => { logs += b; }); child.stderr.on('data', b => { logs += b; });
+  // A busy build machine can take a while to start the server, so allow up to 45 seconds.
+  for (let i = 0; i < 180; i++) {
+    if (child.exitCode !== null) throw new Error('server exited: ' + logs);
+    try { await fetch(base + '/healthz', { signal: AbortSignal.timeout(1000) }); return; } catch { await wait(250); }
+  }
+  throw new Error('server did not start: ' + logs);
 });
 after(() => child.kill());
 const join = async (town, extra = {}) => {

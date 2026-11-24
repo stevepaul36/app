@@ -1,5 +1,5 @@
 // Willowvale: the illustrated animal city. Canvas 2D engine + phone-first UI.
-import { N, T, buildWorld, findPath, nearestWalkable, stepOK, DISTRICTS, districtAt, HOMES, VENUES, NEIGHBOURS } from './js/world.js';
+import { N, T, rng, buildWorld, findPath, nearestWalkable, stepOK, DISTRICTS, districtAt, HOMES, VENUES, NEIGHBOURS } from './js/world.js';
 import * as A from './js/art.js';
 import * as F from './js/furniture.js';
 import { buildHome, O as HOME_O } from './js/home.js';
@@ -101,6 +101,13 @@ let RESETTING = false;
 // One wallet: coins live in the save, on this device and (when signed in) in the cloud.
 const CLOUD = Object.assign({ version: 0, user: null, dirty: false, state: 'off', savedAt: 0, ready: false }, store.get('willowvale_cloud_v1', {}));
 const saveProgress = () => { if (RESETTING) return; S.progress.coins = S.coins; store.set('willowvale_progress_v2', S.progress); CLOUD.dirty = true; };
+// The clock and needs change every second without anything calling saveProgress, so keep this device's
+// copy fresh: every 15 seconds and whenever the page is hidden or closed. This doesn't count as a cloud
+// change; the next real save carries the time along.
+const saveLocal = () => { if (RESETTING) return; S.progress.coins = S.coins; store.set('willowvale_progress_v2', S.progress); };
+setInterval(saveLocal, 15000);
+window.addEventListener('pagehide', saveLocal);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveLocal(); });
 const saveSettings = () => store.set('willowvale_settings_v2', S.settings);
 
 // ---------- world ----------
@@ -171,7 +178,7 @@ function addDecor(list, flatList, decor) {
     const x = d.i + 0.5 + (d.ox || 0), y = d.j + 0.5 + (d.oy || 0);
     if (d.kind === 'flowers' || d.kind === 'bench') { flatList.push({ d, x, y, sprite: smallSpr(d.kind, d.seed || 0, d.face, d.kind === 'flowers' && d.marigold && (d.seed % 2) ? 'marigold' : null) }); continue; }
     const t = { o: d, box: [d.i + 0.2, d.j + 0.2, d.i + 0.8, d.j + 0.8], ax: x, ay: y, centered: true };
-    if (d.kind === 'tree') { t.sprite = treeSpr(d.tree, d.seed); t.treeShadow = true; }
+    if (d.kind === 'tree') { t.sprite = treeSpr(d.tree, d.seed); t.treeShadow = true; t.interactive = true; }
     else t.sprite = smallSpr(d.kind, d.seed || 0, d.face, d.kind === 'lamp' ? d.art : null);
     list.push(t);
   }
@@ -351,6 +358,20 @@ function drawPickups(z) {
   }
 }
 function nearestPickup(x, y, r = 1.3) { let best = null, bd = r; for (const p of livePickups()) { const [px, py] = pickupPos(p); const d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = p; } } return best; }
+// Shaking a tree: each tree drops something once a game day. What falls depends on the tree.
+const TREE_DROPS = { blossom: ['flowers', 'flowers', 'feather'], cherry: ['flowers', 'flowers', 'feather'], palm: ['shell', 'wood', 'berries'], pine: ['wood', 'wood', 'feather'], maple: ['wood', 'berries', 'feather'], banyan: ['wood', 'feather', 'berries'], bamboo: ['wood', 'wood'], willow: ['wood', 'feather'] };
+function shakeTree(o) {
+  o.shakeT = 1.2; shakingTrees.add(o);
+  const day = gameDay(), key = (C ? C.id : '') + ':' + o.i + ',' + o.j;
+  const sh = S.progress.shaken && S.progress.shaken.day === day ? S.progress.shaken : (S.progress.shaken = { day, trees: [] });
+  if (sh.trees.includes(key)) { toast('Only leaves fell. Try another tree, or come back tomorrow.'); player.say('🍃', 1.4); return; }
+  sh.trees.push(key);
+  const r = rng(hashStr(key) + day * 31), roll = r();
+  if (roll < 0.12) { setCoins(S.coins + 2, true); toast('A shiny coin dropped out! +2 ✦'); player.say('🪙', 1.6); saveProgress(); return; }
+  if (roll < 0.25) { toast('A sleepy bird flew out and said hello!'); player.say('🐦', 1.8); saveProgress(); return; }
+  const list = TREE_DROPS[o.tree] || ['berries', 'wood', 'feather'], item = list[Math.floor(r() * list.length)];
+  addItem(item, 1); toast(`Something fell out: ${ITEMS[item].icon} ${itemName(item, 1)}!`); player.say(ITEMS[item].icon, 1.6);
+}
 function collectPickup(p) {
   if (!p || S.progress.picked[pickedKey(C, p)]) return;
   const go = () => {
@@ -834,11 +855,16 @@ function enterHome(o) {
   S.progress.homeDoor = { city: C.id, x: door[0] + 0.5, y: door[1] + 0.5, name: o?.name || 'Your cottage' };
   fadeTo(() => { setScene('home', ...homeWorld.insideDoor); player.face(player.x - 1, player.y - 1); toast(o && o.home ? `Welcome home to ${o.name}` : 'Home sweet home'); });
 }
+// Where you are in town: your own spot outdoors, or the door of the building you're inside.
+function outsidePos() {
+  if (sceneName === 'city') return [player.x, player.y];
+  if (sceneName === 'venue') { const v = ROOM.world.venue, dt0 = v.doorTile || [v.i + v.w, v.j + v.d]; return [dt0[0] + 0.5, dt0[1] + 0.5]; }
+  const hd = S.progress.homeDoor && S.progress.homeDoor.city === C.id ? S.progress.homeDoor : null;
+  return hd ? [hd.x, hd.y] : myHome ? [myHome.doorTile[0] + 0.5, myHome.doorTile[1] + 0.5] : C.stop.stand;
+}
 function leaveHome() {
   cancelActions(); closePie();
-  if (sceneName === 'venue') { const v = ROOM.world.venue, dt0 = v.doorTile || [v.i + v.w, v.j + v.d]; fadeTo(() => { setScene('city', dt0[0] + 0.5, dt0[1] + 0.5); player.face(player.x + 1, player.y + 1); }); return; }
-  const hd = S.progress.homeDoor && S.progress.homeDoor.city === C.id ? S.progress.homeDoor : null;
-  const [x, y] = hd ? [hd.x, hd.y] : myHome ? [myHome.doorTile[0] + 0.5, myHome.doorTile[1] + 0.5] : C.stop.stand;
+  const [x, y] = outsidePos();
   fadeTo(() => { setScene('city', x, y); player.face(player.x + 1, player.y + 1); });
 }
 // ---------- neighbours live their own lives ----------
@@ -1179,9 +1205,14 @@ function drawFrame(now) {
     return { char: c, box: [c.x - 0.25, c.y - 0.25, c.x + 0.25, c.y + 0.25] };
   });
   for (const c of chars) { const [sx, sy] = toScreen(c.char.x, c.char.y); if (onScreen(sx, sy, 100)) list.push(c); }
+  // Birds on the ground are drawn first (they live on open paths, so little stands behind them), and
+  // flying ones last; that keeps them out of the depth sort, which gets slow with many items.
+  const birdsNow = sceneName === 'city' && C && birdsAwake() ? birdsFor(C).filter(b => !(b.gone > 0)) : [];
+  for (const b of birdsNow) if (!(b.fly > 0)) { const [sx, sy] = toScreen(b.x, b.y); if (onScreen(sx, sy, 60)) drawGroundBird(b, z); }
   drawn = sortScene(list);
   for (const t of drawn) drawThing(t, z);
   drawPlayerIfHidden(z);
+  for (const b of birdsNow) if (b.fly > 0) drawGroundBird(b, z);
   drawFx(z);
 
   // overlays
@@ -1288,7 +1319,8 @@ function drawThing(t, z) {
   const [sx, sy] = t.centered ? toScreen(t.ax, t.ay) : toScreen(t.ax, t.ay);
   if (t.o.kind === 'tree' && !S.settings.reduced) {
     // gentle sway
-    ctx.save(); ctx.translate(sx, sy); ctx.transform(1, 0, Math.sin(time * 1.2 + t.ax * 0.7 + t.ay) * 0.025, 1, 0, 0);
+    const shook = t.o.shakeT > 0 ? Math.sin(time * 28) * 0.11 * Math.min(1, t.o.shakeT) : 0;
+    ctx.save(); ctx.translate(sx, sy); ctx.transform(1, 0, Math.sin(time * 1.2 + t.ax * 0.7 + t.ay) * 0.025 + shook, 1, 0, 0);
     t.sprite.draw(ctx, 0, 0, z); ctx.restore();
   } else if (t.flipX) { ctx.save(); ctx.translate(sx, sy); ctx.scale(-1, 1); t.sprite.draw(ctx, 0, 0, z); ctx.restore(); }
   else t.sprite.draw(ctx, sx, sy, z);
@@ -1392,8 +1424,83 @@ function drawBirds(dt) {
 
 // ---------- simulation ----------
 const keys = new Set();
+// Pigeons and sparrows peck about on the paths, and flutter off when someone walks up or taps them.
+function birdsFor(rec) {
+  if (rec.groundBirds) return rec.groundBirds;
+  const wd = rec.world, r = rng(hashStr(rec.id) + 7), out = [], spots = [];
+  for (let tries = 0; tries < 600 && spots.length < 6; tries++) {
+    const i = 5 + Math.floor(r() * 34), j = 5 + Math.floor(r() * 34);
+    if (!wd.walkable(i, j) || !wd.isRoad(i, j) || spots.some(([a, b]) => Math.hypot(a - i, b - j) < 6)) continue;
+    spots.push([i, j]);
+  }
+  for (const [i, j] of spots) for (let k = 0, n = 3 + Math.floor(r() * 2); k < n; k++) {
+    const hx = i + 0.15 + r() * 0.7, hy = j + 0.15 + r() * 0.7;
+    out.push({ hx, hy, x: hx, y: hy, z: 0, vx: 0, vy: 0, fly: 0, gone: 0, seed: r() * 10, kind: r() < 0.6 ? 'pigeon' : 'sparrow', face: r() < 0.5 ? 1 : -1, hop: r() * 2 });
+  }
+  return (rec.groundBirds = out);
+}
+const birdsAwake = () => { const h = hourOf(S.progress.clock); return h >= 6 && h < 20; };
+let lastFlap = 0;
+function scareBird(b, fromX, fromY) {
+  const a = Math.atan2(b.y - fromY, b.x - fromX) + (Math.random() - 0.5) * 0.9;
+  b.vx = Math.cos(a) * 3.2; b.vy = Math.sin(a) * 3.2; b.fly = 2.4; b.face = b.vx - b.vy > 0 ? 1 : -1;
+  if (time - lastFlap > 0.6) { lastFlap = time; SND.sfx('pop'); }
+}
+function updateBirds(dt) {
+  if (sceneName !== 'city' || !C || !birdsAwake()) return;
+  for (const b of birdsFor(C)) {
+    if (b.fly > 0) { b.fly -= dt; b.x += b.vx * dt; b.y += b.vy * dt; b.z += 80 * dt; if (b.fly <= 0) b.gone = 14 + Math.random() * 12; continue; }
+    if (b.gone > 0) { b.gone -= dt; if (b.gone <= 0) { b.x = b.hx; b.y = b.hy; b.z = 0; } continue; }
+    const scarer = [player, ...npcs].find(c => c.moving && c.pose !== 'inside' && Math.hypot(c.x - b.x, c.y - b.y) < (c === player ? 1.4 : 0.8));
+    if (scarer) { scareBird(b, scarer.x, scarer.y); continue; }
+    b.hop -= dt;
+    if (b.hop <= 0) {
+      b.hop = 0.5 + Math.random() * 1.8;
+      const nx = b.x + (Math.random() - 0.5) * 0.3, ny = b.y + (Math.random() - 0.5) * 0.3;
+      if (Math.hypot(nx - b.hx, ny - b.hy) < 0.8) { b.face = (nx - ny) > (b.x - b.y) ? 1 : -1; b.x = nx; b.y = ny; }
+    }
+  }
+}
+// Tapping near a bird sends the little flock flying (and now and then one drops a feather).
+function tapBirds(x, y) {
+  if (sceneName !== 'city' || !C || !birdsAwake()) return false;
+  const hit = birdsFor(C).filter(b => !b.fly && !b.gone && Math.hypot(b.x - x, b.y - y) < 0.7);
+  if (!hit.length) return false;
+  for (const b of birdsFor(C)) if (!b.fly && !b.gone && Math.hypot(b.x - hit[0].x, b.y - hit[0].y) < 1.2) scareBird(b, x - 0.3, y - 0.3);
+  const day = gameDay(), sh = S.progress.shaken && S.progress.shaken.day === day ? S.progress.shaken : (S.progress.shaken = { day, trees: [] });
+  if (!sh.feather && Math.random() < 0.35) { sh.feather = 1; addItem('feather', 1); toast('Flap flap! One of them dropped a 🪶 feather.'); }
+  else toast(['Coo coo! Off they go.', 'Flap flap flap!', 'The birds flew off. They’ll be back soon.'][Math.floor(Math.random() * 3)]);
+  return true;
+}
+function drawGroundBird(b, z) {
+  if (b.gone > 0) return;
+  const [sx, sy] = toScreen(b.x, b.y, b.z), s = z * 1.15;
+  const flying = b.fly > 0, flap = flying ? Math.sin(time * 32 + b.seed) : 0;
+  const peck = flying ? 0 : Math.max(0, Math.sin(time * 4.5 + b.seed * 3)) ** 8;
+  const pig = b.kind === 'pigeon', body = pig ? '#9AA3B5' : '#B5844F', wing = pig ? '#6F7A92' : '#7E5534', head = pig ? '#5E6982' : '#6E4A2E';
+  ctx.save(); ctx.translate(sx, sy); ctx.scale(b.face * s, s);
+  if (b.z < 6) { ctx.fillStyle = 'rgba(28,54,92,.16)'; ctx.beginPath(); ctx.ellipse(0, 0, 6, 2.3, 0, 0, 7); ctx.fill(); }
+  ctx.fillStyle = wing; ctx.beginPath(); ctx.moveTo(-5, -6); ctx.lineTo(-10.5, -8.5); ctx.lineTo(-9.5, -4.2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(0, -5.2, 6.2, 4.2, -0.1, 0, 7); ctx.fill();
+  if (pig) { ctx.fillStyle = '#7FC7B0'; ctx.beginPath(); ctx.ellipse(3.6, -6.8, 1.8, 2.4, 0.3, 0, 7); ctx.fill(); }
+  ctx.fillStyle = wing; ctx.beginPath();
+  if (flying) ctx.ellipse(-1, -9 - flap * 3.5, 6, 2, -0.3 - flap * 0.6, 0, 7); else ctx.ellipse(-1.2, -5.4, 4.2, 2.6, 0.15, 0, 7);
+  ctx.fill();
+  const hx = 5 + peck * 1.5, hy = -9.5 + peck * 6;
+  ctx.fillStyle = head; ctx.beginPath(); ctx.arc(hx, hy, 2.9, 0, 7); ctx.fill();
+  ctx.fillStyle = '#F2A93B'; ctx.beginPath(); ctx.moveTo(hx + 2.3, hy - 0.7); ctx.lineTo(hx + 5.2, hy + 0.3 + peck); ctx.lineTo(hx + 2.3, hy + 1.1); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(hx + 1, hy - 0.8, 1, 0, 7); ctx.fill();
+  ctx.fillStyle = '#1C2333'; ctx.beginPath(); ctx.arc(hx + 1.2, hy - 0.8, 0.55, 0, 7); ctx.fill();
+  if (!flying) { ctx.strokeStyle = '#E08A3A'; ctx.lineWidth = 0.9; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-1, -1.4); ctx.lineTo(-1.4, 0); ctx.moveTo(1.6, -1.4); ctx.lineTo(1.4, 0); ctx.stroke(); }
+  ctx.restore();
+}
+const shakingTrees = new Set();
 function update(dt) {
+  updateBirds(dt);
   const onboardingOpen = !$('onboarding').classList.contains('hidden');
+  // trees wobble while being shaken, then settle
+  if (act && act.phase === 'do' && act.item.def.id === 'shake' && act.obj && act.obj.kind === 'tree') { act.obj.shakeT = 1; shakingTrees.add(act.obj); }
+  for (const o of shakingTrees) { o.shakeT -= dt * 1.4; if (o.shakeT <= 0) { o.shakeT = 0; shakingTrees.delete(o); } }
   // game time: speed setting, faster while asleep at work or at a long show
   const curDef = act && act.phase === 'do' ? act.step : null;
   const fast = curDef && curDef.fast ? curDef.fast : 1;
@@ -1543,7 +1650,7 @@ function tap(sx, sy) {
   if (mat) { showPie({ o: mat.furn }, sx, sy); return; }
   const bench = !world.interior && flats.find(f => f.d.kind === 'bench' && f.d.i === ti && f.d.j === tj);
   if (bench) { showPie({ o: bench.d }, sx, sy); return; }
-  { const [wx, wy] = toWorld(sx, sy); const pk = nearestPickup(wx, wy, 0.9); if (pk) { collectPickup(pk); return; } }
+  { const [wx, wy] = toWorld(sx, sy); const pk = nearestPickup(wx, wy, 0.9); if (pk) { collectPickup(pk); return; } if (tapBirds(wx, wy)) return; }
   const flatObj = !world.interior && flats.find(f => f.obj && !f.obj.deco && ti >= f.obj.i && ti < f.obj.i + f.obj.w && tj >= f.obj.j && tj < f.obj.j + f.obj.d);
   if (flatObj) { showPie({ o: flatObj.obj }, sx, sy); return; }
   cancelActions();
@@ -1680,22 +1787,47 @@ function showPie(target, sx, sy) {
   const cx = Math.max(R * 0.5 + 70, Math.min(W - R * 0.5 - 70, sx)), cy = Math.max(R + 70, Math.min(H - R - 110, sy));
   ring.style.left = cx + 'px'; ring.style.top = cy + 'px';
   pie.classList.remove('hidden'); // visible first, so the buttons can be measured
+  // The place name sits in the middle; measure it first so no button covers it.
+  const center = h(`<div class="pie-center"><b>${esc(n ? n.name : displayName(o))}</b></div>`);
+  ring.append(center);
+  const cw = center.offsetWidth, ch = center.offsetHeight;
+  const boxes = [];
   opts.forEach((op, k) => {
     const a = -Math.PI / 2 + (opts.length === 1 ? 0 : (k / opts.length) * Math.PI * 2);
     const b = document.createElement('button');
     b.className = 'pie-btn'; b.disabled = !!op.disabled;
     b.style.setProperty('--x', Math.cos(a) * R + 'px'); b.style.setProperty('--y', Math.sin(a) * R + 'px'); b.style.setProperty('--d', k * 25 + 'ms');
-    b.innerHTML = `<span class="pie-icon">${esc(op.icon)}</span><span class="pie-label">${esc(op.label)}${op.note ? ` <em>${esc(op.note)}</em>` : ''}${op.disabled ? `<small>${esc(op.disabled)}</small>` : ''}</span>`;
+    // Short labels stay on one line; long ones get a fixed width to wrap in (some browsers shrink max-content here).
+    b.innerHTML = `<span class="pie-icon">${esc(op.icon)}</span><span class="pie-label${Math.max((op.label + (op.note ? ' ' + op.note : '')).length, op.disabled ? String(op.disabled).length : 0) > 18 ? ' long' : ''}">${esc(op.label)}${op.note ? ` <em>${esc(op.note)}</em>` : ''}${op.disabled ? `<small>${esc(op.disabled)}</small>` : ''}</span>`;
     b.onclick = e => { e.stopPropagation(); closePie(); op.run(); };
     ring.append(b);
-    // keep every button fully on screen, even on narrow phones
-    const bw = b.offsetWidth, bh = b.offsetHeight; let x = Math.cos(a) * R, y = Math.sin(a) * R;
-    x += Math.max(0, 8 - (cx + x - bw / 2)) - Math.max(0, cx + x + bw / 2 - (W - 8));
-    y += Math.max(0, 60 - (cy + y - bh / 2)) - Math.max(0, cy + y + bh / 2 - (H - 96));
-    b.style.setProperty('--x', x + 'px'); b.style.setProperty('--y', y + 'px');
+    boxes.push({ b, x: Math.cos(a) * R, y: Math.sin(a) * R, w: b.offsetWidth, h: b.offsetHeight });
   });
-  const center = h(`<div class="pie-center"><b>${esc(n ? n.name : displayName(o))}</b></div>`);
-  ring.append(center);
+  // Spread the buttons so none covers another or the name, and keep every one on screen, even on narrow phones.
+  const fixed = { x: 0, y: 0, w: cw, h: ch, fixed: true }, all = [fixed, ...boxes], GAP = 6;
+  const clamp = q => {
+    q.x += Math.max(0, 8 - (cx + q.x - q.w / 2)) - Math.max(0, cx + q.x + q.w / 2 - (W - 8));
+    q.y += Math.max(0, 60 - (cy + q.y - q.h / 2)) - Math.max(0, cy + q.y + q.h / 2 - (H - 96));
+  };
+  boxes.forEach(clamp);
+  for (let it = 0; it < 60; it++) {
+    let moved = false;
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+      const p1 = all[i], p2 = all[j];
+      const ox = (p1.w + p2.w) / 2 + GAP - Math.abs(p1.x - p2.x), oy = (p1.h + p2.h) / 2 + GAP - Math.abs(p1.y - p2.y);
+      if (ox <= 0 || oy <= 0) continue;
+      moved = true;
+      const share = p1.fixed || p2.fixed ? 1 : 0.5;
+      // Push apart along whichever way needs the smaller move (up/down a little preferred, since phones are tall);
+      // if sideways keeps running into the screen edge, go up/down.
+      if (oy <= ox * 1.4 || it > 15) { const d = (p2.y >= p1.y ? 1 : -1) * oy * share; if (!p1.fixed) p1.y -= d; if (!p2.fixed) p2.y += d; }
+      else { const d = (p2.x >= p1.x ? 1 : -1) * ox * share; if (!p1.fixed) p1.x -= d; if (!p2.fixed) p2.x += d; }
+    }
+    boxes.forEach(clamp);
+    if (!moved) break;
+  }
+  for (const q of boxes) { q.b.style.setProperty('--x', q.x + 'px'); q.b.style.setProperty('--y', q.y + 'px'); }
+  ring.append(center); // keep the name on top
   pie.classList.remove('hidden'); SND.sfx('pop');
   if (n) { n.busy = Math.max(n.busy, 3); n.face(player.x, player.y); }
 }
@@ -1867,6 +1999,7 @@ function finishStep() {
   }
   if (def.friend && act.target.npc) befriend(act.target.npc, def.friend);
   if (def.id === 'fish') addItem('fish', 1);
+  if (def.id === 'shake' && act.obj && act.obj.kind === 'tree') shakeTree(act.obj);
   if (def.stat) bumpStat(def.stat);
   const o = act.obj;
   if (o && o.kind === 'venue') { S.progress.places[o.id] = 1; saveProgress(); }
@@ -2090,7 +2223,8 @@ async function showHomes(filter = 'all') {
   const mineElsewhere = Object.entries(S.progress.homes).filter(([, x]) => x.city !== C.id);
   if (mineElsewhere.length) body.append(h(`<div class="notice"><b>Your other homes</b><span>${mineElsewhere.map(([, x]) => `${esc(x.name)} in ${esc(cityMeta(x.city).name)}`).join(' · ')}</span></div>`));
   body.append(h(`<p class="lead">Rent a home in any town to sleep, cook and relax there. Rent is paid each morning with coins. These homes are in your own world, so other players never take them.</p>`));
-  const homes = world.objects.filter(o => o.home && (filter === 'all' || o.kind === filter));
+  // The town's homes, even when the list is opened from inside your house or a shop.
+  const homes = cityWorld.objects.filter(o => o.home && (filter === 'all' || o.kind === filter));
   for (const o of homes) body.append(homeCard(o));
 }
 function showHome(o) { if (!localHomes()) loadProperties().then(() => { if (S.sheet === 'home:' + o.id) { const b = $('sheet-body'); b.innerHTML = ''; b.append(homeCard(o, true)); } }); openSheet('home:' + o.id, 'Home', o.name, homeCard(o, true), { tab: 'homes' }); }
@@ -2260,7 +2394,7 @@ function showDistricts() {
   body.append(more);
   body.append(h(`<h4 class="group-title">Tram stops in ${esc(C.meta.name)}</h4>`));
   for (const [k, d] of Object.entries(C.districts)) {
-    const here = C.districtAt(player.x, player.y) === k;
+    const here = C.districtAt(...outsidePos()) === k;
     const el = h(`<button class="district-row ${here ? 'here' : ''}"><i style="background:${d.color}"></i><span><b>${esc(d.name)}</b><small>${esc(d.blurb)}</small></span><em>${here ? 'You’re here' : 'Take the tram'}</em></button>`);
     el.onclick = () => { if (here) { closeSheet(); return; } travel(k); };
     body.append(el);
@@ -3134,5 +3268,6 @@ setTimeout(() => $('loading').remove(), 700);
 
 // Small read-only hook for automated play-testing.
 window.__willowvale = { state: S, quests: () => questState(), checkQuests: () => checkQuests(), open: k => ({ homes: showHomes, places: showPlaces, friends: showFriends, journal: showJournal, profile: showProfile, shop: showShop, island: showIsland, market: showMarket, craft: showCraft, restore: showRestore, settings: showSettings, wardrobe: showWardrobe, needs: showNeeds, districts: showDistricts, adminLogin: showAdminLogin, venue: () => showVenue(C.venues[0]), home: () => showHome(cityWorld.objects.find(o => o.home)), neighbour: () => showNeighbour(cityNpcs.find(n => !n.generic)), chat: () => showEmojiChat(cityNpcs.find(n => !n.generic)) })[k](),
+  birds: () => (C ? birdsFor(C).map(b => ({ x: +b.x.toFixed(2), y: +b.y.toFixed(2), fly: b.fly > 0, gone: b.gone > 0 })) : []), tapBird: () => { const b = C && birdsFor(C).find(x => !x.fly && !x.gone); return b ? tapBirds(b.x, b.y) : false; }, shakeNearestTree: () => { const t = things.filter(x => x.o && x.o.kind === 'tree').sort((a, b) => Math.hypot(a.ax - player.x, a.ay - player.y) - Math.hypot(b.ax - player.x, b.ay - player.y))[0]; if (!t) return false; const d = actionsFor('tree')[0]; queueAction(d, { o: t.o }); return t.o.tree; }, homeCount: () => world.objects.filter(o => o.home).length, treeCount: () => things.filter(t => t.o && t.o.kind === 'tree').length,
   pieList: () => { const out = [], seen = new Set(); for (const t of things) { const o = t.o; if (!t.interactive || !o) continue; const key = o.type || o.kind; if (seen.has(key)) continue; seen.add(key); out.push(key); } for (const n of npcs) if (npcVisible(n) && !seen.has('npc')) { seen.add('npc'); out.push('npc'); } return out; },
   pieFor: key => { closeSheet(); if (key === 'npc') { const n = npcs.find(n => npcVisible(n)); if (n) showPie({ npc: n }, W / 2, H / 2); return !!n; } const t = things.find(t => t.interactive && t.o && (t.o.type || t.o.kind) === key); if (t) showPie({ o: t.o }, W / 2, H / 2); return !!t; }, cancel: () => cancelActions(), peers: () => shownPeers().map(p => ({ name: p.name, x: +p.x.toFixed(2), y: +p.y.toFixed(2), emote: p.emote || null })), allPeers: () => [...peers.values()].map(p => ({ name: p.name, scene: p.scene })), emoteTo: e => sendEmote(e, [...peers.values()][0]), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { S.progress.clock = m; }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); if (!f) return false; const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); if (!t) return false; queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
