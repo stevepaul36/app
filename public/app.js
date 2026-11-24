@@ -11,6 +11,7 @@ import * as CA from './js/cityart.js';
 import { GAME } from './js/games.js';
 import * as L from './js/life.js';
 import * as TL from './js/townlife.js';
+import * as FC from './js/followcam.js';
 const { ITEMS, itemName } = L;
 import { NEEDS, freshNeeds, mood, moodLabel, moodColor, needColor, SPEEDS, GAME_MIN_PER_SEC, clockText, dayOf, hourOf, skyTint, isNight, actionsFor, TRAITS, SKILLS, SKILL_MAX, xpForLevel, CAREER, CAREERS, friendLevel } from './js/sim.js';
 
@@ -58,7 +59,7 @@ const S = {
   user: null,
   profile: (v => isObj(v) && typeof v.species === 'string' ? v : null)(store.get('willowvale_player_v2', null)),
   progress: loadProgress(),
-  settings: Object.assign({ labels: true, reduced: false, music: true, sfx: true, freewill: true }, store.get('willowvale_settings_v2', {})),
+  settings: Object.assign({ labels: true, reduced: false, music: true, sfx: true, freewill: true, follow: false }, store.get('willowvale_settings_v2', {})),
   coins: 0,
   properties: null,
   online: 'guest',
@@ -119,7 +120,9 @@ let world = null;
 const canvas = $('world'), ctx = canvas.getContext('2d');
 let W = 0, H = 0, DPR = 1;
 const mobile = () => Math.min(W, H) < 620;
-const cam = { x: 0, y: 0, zoom: 0.6, tz: 0, free: false };
+const cam = { x: 0, y: 0, zoom: 0.6, tz: 0, free: false, lead: [0, 0], last: null };
+// Default zoom outdoors: closer when the follow camera is on.
+const outdoorZoom = () => (S.settings.follow ? FC.followZoom(mobile()) : mobile() ? 0.56 : 0.72);
 
 const tileCache = new Map();
 function tileSpr(type, i, j) {
@@ -847,7 +850,8 @@ function setScene(name, x, y) {
   if (player.boat) { player.boat = false; document.body.classList.remove('boating'); }
   marker = null; cam.free = false; cam.tz = 0; cam.manual = false;
   if (name === 'home' || name === 'venue') { cam.zoom = mobile() ? (name === 'venue' ? 0.46 : 0.4) : 0.66; const rc = roomCenter(); const p = A.P(rc[0], rc[1], 30); cam.x = p[0]; cam.y = p[1]; }
-  else { cam.zoom = mobile() ? 0.56 : 0.72; const p = A.P(player.x, player.y, 34); cam.x = p[0]; cam.y = p[1]; }
+  else { cam.zoom = outdoorZoom(); const p = A.P(player.x, player.y, 34); cam.x = p[0]; cam.y = p[1]; }
+  cam.lead = [0, 0]; cam.last = null;
   radarMap = buildRadarMap(); update.lastDistrict = null; lastNear = '';
   document.body.classList.toggle('indoors', name === 'home' || name === 'venue');
   document.body.classList.toggle('at-home', name === 'home');
@@ -1044,7 +1048,7 @@ function resize() {
   document.body.classList.toggle('is-phone', mobile());
 }
 window.addEventListener('resize', resize); resize();
-cam.zoom = mobile() ? 0.56 : 0.72;
+cam.zoom = outdoorZoom();
 { const p = A.P(player.x, player.y, 30); cam.x = p[0]; cam.y = p[1]; }
 
 const toScreen = (x, y, z = 0) => { const p = A.P(x, y, z); return [(p[0] - cam.x) * cam.zoom + W / 2, (p[1] - cam.y) * cam.zoom + H / 2]; };
@@ -1560,6 +1564,18 @@ function update(dt) {
     target = [c[0] * (1 - w) + p[0] * w, c[1] * (1 - w) + p[1] * w];
     if (!cam.manual && !cam.tz) { const want = busy ? (mobile() ? 0.66 : 0.9) : (mobile() ? 0.4 : 0.62); cam.zoom += (want - cam.zoom) * (S.settings.reduced ? 1 : 1 - Math.exp(-dt * 2.5)); }
   }
+  else if (S.settings.follow) {
+    // Follow camera: look ahead the way you're walking, with you a little low on screen.
+    const p = A.P(player.x, player.y, 34);
+    const [vx, vy] = cam.last && dt > 0 ? [(p[0] - cam.last[0]) / dt, (p[1] - cam.last[1]) / dt] : [0, 0];
+    cam.last = p;
+    // A jump (door, boat, teleport) isn't walking, so it shouldn't swing the view.
+    const jumped = Math.hypot(vx, vy) * dt > A.TW * 2;
+    if (S.settings.reduced || jumped) cam.lead = [0, 0];
+    else cam.lead = FC.stepLead(cam.lead, vx, vy, dt, W, H, cam.zoom, player.moving && !cam.free);
+    target = S.sheet && mobile() ? [p[0] + cam.lead[0], p[1] + cam.lead[1]] : FC.followTarget(p[0], p[1], cam.lead, H, cam.zoom, mobile());
+    if (!cam.manual && !cam.tz) { const want = FC.followZoom(mobile()); cam.zoom += (want - cam.zoom) * (S.settings.reduced ? 1 : 1 - Math.exp(-dt * 2.5)); }
+  }
   else target = A.P(player.x, player.y, 34);
   if (cam.tz) {
     const nz = cam.zoom + (cam.tz - cam.zoom) * (S.settings.reduced ? 1 : 1 - Math.exp(-dt * 8));
@@ -1619,11 +1635,12 @@ canvas.addEventListener('wheel', e => { e.preventDefault(); setZoom(cam.zoom * M
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 const KEYMAP = { Shift: 'run', ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down', ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right' };
 window.addEventListener('keydown', e => {
-  if (e.target.closest('input, textarea, select')) return;
+  if (e.target.closest?.('input, textarea, select')) return;
   if (e.key === 'Escape') { closeSheet(); return; }
   if (e.key === 'e' || e.key === 'E' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); interactNearby(); return; }
   if (e.key === 'r' || e.key === 'R') { toggleRun(); return; }
   if (e.key === 'c' || e.key === 'C') { cameraButton(); return; }
+  if (e.key === 'v' || e.key === 'V') { toggleFollow(); return; }
   if (e.key === 'p' || e.key === 'P') { S.sheet === 'pause' ? closeSheet() : showSettings(); return; }
   if (e.key === '+' || e.key === '=') setZoom(cam.zoom * 1.15);
   if (e.key === '-') setZoom(cam.zoom / 1.15);
@@ -2825,6 +2842,7 @@ async function logout() {
 function showSettings() {
   const el = h(`<div class="settings">
     <label class="switch"><input type="checkbox" id="set-labels" ${S.settings.labels ? 'checked' : ''}><span class="track"></span><span>Show place names</span></label>
+    <label class="switch"><input type="checkbox" id="set-follow" ${S.settings.follow ? 'checked' : ''}><span class="track"></span><span>Follow camera: a close view that follows you and looks ahead</span></label>
     <label class="switch"><input type="checkbox" id="set-reduced" ${S.settings.reduced ? 'checked' : ''}><span class="track"></span><span>Reduce motion</span></label>
     <label class="switch"><input type="checkbox" id="set-music" ${S.settings.music ? 'checked' : ''}><span class="track"></span><span>Music</span></label>
     <label class="switch"><input type="checkbox" id="set-sfx" ${S.settings.sfx ? 'checked' : ''}><span class="track"></span><span>Sound effects</span></label>
@@ -2836,6 +2854,7 @@ function showSettings() {
     <h4 class="group-title">For grown-ups</h4>
     <ul class="tips"><li><b>Chat</b> Players talk only with emojis. There is no typing, so nobody can send words, links or personal details.</li><li><b>Names</b> Town names allow letters only. Accounts use a nickname, never a real name.</li><li><b>Money</b> Coins are earned in the game. There are no purchases with real money.</li><li><b>Saving</b> As a guest, progress stays on this device only.</li></ul></div>`);
   el.querySelector('#set-labels').onchange = e => { S.settings.labels = e.target.checked; saveSettings(); };
+  el.querySelector('#set-follow').onchange = e => toggleFollow(e.target.checked);
   el.querySelector('#set-reduced').onchange = e => { S.settings.reduced = e.target.checked; saveSettings(); };
   el.querySelector('#set-music').onchange = e => { S.settings.music = e.target.checked; SND.setPrefs({ music: e.target.checked }); saveSettings(); };
   el.querySelector('#set-sfx').onchange = e => { S.settings.sfx = e.target.checked; SND.setPrefs({ sfx: e.target.checked }); saveSettings(); };
@@ -2845,7 +2864,7 @@ function showSettings() {
   el.prepend(h(`<div class="pause-actions"><button class="btn btn-primary btn-wide btn-big" id="resume-button">Resume</button><button class="btn btn-ghost btn-wide" id="pause-profile">Character &amp; account</button></div>`));
   el.querySelector('#resume-button').onclick = closeSheet;
   el.querySelector('#pause-profile').onclick = () => showProfile();
-  el.querySelector('.tips').insertAdjacentHTML('beforeend', '<li><b>Controls</b> Stick to move, hand button to talk or go inside, shoe to run, camera to centre and zoom.</li><li><b>Keyboard</b> WASD to move, Shift or R to run, E or Space to interact, C for camera, P to pause.</li>');
+  el.querySelector('.tips').insertAdjacentHTML('beforeend', '<li><b>Controls</b> Stick to move, hand button to talk or go inside, shoe to run, camera to centre and zoom, eye for the follow camera.</li><li><b>Keyboard</b> WASD to move, Shift or R to run, E or Space to interact, C for camera, V for the follow camera, P to pause.</li>');
   const adm = h(`<button class="btn btn-ghost btn-wide" id="admin-open">${ADMIN.on ? '🛠️ Admin panel' : '🔐 Admin sign-in (grown-ups)'}</button>`);
   adm.onclick = () => (ADMIN.on ? showAdmin() : showAdminLogin());
   el.append(adm);
@@ -2914,7 +2933,7 @@ function showAdmin() {
     day: () => adminDo('next day', () => { S.progress.clock = (Math.floor(S.progress.clock / 1440) + 1) * 1440 + 7 * 60; }),
     weekday: () => adminDo('next weekday, 9 AM', () => { let d = Math.floor(S.progress.clock / 1440) + 1; while ((d + 1) % 7 === 6 || (d + 1) % 7 === 0) d++; S.progress.clock = d * 1440 + 9 * 60; }),
     overview: () => { closeSheet(); cam.free = true; $('cam-button').classList.add('free'); const c2 = A.P(22, 22, 0); cam.x = c2[0]; cam.y = c2[1]; cam.zoom = mobile() ? 0.14 : 0.24; cam.manual = true; toast('Drag to look around. Tap the camera button to come back.'); },
-    centre: () => { closeSheet(); cam.free = false; cam.manual = false; cam.zoom = mobile() ? 0.56 : 0.72; $('cam-button').classList.remove('free'); },
+    centre: () => { closeSheet(); cam.free = false; cam.manual = false; cam.zoom = outdoorZoom(); $('cam-button').classList.remove('free'); },
     labels: () => { S.settings.labels = !S.settings.labels; saveSettings(); showAdmin(); },
     freewill: () => { S.settings.freewill = !S.settings.freewill; saveSettings(); showAdmin(); },
     reset: e => { const b = e.currentTarget; if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'Tap again to erase everything'; return; } RESETTING = true; try { for (const k of ['willowvale_progress_v2', 'willowvale_progress_v1', 'willowvale_player_v2']) localStorage.removeItem(k); } catch { /* ignore */ } location.reload(); },
@@ -3286,6 +3305,18 @@ $('decor-button').onclick = () => (DECOR.on ? endDecor() : startDecor());
 $('speed-button').onclick = cycleSpeed;
 $('run-button').onclick = toggleRun;
 $('cam-button').onclick = cameraButton;
+$('view-button').onclick = () => toggleFollow();
+$('view-button').setAttribute('aria-pressed', String(!!S.settings.follow));
+// Follow camera on/off. Resets any manual zoom so the view eases to the right distance.
+function toggleFollow(on = !S.settings.follow) {
+  S.settings.follow = !!on; saveSettings();
+  cam.free = false; cam.manual = false; cam.lead = [0, 0]; cam.last = null;
+  $('cam-button').classList.remove('free');
+  if (!world.interior) cam.tz = outdoorZoom();
+  $('view-button').setAttribute('aria-pressed', String(S.settings.follow));
+  const box = document.getElementById('set-follow'); if (box) box.checked = S.settings.follow;
+  toastQuiet(S.settings.follow ? 'Follow camera on' : 'Follow camera off');
+}
 function toggleRun() { S.run = !S.run; $('run-button').setAttribute('aria-pressed', String(S.run)); toastQuiet(S.run ? 'Running' : 'Walking'); }
 // Camera: first press brings the view back to you; after that it steps through three zoom levels.
 function cameraButton() {
@@ -3401,7 +3432,7 @@ $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 700);
 
 // Small read-only hook for automated play-testing.
-window.__willowvale = { state: S, quests: () => questState(), news: () => S.progress.news, growth: () => S.progress.growth[C.id], greet: name => { const n = npcs.find(x => x.name === name); if (!n) return null; delete S.progress.daily['greet:' + gameDay() + ':' + n.name]; greetPlayer(n); return n.line; }, townNews: (ev, also) => townNews(ev, also), gossip: (a, b) => TL.gossip(S.progress.news, a, b, () => 0), sprouts: () => things.filter(t => t.o && t.o.sprout).length, step: (i, j, n = 1) => { for (let k = 0; k < n; k++) TL.stepOn(growthOf(C.id), cityWorld, i, j); }, checkQuests: () => checkQuests(), open: k => ({ homes: showHomes, places: showPlaces, friends: showFriends, journal: showJournal, profile: showProfile, shop: showShop, island: showIsland, market: showMarket, craft: showCraft, restore: showRestore, settings: showSettings, wardrobe: showWardrobe, needs: showNeeds, districts: showDistricts, adminLogin: showAdminLogin, venue: () => showVenue(C.venues[0]), home: () => showHome(cityWorld.objects.find(o => o.home)), neighbour: () => showNeighbour(cityNpcs.find(n => !n.generic)), chat: () => showEmojiChat(cityNpcs.find(n => !n.generic)) })[k](),
+window.__willowvale = { state: S, follow: on => toggleFollow(on), leaveHome: () => leaveHome(),camera: () => ({ x: cam.x, y: cam.y, zoom: cam.zoom, lead: [...cam.lead], player: A.P(player.x, player.y, 34) }),quests: () => questState(), news: () => S.progress.news, growth: () => S.progress.growth[C.id], greet: name => { const n = npcs.find(x => x.name === name); if (!n) return null; delete S.progress.daily['greet:' + gameDay() + ':' + n.name]; greetPlayer(n); return n.line; }, townNews: (ev, also) => townNews(ev, also), gossip: (a, b) => TL.gossip(S.progress.news, a, b, () => 0), sprouts: () => things.filter(t => t.o && t.o.sprout).length, step: (i, j, n = 1) => { for (let k = 0; k < n; k++) TL.stepOn(growthOf(C.id), cityWorld, i, j); }, checkQuests: () => checkQuests(), open: k => ({ homes: showHomes, places: showPlaces, friends: showFriends, journal: showJournal, profile: showProfile, shop: showShop, island: showIsland, market: showMarket, craft: showCraft, restore: showRestore, settings: showSettings, wardrobe: showWardrobe, needs: showNeeds, districts: showDistricts, adminLogin: showAdminLogin, venue: () => showVenue(C.venues[0]), home: () => showHome(cityWorld.objects.find(o => o.home)), neighbour: () => showNeighbour(cityNpcs.find(n => !n.generic)), chat: () => showEmojiChat(cityNpcs.find(n => !n.generic)) })[k](),
   birds: () => (C ? birdsFor(C).map(b => ({ x: +b.x.toFixed(2), y: +b.y.toFixed(2), fly: b.fly > 0, gone: b.gone > 0 })) : []), tapBird: () => { const b = C && birdsFor(C).find(x => !x.fly && !x.gone); return b ? tapBirds(b.x, b.y) : false; }, shakeNearestTree: () => { const t = things.filter(x => x.o && x.o.kind === 'tree').sort((a, b) => Math.hypot(a.ax - player.x, a.ay - player.y) - Math.hypot(b.ax - player.x, b.ay - player.y))[0]; if (!t) return false; const d = actionsFor('tree')[0]; queueAction(d, { o: t.o }); return t.o.tree; }, homeCount: () => world.objects.filter(o => o.home).length, treeCount: () => things.filter(t => t.o && t.o.kind === 'tree').length,
   pieList: () => { const out = [], seen = new Set(); for (const t of things) { const o = t.o; if (!t.interactive || !o) continue; const key = o.type || o.kind; if (seen.has(key)) continue; seen.add(key); out.push(key); } for (const n of npcs) if (npcVisible(n) && !seen.has('npc')) { seen.add('npc'); out.push('npc'); } return out; },
   pieFor: key => { closeSheet(); if (key === 'npc') { const n = npcs.find(n => npcVisible(n)); if (n) showPie({ npc: n }, W / 2, H / 2); return !!n; } const t = things.find(t => t.interactive && t.o && (t.o.type || t.o.kind) === key); if (t) showPie({ o: t.o }, W / 2, H / 2); return !!t; }, cancel: () => cancelActions(), peers: () => shownPeers().map(p => ({ name: p.name, x: +p.x.toFixed(2), y: +p.y.toFixed(2), emote: p.emote || null })), allPeers: () => [...peers.values()].map(p => ({ name: p.name, scene: p.scene })), emoteTo: e => sendEmote(e, [...peers.values()][0]), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, x: n.x, y: n.y, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { const d0 = Math.floor(S.progress.clock / 1440); S.progress.clock = m; if (Math.floor(m / 1440) !== d0 && C) growCity(C); }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); if (!f) return false; const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); if (!t) return false; queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };

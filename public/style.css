@@ -66,6 +66,11 @@ body.touch .joystick { display: block; }
 .ctl svg { width: 24px; height: 24px; }
 .ctl-cam { width: 50px; height: 50px; right: 96px; bottom: 84px; }
 .ctl-cam.free { background: #FFF0C2; color: #8A5A00; }
+/* Follow camera toggle: sits above the camera button outdoors; rooms are small, so it hides indoors. */
+.ctl-view { width: 44px; height: 44px; right: 99px; bottom: 146px; }
+.ctl-view svg { width: 22px; height: 22px; }
+.ctl-view[aria-pressed="true"] { background: var(--sun); color: #5A3B00; box-shadow: 0 4px 0 var(--sun-d), 0 8px 18px rgba(28,54,92,.2); }
+body.indoors .ctl-view { display: none; }
 .ctl-run { width: 54px; height: 54px; right: 104px; bottom: 14px; }
 .ctl-run[aria-pressed="true"] { background: var(--sun); color: #5A3B00; box-shadow: 0 4px 0 var(--sun-d), 0 8px 18px rgba(28,54,92,.2); }
 .ctl-act { width: 86px; height: 86px; right: 0; bottom: 6px; background: var(--leaf); color: #fff; box-shadow: 0 5px 0 var(--leaf-d), 0 10px 22px rgba(28,54,92,.25); }
