@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Willowvale</title>
+    <link rel="modulepreload" href="splash.js">
+    <link rel="stylesheet" href="fonts.css">
+    <style>
+    :root {
+      --ink: #26395a;
+      --muted: #5b6b86;
+      --sun: #ffc83d;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      width: 100dvw;
+      height: 100dvh;
+      overflow: hidden;
+      background: linear-gradient(
+        180deg,
+        #8ed3f2 0%,
+        #bfe7f7 55%,
+        #a8dc84 55%,
+        #8fd06f 100%
+      );
+      color: var(--ink);
+      font:
+        600 15px / 1.4 Nunito,
+        system-ui,
+        sans-serif;
+      display: grid;
+      place-items: center;
+    }
+    main {
+      width: min(460px, 100% - 24px);
+      display: grid;
+      gap: 10px;
+      justify-items: center;
+      text-align: center;
+    }
+    h1 {
+      margin: 0;
+      font:
+        800 34px / 1 'Baloo 2',
+        system-ui,
+        sans-serif;
+      color: #fff;
+      text-shadow: 0 3px 0 #2e7fb0;
+    }
+    .sub {
+      margin: -4px 0 0;
+      font:
+        700 15px / 1.2 'Baloo 2',
+        system-ui,
+        sans-serif;
+      color: #1f5f86;
+    }
+    #folks {
+      display: flex;
+      justify-content: center;
+      gap: 2px;
+      height: 72px;
+    }
+    .folk {
+      width: 64px;
+      height: 64px;
+    }
+    .panel {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 20px;
+      background: #fff9efee;
+      box-shadow: 0 8px 24px #1b224033;
+    }
+    .panel h2 {
+      margin: 0 0 6px;
+      font:
+        800 16px / 1 'Baloo 2',
+        system-ui,
+        sans-serif;
+    }
+    #errands {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 4px;
+      text-align: left;
+    }
+    #errands li {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 5px 10px;
+      border-radius: 12px;
+      background: #fff;
+    }
+    .line {
+      margin: 6px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    #me {
+      font-weight: 800;
+      color: var(--ink);
+    }
+    #play {
+      width: 100%;
+      padding: 14px;
+      border: 0;
+      border-radius: 16px;
+      background: var(--sun);
+      color: #5a3a00;
+      font:
+        800 20px / 1 'Baloo 2',
+        system-ui,
+        sans-serif;
+      box-shadow: 0 5px 0 #d99a00;
+      cursor: pointer;
+    }
+    #play:active {
+      transform: translateY(3px);
+      box-shadow: 0 2px 0 #d99a00;
+    }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Willowvale</h1>
+      <p class="sub">Animal Town · <span id="day">Today</span></p>
+      <div id="folks" aria-hidden="true"></div>
+      <section class="panel">
+        <h2>📋 Today’s errands</h2>
+        <ul id="errands">
+          <li><b>⏳</b><span>Loading…</span></li>
+        </ul>
+        <p class="line" id="me"></p>
+        <p class="line" id="town"></p>
+      </section>
+      <button id="play" type="button">Play</button>
+    </main>
+    <script src="splash.js" type="module"></script>
+  </body>
+</html>

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+# built and copied files (see scripts/sync.mjs)
+public/*.js
+public/*.js.map
+public/js/
+public/fonts/
+public/fonts.css
+public/style.css
+public/game.html
+public/app-icon.svg

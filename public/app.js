@@ -1,5 +1,5 @@
 // Willowvale: the illustrated animal city. Canvas 2D engine + phone-first UI.
-import { N, T, buildWorld, findPath, nearestWalkable, stepOK, DISTRICTS, districtAt, HOMES, VENUES, NEIGHBOURS } from './js/world.js';
+import { N, T, rng, buildWorld, findPath, nearestWalkable, stepOK, DISTRICTS, districtAt, HOMES, VENUES, NEIGHBOURS } from './js/world.js';
 import * as A from './js/art.js';
 import * as F from './js/furniture.js';
 import { buildHome, O as HOME_O } from './js/home.js';
@@ -10,11 +10,16 @@ import { CITY_LIST, ROUTES, CITY_PACKS, cityMeta, buildCity, addWillowvaleRoad }
 import * as CA from './js/cityart.js';
 import { GAME } from './js/games.js';
 import * as L from './js/life.js';
+import * as TL from './js/townlife.js';
+import * as FC from './js/followcam.js';
 const { ITEMS, itemName } = L;
 import { NEEDS, freshNeeds, mood, moodLabel, moodColor, needColor, SPEEDS, GAME_MIN_PER_SEC, clockText, dayOf, hourOf, skyTint, isNight, actionsFor, TRAITS, SKILLS, SKILL_MAX, xpForLevel, CAREER, CAREERS, friendLevel } from './js/sim.js';
 
 const IS_NATIVE = location.protocol === 'capacitor:' || !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
 const API_BASE = IS_NATIVE ? (safeGet('willowvale_server') || 'https://willowvale-animal-town.onrender.com') : '';
+// Running inside a Reddit post (Devvit): the Reddit account replaces nicknames and passwords, saves go to
+// the post's app server, and the daily errands follow the calendar so everyone shares the same ones.
+const RD = window.WV_REDDIT || null;
 const $ = id => document.getElementById(id);
 function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function safeSet(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch { /* storage blocked */ } }
@@ -30,8 +35,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 // A save can come back damaged (an old version, a half-written write, a hand-edited cloud save).
 // Drop any part that has the wrong type so the setup below fills it with a fresh default.
 const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
-const SHAPE_LISTS = ['done', 'achievements', 'owned', 'packs', 'decor', 'plots'];
-const SHAPE_MAPS = ['visits', 'friends', 'daily', 'stats', 'places', 'skills', 'jobs', 'visited', 'unlocked', 'homes', 'found', 'restore', 'picked', 'needs'];
+const SHAPE_LISTS = ['done', 'achievements', 'owned', 'packs', 'decor', 'plots', 'news'];
+const SHAPE_MAPS = ['visits', 'friends', 'daily', 'stats', 'places', 'skills', 'jobs', 'visited', 'unlocked', 'homes', 'found', 'restore', 'picked', 'needs', 'growth'];
 function fixShape(p) {
   for (const k of SHAPE_LISTS) if (k in p && !Array.isArray(p[k])) delete p[k];
   for (const k of SHAPE_MAPS) if (k in p && !isObj(p[k])) delete p[k];
@@ -50,11 +55,11 @@ function loadProgress() {
   return base;
 }
 const S = {
-  token: safeGet('willowvale_token') || '',
+  token: RD ? (RD.user ? 'reddit' : '') : (safeGet('willowvale_token') || ''),
   user: null,
   profile: (v => isObj(v) && typeof v.species === 'string' ? v : null)(store.get('willowvale_player_v2', null)),
   progress: loadProgress(),
-  settings: Object.assign({ labels: true, reduced: false, music: true, sfx: true, freewill: true }, store.get('willowvale_settings_v2', {})),
+  settings: Object.assign({ labels: true, reduced: false, music: true, sfx: true, freewill: true, follow: false }, store.get('willowvale_settings_v2', {})),
   coins: 0,
   properties: null,
   online: 'guest',
@@ -72,6 +77,8 @@ S.progress.owned = S.progress.owned || [];
 S.progress.skills = Object.assign(Object.fromEntries(SKILLS.map(k => [k.k, { lv: 0, xp: 0 }])), S.progress.skills || {});
 // careers: one ladder per town, one shift a day across all of them
 S.progress.jobs = S.progress.jobs || {};
+if (!Array.isArray(S.progress.news)) S.progress.news = [];
+if (!S.progress.growth || typeof S.progress.growth !== 'object' || Array.isArray(S.progress.growth)) S.progress.growth = {};
 if (S.progress.job) { S.progress.jobs.tram = { level: S.progress.job.level || 0, good: S.progress.job.good || 0 }; S.progress.lastWorkDay = S.progress.job.lastDay || 0; delete S.progress.job; }
 for (const k of Object.keys(CAREERS)) S.progress.jobs[k] = Object.assign({ level: 0, good: 0 }, S.progress.jobs[k] || {});
 S.progress.lastWorkDay = S.progress.lastWorkDay || 0;
@@ -98,6 +105,13 @@ let RESETTING = false;
 // One wallet: coins live in the save, on this device and (when signed in) in the cloud.
 const CLOUD = Object.assign({ version: 0, user: null, dirty: false, state: 'off', savedAt: 0, ready: false }, store.get('willowvale_cloud_v1', {}));
 const saveProgress = () => { if (RESETTING) return; S.progress.coins = S.coins; store.set('willowvale_progress_v2', S.progress); CLOUD.dirty = true; };
+// The clock and needs change every second without anything calling saveProgress, so keep this device's
+// copy fresh: every 15 seconds and whenever the page is hidden or closed. This doesn't count as a cloud
+// change; the next real save carries the time along.
+const saveLocal = () => { if (RESETTING) return; S.progress.coins = S.coins; store.set('willowvale_progress_v2', S.progress); };
+setInterval(saveLocal, 15000);
+window.addEventListener('pagehide', saveLocal);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveLocal(); });
 const saveSettings = () => store.set('willowvale_settings_v2', S.settings);
 
 // ---------- world ----------
@@ -106,7 +120,9 @@ let world = null;
 const canvas = $('world'), ctx = canvas.getContext('2d');
 let W = 0, H = 0, DPR = 1;
 const mobile = () => Math.min(W, H) < 620;
-const cam = { x: 0, y: 0, zoom: 0.6, tz: 0, free: false };
+const cam = { x: 0, y: 0, zoom: 0.6, tz: 0, free: false, lead: [0, 0], last: null };
+// Default zoom outdoors: closer when the follow camera is on.
+const outdoorZoom = () => (S.settings.follow ? FC.followZoom(mobile()) : mobile() ? 0.56 : 0.72);
 
 const tileCache = new Map();
 function tileSpr(type, i, j) {
@@ -168,7 +184,7 @@ function addDecor(list, flatList, decor) {
     const x = d.i + 0.5 + (d.ox || 0), y = d.j + 0.5 + (d.oy || 0);
     if (d.kind === 'flowers' || d.kind === 'bench') { flatList.push({ d, x, y, sprite: smallSpr(d.kind, d.seed || 0, d.face, d.kind === 'flowers' && d.marigold && (d.seed % 2) ? 'marigold' : null) }); continue; }
     const t = { o: d, box: [d.i + 0.2, d.j + 0.2, d.i + 0.8, d.j + 0.8], ax: x, ay: y, centered: true };
-    if (d.kind === 'tree') { t.sprite = treeSpr(d.tree, d.seed); t.treeShadow = true; }
+    if (d.kind === 'tree') { t.sprite = treeSpr(d.tree, d.seed); t.treeShadow = true; t.interactive = true; }
     else t.sprite = smallSpr(d.kind, d.seed || 0, d.face, d.kind === 'lamp' ? d.art : null);
     list.push(t);
   }
@@ -229,6 +245,7 @@ class Walker {
   update(dt) {
     this.tick(dt);
     if (this.emote) { this.emoteLife -= dt; if (this.emoteLife <= 0) this.emote = null; }
+    if (this.line) { this.lineLife -= dt; if (this.lineLife <= 0) this.line = null; }
     if (this.wave > 0) this.wave -= dt;
     if (!this.path.length) { this.moving = false; return; }
     const [tx, ty] = this.path[0], dx = tx - this.x, dy = ty - this.y, dist = Math.hypot(dx, dy);
@@ -242,6 +259,7 @@ class Walker {
     this.walk += step * 5.2;
   }
   say(emoji, life = 2.4) { this.emote = emoji; this.emoteLife = life; }
+  speak(text, life = 5) { this.line = text; this.lineLife = life; }
 }
 
 const playerStart = [23.5, 23.5];
@@ -288,6 +306,7 @@ function waterPlot(k) {
 function harvestPlot(k) {
   const p = S.progress.plots[k]; const n = L.harvestCount(p, L.seasonOf(gameDay()));
   addItem(p.crop, n); toast(`You picked ${n} ${itemName(p.crop, n)}! ${ITEMS[p.crop].icon}`); player.say(ITEMS[p.crop].icon, 2);
+  townNews({ t: 'harvest', item: itemName(p.crop, 2) });
   S.progress.plots[k] = {}; bumpStat('harvests'); addXP('creativity', 3); SND.sfx('coin'); saveProgress(); checkQuests(); checkAchievements();
 }
 function drawPlotLive(f, sx, sy, z) {
@@ -348,6 +367,20 @@ function drawPickups(z) {
   }
 }
 function nearestPickup(x, y, r = 1.3) { let best = null, bd = r; for (const p of livePickups()) { const [px, py] = pickupPos(p); const d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = p; } } return best; }
+// Shaking a tree: each tree drops something once a game day. What falls depends on the tree.
+const TREE_DROPS = { blossom: ['flowers', 'flowers', 'feather'], cherry: ['flowers', 'flowers', 'feather'], palm: ['shell', 'wood', 'berries'], pine: ['wood', 'wood', 'feather'], maple: ['wood', 'berries', 'feather'], banyan: ['wood', 'feather', 'berries'], bamboo: ['wood', 'wood'], willow: ['wood', 'feather'] };
+function shakeTree(o) {
+  o.shakeT = 1.2; shakingTrees.add(o); townNews({ t: 'tree' });
+  const day = gameDay(), key = (C ? C.id : '') + ':' + o.i + ',' + o.j;
+  const sh = S.progress.shaken && S.progress.shaken.day === day ? S.progress.shaken : (S.progress.shaken = { day, trees: [] });
+  if (sh.trees.includes(key)) { toast('Only leaves fell. Try another tree, or come back tomorrow.'); player.say('🍃', 1.4); return; }
+  sh.trees.push(key);
+  const r = rng(hashStr(key) + day * 31), roll = r();
+  if (roll < 0.12) { setCoins(S.coins + 2, true); toast('A shiny coin dropped out! +2 ✦'); player.say('🪙', 1.6); saveProgress(); return; }
+  if (roll < 0.25) { toast('A sleepy bird flew out and said hello!'); player.say('🐦', 1.8); saveProgress(); return; }
+  const list = TREE_DROPS[o.tree] || ['berries', 'wood', 'feather'], item = list[Math.floor(r() * list.length)];
+  addItem(item, 1); toast(`Something fell out: ${ITEMS[item].icon} ${itemName(item, 1)}!`); player.say(ITEMS[item].icon, 1.6);
+}
 function collectPickup(p) {
   if (!p || S.progress.picked[pickedKey(C, p)]) return;
   const go = () => {
@@ -355,14 +388,14 @@ function collectPickup(p) {
     const [px, py] = pickupPos(p); player.face(px, py);
     if (p.bug && (p.item === 'bee' || p.item === 'butterfly') && Math.random() < 0.2 - skillLv('fitness') * 0.015) { toast(`The ${itemName(p.item, 1)} flew away! Try again.`); player.say('💨', 1.4); p.ph += 2; return; }
     S.progress.picked[pickedKey(C, p)] = 1;
-    addItem(p.item, 1); bumpStat(p.bug ? 'bugs' : 'gathers'); SND.sfx('pop'); player.say(ITEMS[p.item].icon, 1.5);
+    addItem(p.item, 1); bumpStat(p.bug ? 'bugs' : 'gathers'); if (p.bug) townNews({ t: 'bug', item: itemName(p.item, 1) }); SND.sfx('pop'); player.say(ITEMS[p.item].icon, 1.5);
     toast(`${p.bug ? 'Caught' : 'Found'} a ${ITEMS[p.item].icon} ${itemName(p.item, 1)}!`); checkQuests(); checkAchievements();
   };
   const [px, py] = pickupPos(p);
   if (Math.hypot(px - player.x, py - player.y) < 1.2) go(); else walkTo(px, py, go);
 }
 // old picked keys are cleared away so the save stays small
-function pruneDaily() { const d = gameDay(); for (const k of Object.keys(S.progress.daily)) { const m = k.match(/^(?:req|mail|q):(\d+)/); if (m && +m[1] < d - 2) delete S.progress.daily[k]; } }
+function pruneDaily() { const d = gameDay(); for (const k of Object.keys(S.progress.daily)) { const m = k.match(/^(?:req|mail|q|greet):(\d+)/); if (m && +m[1] < d - 2) delete S.progress.daily[k]; } }
 function prunePicked() { const d = gameDay(); for (const k of Object.keys(S.progress.picked)) if (+k.split(':')[1] < d) delete S.progress.picked[k]; }
 
 // ---------- the market: buy seeds, sell what you've gathered ----------
@@ -400,7 +433,7 @@ function showCraft() {
     const needs = Object.entries(r.needs).map(([k, n]) => `<span class="need-chip ${have(k) >= n ? 'ok' : ''}">${ITEMS[k].icon} ${Math.min(have(k), n)}/${n}</span>`).join('');
     const el = h(`<div class="trade-row ${known ? '' : 'locked'}"><span class="trade-icon">${known ? it.icon : '🔒'}</span><div class="trade-main"><b>${esc(it.one[0].toUpperCase() + it.one.slice(1))}${it.cat === 'decor' ? ' <small class="tag">for your home</small>' : ''}</b><small>${known ? needs : `Learn it from ${esc(r.teach)} (3 hearts)`}</small></div>${known ? `<button class="btn ${ok ? 'btn-primary' : 'btn-ghost'} btn-small" ${ok ? '' : 'disabled'}>Make</button>` : ''}</div>`);
     const b = el.querySelector('button');
-    if (b) b.onclick = () => { if (!L.craft(r, inv)) return; if (!S.progress.found[r.id]) { S.progress.found[r.id] = 1; } addXP(r.skill, 6); bumpStat('crafted'); SND.sfx('done'); player.say(it.icon, 2); toast(`You made a ${it.icon} ${it.one}!${it.cat === 'decor' ? ' Tap 🛋️ Decorate at home to place it.' : ''}`); saveProgress(); checkQuests(); checkAchievements(); showCraft(); };
+    if (b) b.onclick = () => { if (!L.craft(r, inv)) return; if (!S.progress.found[r.id]) { S.progress.found[r.id] = 1; } addXP(r.skill, 6); bumpStat('crafted'); townNews({ t: 'craft', item: it.one }); SND.sfx('done'); player.say(it.icon, 2); toast(`You made a ${it.icon} ${it.one}!${it.cat === 'decor' ? ' Tap 🛋️ Decorate at home to place it.' : ''}`); saveProgress(); checkQuests(); checkAchievements(); showCraft(); };
     body.append(el);
   }
 }
@@ -422,6 +455,7 @@ function deliverRequest(n, rq) {
     addMemory(n.name, `You brought me ${rq.n} ${itemName(rq.item, rq.n)} when I needed ${rq.n === 1 ? 'it' : 'them'}`, f);
     S.progress.friends[n.name] = f;
     n.say('🥰', 3); player.say('💛', 2); SND.sfx('unlock'); bumpStat('delivered');
+    townNews({ t: 'delivered', who: n.name, item: itemName(rq.item, 1) }, [n.name]);
     toast(`${n.name} is so happy! +${rq.coins} ✦ and a heart.`); saveProgress(); checkQuests(); checkAchievements();
   };
   if (d < 2) give(); else walkTo(n.x, n.y + 0.8, give);
@@ -578,6 +612,7 @@ function showRestore() {
       addItem(k, -n); r.given[k] = (r.given[k] || 0) + n; SND.sfx('pop');
       if (Object.keys(step.needs).every(x => left(x) <= 0)) {
         r.stage++; r.given = {}; setCoins(S.coins + 40, true); SND.sfx('unlock');
+        townNews({ t: 'garden' }, (CITIES.willowvale?.npcs || []).slice(0, 2).map(x => x.name));
         celebrations.push({ title: 'The garden grows!', emojis: ['🌱', '🌼', '🦋'].slice(0, 1 + r.stage % 3), label: `${step.title}: done! +40 ✦` });
         const rec = CITIES.willowvale; if (rec && rec.garden) { rec.garden.stage = r.stage; const t = rec.things.find(t2 => t2.o === rec.garden); if (t) { t.sprite = CA.landmarkSprite(rec.garden); t.top = CA.oldGardenTop(r.stage); } }
         if (r.stage >= L.RESTORE.length && rec) { addFern(rec); celebrations.push({ title: 'A new neighbour!', emojis: ['🦌', '🏡'], label: 'Fern the deer loved the garden so much she moved in.' }); }
@@ -591,14 +626,14 @@ function showRestore() {
 
 // ---------- daily quests ----------
 function questState() {
-  const day = gameDay(), key = 'q:' + day;
+  const day = RD ? RD.dayNo : gameDay(), key = 'q:' + day;
   const st = statsView();
   if (!S.progress.daily[key]) S.progress.daily[key] = { base: Object.fromEntries(L.QUESTS.map(q => [q.stat, st[q.stat] || 0])), done: {} };
   const q = S.progress.daily[key];
   return L.questsFor(day).map(x => ({ ...x, have: Math.min(x.n, (st[x.stat] || 0) - (q.base[x.stat] || 0)), done: !!q.done[x.id] }));
 }
 function checkQuests() {
-  const day = gameDay(), key = 'q:' + day;
+  const day = RD ? RD.dayNo : gameDay(), key = 'q:' + day;
   for (const q of questState()) if (!q.done && q.have >= q.n) { S.progress.daily[key].done[q.id] = 1; setCoins(S.coins + 20, true); bumpStat('quests'); toast(`Quest done: ${q.text}! +20 ✦`); SND.sfx('done'); }
   for (const k of Object.keys(S.progress.daily)) if (k.startsWith('q:') && +k.slice(2) < day - 1) delete S.progress.daily[k];
   saveProgress();
@@ -614,7 +649,7 @@ function gameDone(id, res) {
   if (coins) setCoins(S.coins + coins, true);
   S.progress.needs.fun = Math.min(100, S.progress.needs.fun + 10 + Math.min(20, sc));
   addXP('logic', Math.min(12, sc / 3));
-  bumpStat('games');
+  bumpStat('games'); townNews({ t: 'game', item: GAMES[id].name });
   if (sc) { player.say(sc > best ? '🏆' : '😄', 2); toast(`${GAMES[id].name}: ${sc} points${coins ? `, +${coins} ✦` : ''}${sc > best && best ? '. New high score!' : ''}`); }
   staffReact({ emotes: ['🏆'] });
   saveProgress(); checkAchievements();
@@ -660,7 +695,7 @@ function castLine() {
     if (res && res.caught) {
       const f = res.caught;
       S.progress.inventory.fish = (S.progress.inventory.fish || 0) + 1;
-      setCoins(S.coins + f.coins, true); bumpStat('fish');
+      setCoins(S.coins + f.coins, true); bumpStat('fish'); townNews({ t: 'fish', item: f.name });
       S.progress.catches = S.progress.catches || {}; S.progress.catches[f.name] = (S.progress.catches[f.name] || 0) + 1;
       S.progress.needs.fun = Math.min(100, S.progress.needs.fun + 14);
       player.say(f.icon, 2.5); SND.sfx('coin'); toast(`You caught a ${f.name}! +${f.coins} ✦ and a fish for your bag.`);
@@ -788,6 +823,7 @@ function getCity(id) {
   const made = makeThings(rec.world);
   Object.assign(rec, made, { venuesById: made.byId, myHome: rec.world.objects.find(o => o.kind === 'myhome') || null });
   rec.npcs = makeNpcs(rec.neighbours, rec.world, id.length * 97);
+  growCity(rec);
   if (rec.garden && S.progress.restore.stage >= L.RESTORE.length) addFern(rec);
   rec.meta = cityMeta(id);
   CITIES[id] = rec;
@@ -814,7 +850,8 @@ function setScene(name, x, y) {
   if (player.boat) { player.boat = false; document.body.classList.remove('boating'); }
   marker = null; cam.free = false; cam.tz = 0; cam.manual = false;
   if (name === 'home' || name === 'venue') { cam.zoom = mobile() ? (name === 'venue' ? 0.46 : 0.4) : 0.66; const rc = roomCenter(); const p = A.P(rc[0], rc[1], 30); cam.x = p[0]; cam.y = p[1]; }
-  else { cam.zoom = mobile() ? 0.56 : 0.72; const p = A.P(player.x, player.y, 34); cam.x = p[0]; cam.y = p[1]; }
+  else { cam.zoom = outdoorZoom(); const p = A.P(player.x, player.y, 34); cam.x = p[0]; cam.y = p[1]; }
+  cam.lead = [0, 0]; cam.last = null;
   radarMap = buildRadarMap(); update.lastDistrict = null; lastNear = '';
   document.body.classList.toggle('indoors', name === 'home' || name === 'venue');
   document.body.classList.toggle('at-home', name === 'home');
@@ -831,11 +868,16 @@ function enterHome(o) {
   S.progress.homeDoor = { city: C.id, x: door[0] + 0.5, y: door[1] + 0.5, name: o?.name || 'Your cottage' };
   fadeTo(() => { setScene('home', ...homeWorld.insideDoor); player.face(player.x - 1, player.y - 1); toast(o && o.home ? `Welcome home to ${o.name}` : 'Home sweet home'); });
 }
+// Where you are in town: your own spot outdoors, or the door of the building you're inside.
+function outsidePos() {
+  if (sceneName === 'city') return [player.x, player.y];
+  if (sceneName === 'venue') { const v = ROOM.world.venue, dt0 = v.doorTile || [v.i + v.w, v.j + v.d]; return [dt0[0] + 0.5, dt0[1] + 0.5]; }
+  const hd = S.progress.homeDoor && S.progress.homeDoor.city === C.id ? S.progress.homeDoor : null;
+  return hd ? [hd.x, hd.y] : myHome ? [myHome.doorTile[0] + 0.5, myHome.doorTile[1] + 0.5] : C.stop.stand;
+}
 function leaveHome() {
   cancelActions(); closePie();
-  if (sceneName === 'venue') { const v = ROOM.world.venue, dt0 = v.doorTile || [v.i + v.w, v.j + v.d]; fadeTo(() => { setScene('city', dt0[0] + 0.5, dt0[1] + 0.5); player.face(player.x + 1, player.y + 1); }); return; }
-  const hd = S.progress.homeDoor && S.progress.homeDoor.city === C.id ? S.progress.homeDoor : null;
-  const [x, y] = hd ? [hd.x, hd.y] : myHome ? [myHome.doorTile[0] + 0.5, myHome.doorTile[1] + 0.5] : C.stop.stand;
+  const [x, y] = outsidePos();
   fadeTo(() => { setScene('city', x, y); player.face(player.x + 1, player.y + 1); });
 }
 // ---------- neighbours live their own lives ----------
@@ -976,14 +1018,14 @@ function npcThink(n, dt, gm) {
       t.emoteT -= dt;
       if (t.emoteT <= 0 && t.emotes && n.pose !== 'inside') { t.emoteT = 2.2 + Math.random() * 2; n.say(t.emotes[Math.floor(Math.random() * t.emotes.length)], 1.8); }
       if (t.kind === 'chat' && t.partner && (!t.partner.task || t.partner.task.partner !== n)) { npcEnd(n); return; }
-      if (t.t >= t.mins - 0.001) npcEnd(n);
+      if (t.t >= t.mins - 0.001) { if (t.kind === 'chat' && t.partner && n.name < t.partner.name) gossipBetween(n, t.partner); npcEnd(n); }
     } else if (t.phase === 'wait') { if (!t.partner.task || t.partner.task.partner !== n) npcEnd(n); }
     else if (t.kind === 'jog') { t.emoteT -= dt; if (t.emoteT <= 0) { t.emoteT = 3 + Math.random() * 3; n.say(['💦', '🏃', '💪', '☀️'][Math.floor(Math.random() * 4)], 1.4); } if (!n.path.length && !n.onArrive) npcEnd(n); }
     else if (!n.path.length && !n.onArrive) npcEnd(n);
     return;
   }
   if (n.path.length) return;
-  if (sceneName === 'city' && Math.hypot(player.x - n.x, player.y - n.y) < 2.2) { n.face(player.x, player.y); if (!n.greeted) { n.greeted = true; n.say(['👋', '☀️', '💛', '🎵'][n.seed % 4]); } }
+  if (sceneName === 'city' && Math.hypot(player.x - n.x, player.y - n.y) < 2.2) { n.face(player.x, player.y); if (!n.greeted) { n.greeted = true; greetPlayer(n); } }
   else n.greeted = false;
   n.wait -= dt;
   if (n.wait > 0) return;
@@ -1006,7 +1048,7 @@ function resize() {
   document.body.classList.toggle('is-phone', mobile());
 }
 window.addEventListener('resize', resize); resize();
-cam.zoom = mobile() ? 0.56 : 0.72;
+cam.zoom = outdoorZoom();
 { const p = A.P(player.x, player.y, 30); cam.x = p[0]; cam.y = p[1]; }
 
 const toScreen = (x, y, z = 0) => { const p = A.P(x, y, z); return [(p[0] - cam.x) * cam.zoom + W / 2, (p[1] - cam.y) * cam.zoom + H / 2]; };
@@ -1150,6 +1192,7 @@ function drawFrame(now) {
     (t.shadow || TREE_SHADOW).draw(ctx, sx, sy, z);
   }
   ctx.globalAlpha = 1;
+  if (world === cityWorld && C) drawWorn(z);
   for (const f of flats) { const [sx, sy] = toScreen(f.x, f.y); if (onScreen(sx, sy, (f.obj ? 420 : 80) * z)) { f.sprite.draw(ctx, sx, sy, z); if (f.furn && f.furn.type === 'plot') drawPlotLive(f, sx, sy, z); } }
   drawPickups(z);
   if (world === homeWorld) drawDecorGrid(z);
@@ -1176,9 +1219,14 @@ function drawFrame(now) {
     return { char: c, box: [c.x - 0.25, c.y - 0.25, c.x + 0.25, c.y + 0.25] };
   });
   for (const c of chars) { const [sx, sy] = toScreen(c.char.x, c.char.y); if (onScreen(sx, sy, 100)) list.push(c); }
+  // Birds on the ground are drawn first (they live on open paths, so little stands behind them), and
+  // flying ones last; that keeps them out of the depth sort, which gets slow with many items.
+  const birdsNow = sceneName === 'city' && C && birdsAwake() ? birdsFor(C).filter(b => !(b.gone > 0)) : [];
+  for (const b of birdsNow) if (!(b.fly > 0)) { const [sx, sy] = toScreen(b.x, b.y); if (onScreen(sx, sy, 60)) drawGroundBird(b, z); }
   drawn = sortScene(list);
   for (const t of drawn) drawThing(t, z);
   drawPlayerIfHidden(z);
+  for (const b of birdsNow) if (b.fly > 0) drawGroundBird(b, z);
   drawFx(z);
 
   // overlays
@@ -1194,6 +1242,7 @@ function drawFrame(now) {
     const [sx, sy] = toScreen(c.x, c.y);
     A.drawEmote(ctx, sx, sy - 74 * z, Math.max(0.7, z), c.emote, c.emoteLife);
   }
+  for (const c of npcs) if (c.line && npcVisible(c)) { const [sx, sy] = toScreen(c.x, c.y); drawSpeech(sx, sy - (c.emote ? 112 : 84) * z, c.line, Math.min(1, c.lineLife * 2)); }
   drawLabels(z);
   drawPeerNames(z);
   if (!indoor) drawBirds(dt);
@@ -1285,9 +1334,11 @@ function drawThing(t, z) {
   const [sx, sy] = t.centered ? toScreen(t.ax, t.ay) : toScreen(t.ax, t.ay);
   if (t.o.kind === 'tree' && !S.settings.reduced) {
     // gentle sway
-    ctx.save(); ctx.translate(sx, sy); ctx.transform(1, 0, Math.sin(time * 1.2 + t.ax * 0.7 + t.ay) * 0.025, 1, 0, 0);
-    t.sprite.draw(ctx, 0, 0, z); ctx.restore();
-  } else if (t.flipX) { ctx.save(); ctx.translate(sx, sy); ctx.scale(-1, 1); t.sprite.draw(ctx, 0, 0, z); ctx.restore(); }
+    const shook = t.o.shakeT > 0 ? Math.sin(time * 28) * 0.11 * Math.min(1, t.o.shakeT) : 0;
+    ctx.save(); ctx.translate(sx, sy); ctx.transform(1, 0, Math.sin(time * 1.2 + t.ax * 0.7 + t.ay) * 0.025 + shook, 1, 0, 0);
+    t.sprite.draw(ctx, 0, 0, z * (t.o.grow || 1)); ctx.restore();
+  } else if (t.o.grow) t.sprite.draw(ctx, sx, sy, z * t.o.grow);
+  else if (t.flipX) { ctx.save(); ctx.translate(sx, sy); ctx.scale(-1, 1); t.sprite.draw(ctx, 0, 0, z); ctx.restore(); }
   else t.sprite.draw(ctx, sx, sy, z);
   if (t.live === 'fountain') A.drawFountainWater(ctx, sx, sy, z, time);
   else if (t.live === 'clock') A.drawClockHands(ctx, sx, sy, z, new Date());
@@ -1389,8 +1440,84 @@ function drawBirds(dt) {
 
 // ---------- simulation ----------
 const keys = new Set();
+// Pigeons and sparrows peck about on the paths, and flutter off when someone walks up or taps them.
+function birdsFor(rec) {
+  if (rec.groundBirds) return rec.groundBirds;
+  const wd = rec.world, r = rng(hashStr(rec.id) + 7), out = [], spots = [];
+  for (let tries = 0; tries < 600 && spots.length < 6; tries++) {
+    const i = 5 + Math.floor(r() * 34), j = 5 + Math.floor(r() * 34);
+    if (!wd.walkable(i, j) || !wd.isRoad(i, j) || spots.some(([a, b]) => Math.hypot(a - i, b - j) < 6)) continue;
+    spots.push([i, j]);
+  }
+  for (const [i, j] of spots) for (let k = 0, n = 3 + Math.floor(r() * 2); k < n; k++) {
+    const hx = i + 0.15 + r() * 0.7, hy = j + 0.15 + r() * 0.7;
+    out.push({ hx, hy, x: hx, y: hy, z: 0, vx: 0, vy: 0, fly: 0, gone: 0, seed: r() * 10, kind: r() < 0.6 ? 'pigeon' : 'sparrow', face: r() < 0.5 ? 1 : -1, hop: r() * 2 });
+  }
+  return (rec.groundBirds = out);
+}
+const birdsAwake = () => { const h = hourOf(S.progress.clock); return h >= 6 && h < 20; };
+let lastFlap = 0;
+function scareBird(b, fromX, fromY) {
+  const a = Math.atan2(b.y - fromY, b.x - fromX) + (Math.random() - 0.5) * 0.9;
+  b.vx = Math.cos(a) * 3.2; b.vy = Math.sin(a) * 3.2; b.fly = 2.4; b.face = b.vx - b.vy > 0 ? 1 : -1;
+  if (time - lastFlap > 0.6) { lastFlap = time; SND.sfx('pop'); }
+}
+function updateBirds(dt) {
+  if (sceneName !== 'city' || !C || !birdsAwake()) return;
+  for (const b of birdsFor(C)) {
+    if (b.fly > 0) { b.fly -= dt; b.x += b.vx * dt; b.y += b.vy * dt; b.z += 80 * dt; if (b.fly <= 0) b.gone = 14 + Math.random() * 12; continue; }
+    if (b.gone > 0) { b.gone -= dt; if (b.gone <= 0) { b.x = b.hx; b.y = b.hy; b.z = 0; } continue; }
+    const scarer = [player, ...npcs].find(c => c.moving && c.pose !== 'inside' && Math.hypot(c.x - b.x, c.y - b.y) < (c === player ? 1.4 : 0.8));
+    if (scarer) { scareBird(b, scarer.x, scarer.y); continue; }
+    b.hop -= dt;
+    if (b.hop <= 0) {
+      b.hop = 0.5 + Math.random() * 1.8;
+      const nx = b.x + (Math.random() - 0.5) * 0.3, ny = b.y + (Math.random() - 0.5) * 0.3;
+      if (Math.hypot(nx - b.hx, ny - b.hy) < 0.8) { b.face = (nx - ny) > (b.x - b.y) ? 1 : -1; b.x = nx; b.y = ny; }
+    }
+  }
+}
+// Tapping near a bird sends the little flock flying (and now and then one drops a feather).
+function tapBirds(x, y) {
+  if (sceneName !== 'city' || !C || !birdsAwake()) return false;
+  const hit = birdsFor(C).filter(b => !b.fly && !b.gone && Math.hypot(b.x - x, b.y - y) < 0.7);
+  if (!hit.length) return false;
+  for (const b of birdsFor(C)) if (!b.fly && !b.gone && Math.hypot(b.x - hit[0].x, b.y - hit[0].y) < 1.2) scareBird(b, x - 0.3, y - 0.3);
+  const day = gameDay(), sh = S.progress.shaken && S.progress.shaken.day === day ? S.progress.shaken : (S.progress.shaken = { day, trees: [] });
+  if (!sh.feather && Math.random() < 0.35) { sh.feather = 1; addItem('feather', 1); toast('Flap flap! One of them dropped a 🪶 feather.'); }
+  else toast(['Coo coo! Off they go.', 'Flap flap flap!', 'The birds flew off. They’ll be back soon.'][Math.floor(Math.random() * 3)]);
+  return true;
+}
+function drawGroundBird(b, z) {
+  if (b.gone > 0) return;
+  const [sx, sy] = toScreen(b.x, b.y, b.z), s = z * 1.15;
+  const flying = b.fly > 0, flap = flying ? Math.sin(time * 32 + b.seed) : 0;
+  const peck = flying ? 0 : Math.max(0, Math.sin(time * 4.5 + b.seed * 3)) ** 8;
+  const pig = b.kind === 'pigeon', body = pig ? '#9AA3B5' : '#B5844F', wing = pig ? '#6F7A92' : '#7E5534', head = pig ? '#5E6982' : '#6E4A2E';
+  ctx.save(); ctx.translate(sx, sy); ctx.scale(b.face * s, s);
+  if (b.z < 6) { ctx.fillStyle = 'rgba(28,54,92,.16)'; ctx.beginPath(); ctx.ellipse(0, 0, 6, 2.3, 0, 0, 7); ctx.fill(); }
+  ctx.fillStyle = wing; ctx.beginPath(); ctx.moveTo(-5, -6); ctx.lineTo(-10.5, -8.5); ctx.lineTo(-9.5, -4.2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(0, -5.2, 6.2, 4.2, -0.1, 0, 7); ctx.fill();
+  if (pig) { ctx.fillStyle = '#7FC7B0'; ctx.beginPath(); ctx.ellipse(3.6, -6.8, 1.8, 2.4, 0.3, 0, 7); ctx.fill(); }
+  ctx.fillStyle = wing; ctx.beginPath();
+  if (flying) ctx.ellipse(-1, -9 - flap * 3.5, 6, 2, -0.3 - flap * 0.6, 0, 7); else ctx.ellipse(-1.2, -5.4, 4.2, 2.6, 0.15, 0, 7);
+  ctx.fill();
+  const hx = 5 + peck * 1.5, hy = -9.5 + peck * 6;
+  ctx.fillStyle = head; ctx.beginPath(); ctx.arc(hx, hy, 2.9, 0, 7); ctx.fill();
+  ctx.fillStyle = '#F2A93B'; ctx.beginPath(); ctx.moveTo(hx + 2.3, hy - 0.7); ctx.lineTo(hx + 5.2, hy + 0.3 + peck); ctx.lineTo(hx + 2.3, hy + 1.1); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(hx + 1, hy - 0.8, 1, 0, 7); ctx.fill();
+  ctx.fillStyle = '#1C2333'; ctx.beginPath(); ctx.arc(hx + 1.2, hy - 0.8, 0.55, 0, 7); ctx.fill();
+  if (!flying) { ctx.strokeStyle = '#E08A3A'; ctx.lineWidth = 0.9; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-1, -1.4); ctx.lineTo(-1.4, 0); ctx.moveTo(1.6, -1.4); ctx.lineTo(1.4, 0); ctx.stroke(); }
+  ctx.restore();
+}
+const shakingTrees = new Set();
 function update(dt) {
+  updateBirds(dt);
+  trackSteps();
   const onboardingOpen = !$('onboarding').classList.contains('hidden');
+  // trees wobble while being shaken, then settle
+  if (act && act.phase === 'do' && act.item.def.id === 'shake' && act.obj && act.obj.kind === 'tree') { act.obj.shakeT = 1; shakingTrees.add(act.obj); }
+  for (const o of shakingTrees) { o.shakeT -= dt * 1.4; if (o.shakeT <= 0) { o.shakeT = 0; shakingTrees.delete(o); } }
   // game time: speed setting, faster while asleep at work or at a long show
   const curDef = act && act.phase === 'do' ? act.step : null;
   const fast = curDef && curDef.fast ? curDef.fast : 1;
@@ -1436,6 +1563,18 @@ function update(dt) {
     const rc = roomCenter(), c = A.P(rc[0], rc[1], 30), p = A.P(player.x, player.y, 36), w = busy ? 1 : 0.4;
     target = [c[0] * (1 - w) + p[0] * w, c[1] * (1 - w) + p[1] * w];
     if (!cam.manual && !cam.tz) { const want = busy ? (mobile() ? 0.66 : 0.9) : (mobile() ? 0.4 : 0.62); cam.zoom += (want - cam.zoom) * (S.settings.reduced ? 1 : 1 - Math.exp(-dt * 2.5)); }
+  }
+  else if (S.settings.follow) {
+    // Follow camera: look ahead the way you're walking, with you a little low on screen.
+    const p = A.P(player.x, player.y, 34);
+    const [vx, vy] = cam.last && dt > 0 ? [(p[0] - cam.last[0]) / dt, (p[1] - cam.last[1]) / dt] : [0, 0];
+    cam.last = p;
+    // A jump (door, boat, teleport) isn't walking, so it shouldn't swing the view.
+    const jumped = Math.hypot(vx, vy) * dt > A.TW * 2;
+    if (S.settings.reduced || jumped) cam.lead = [0, 0];
+    else cam.lead = FC.stepLead(cam.lead, vx, vy, dt, W, H, cam.zoom, player.moving && !cam.free);
+    target = S.sheet && mobile() ? [p[0] + cam.lead[0], p[1] + cam.lead[1]] : FC.followTarget(p[0], p[1], cam.lead, H, cam.zoom, mobile());
+    if (!cam.manual && !cam.tz) { const want = FC.followZoom(mobile()); cam.zoom += (want - cam.zoom) * (S.settings.reduced ? 1 : 1 - Math.exp(-dt * 2.5)); }
   }
   else target = A.P(player.x, player.y, 34);
   if (cam.tz) {
@@ -1496,11 +1635,12 @@ canvas.addEventListener('wheel', e => { e.preventDefault(); setZoom(cam.zoom * M
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 const KEYMAP = { Shift: 'run', ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down', ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right' };
 window.addEventListener('keydown', e => {
-  if (e.target.closest('input, textarea, select')) return;
+  if (e.target.closest?.('input, textarea, select')) return;
   if (e.key === 'Escape') { closeSheet(); return; }
   if (e.key === 'e' || e.key === 'E' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); interactNearby(); return; }
   if (e.key === 'r' || e.key === 'R') { toggleRun(); return; }
   if (e.key === 'c' || e.key === 'C') { cameraButton(); return; }
+  if (e.key === 'v' || e.key === 'V') { toggleFollow(); return; }
   if (e.key === 'p' || e.key === 'P') { S.sheet === 'pause' ? closeSheet() : showSettings(); return; }
   if (e.key === '+' || e.key === '=') setZoom(cam.zoom * 1.15);
   if (e.key === '-') setZoom(cam.zoom / 1.15);
@@ -1540,7 +1680,7 @@ function tap(sx, sy) {
   if (mat) { showPie({ o: mat.furn }, sx, sy); return; }
   const bench = !world.interior && flats.find(f => f.d.kind === 'bench' && f.d.i === ti && f.d.j === tj);
   if (bench) { showPie({ o: bench.d }, sx, sy); return; }
-  { const [wx, wy] = toWorld(sx, sy); const pk = nearestPickup(wx, wy, 0.9); if (pk) { collectPickup(pk); return; } }
+  { const [wx, wy] = toWorld(sx, sy); const pk = nearestPickup(wx, wy, 0.9); if (pk) { collectPickup(pk); return; } if (tapBirds(wx, wy)) return; }
   const flatObj = !world.interior && flats.find(f => f.obj && !f.obj.deco && ti >= f.obj.i && ti < f.obj.i + f.obj.w && tj >= f.obj.j && tj < f.obj.j + f.obj.d);
   if (flatObj) { showPie({ o: flatObj.obj }, sx, sy); return; }
   cancelActions();
@@ -1677,22 +1817,47 @@ function showPie(target, sx, sy) {
   const cx = Math.max(R * 0.5 + 70, Math.min(W - R * 0.5 - 70, sx)), cy = Math.max(R + 70, Math.min(H - R - 110, sy));
   ring.style.left = cx + 'px'; ring.style.top = cy + 'px';
   pie.classList.remove('hidden'); // visible first, so the buttons can be measured
+  // The place name sits in the middle; measure it first so no button covers it.
+  const center = h(`<div class="pie-center"><b>${esc(n ? n.name : displayName(o))}</b></div>`);
+  ring.append(center);
+  const cw = center.offsetWidth, ch = center.offsetHeight;
+  const boxes = [];
   opts.forEach((op, k) => {
     const a = -Math.PI / 2 + (opts.length === 1 ? 0 : (k / opts.length) * Math.PI * 2);
     const b = document.createElement('button');
     b.className = 'pie-btn'; b.disabled = !!op.disabled;
     b.style.setProperty('--x', Math.cos(a) * R + 'px'); b.style.setProperty('--y', Math.sin(a) * R + 'px'); b.style.setProperty('--d', k * 25 + 'ms');
-    b.innerHTML = `<span class="pie-icon">${esc(op.icon)}</span><span class="pie-label">${esc(op.label)}${op.note ? ` <em>${esc(op.note)}</em>` : ''}${op.disabled ? `<small>${esc(op.disabled)}</small>` : ''}</span>`;
+    // Short labels stay on one line; long ones get a fixed width to wrap in (some browsers shrink max-content here).
+    b.innerHTML = `<span class="pie-icon">${esc(op.icon)}</span><span class="pie-label${Math.max((op.label + (op.note ? ' ' + op.note : '')).length, op.disabled ? String(op.disabled).length : 0) > 18 ? ' long' : ''}">${esc(op.label)}${op.note ? ` <em>${esc(op.note)}</em>` : ''}${op.disabled ? `<small>${esc(op.disabled)}</small>` : ''}</span>`;
     b.onclick = e => { e.stopPropagation(); closePie(); op.run(); };
     ring.append(b);
-    // keep every button fully on screen, even on narrow phones
-    const bw = b.offsetWidth, bh = b.offsetHeight; let x = Math.cos(a) * R, y = Math.sin(a) * R;
-    x += Math.max(0, 8 - (cx + x - bw / 2)) - Math.max(0, cx + x + bw / 2 - (W - 8));
-    y += Math.max(0, 60 - (cy + y - bh / 2)) - Math.max(0, cy + y + bh / 2 - (H - 96));
-    b.style.setProperty('--x', x + 'px'); b.style.setProperty('--y', y + 'px');
+    boxes.push({ b, x: Math.cos(a) * R, y: Math.sin(a) * R, w: b.offsetWidth, h: b.offsetHeight });
   });
-  const center = h(`<div class="pie-center"><b>${esc(n ? n.name : displayName(o))}</b></div>`);
-  ring.append(center);
+  // Spread the buttons so none covers another or the name, and keep every one on screen, even on narrow phones.
+  const fixed = { x: 0, y: 0, w: cw, h: ch, fixed: true }, all = [fixed, ...boxes], GAP = 6;
+  const clamp = q => {
+    q.x += Math.max(0, 8 - (cx + q.x - q.w / 2)) - Math.max(0, cx + q.x + q.w / 2 - (W - 8));
+    q.y += Math.max(0, 60 - (cy + q.y - q.h / 2)) - Math.max(0, cy + q.y + q.h / 2 - (H - 96));
+  };
+  boxes.forEach(clamp);
+  for (let it = 0; it < 60; it++) {
+    let moved = false;
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+      const p1 = all[i], p2 = all[j];
+      const ox = (p1.w + p2.w) / 2 + GAP - Math.abs(p1.x - p2.x), oy = (p1.h + p2.h) / 2 + GAP - Math.abs(p1.y - p2.y);
+      if (ox <= 0 || oy <= 0) continue;
+      moved = true;
+      const share = p1.fixed || p2.fixed ? 1 : 0.5;
+      // Push apart along whichever way needs the smaller move (up/down a little preferred, since phones are tall);
+      // if sideways keeps running into the screen edge, go up/down.
+      if (oy <= ox * 1.4 || it > 15) { const d = (p2.y >= p1.y ? 1 : -1) * oy * share; if (!p1.fixed) p1.y -= d; if (!p2.fixed) p2.y += d; }
+      else { const d = (p2.x >= p1.x ? 1 : -1) * ox * share; if (!p1.fixed) p1.x -= d; if (!p2.fixed) p2.x += d; }
+    }
+    boxes.forEach(clamp);
+    if (!moved) break;
+  }
+  for (const q of boxes) { q.b.style.setProperty('--x', q.x + 'px'); q.b.style.setProperty('--y', q.y + 'px'); }
+  ring.append(center); // keep the name on top
   pie.classList.remove('hidden'); SND.sfx('pop');
   if (n) { n.busy = Math.max(n.busy, 3); n.face(player.x, player.y); }
 }
@@ -1864,6 +2029,7 @@ function finishStep() {
   }
   if (def.friend && act.target.npc) befriend(act.target.npc, def.friend);
   if (def.id === 'fish') addItem('fish', 1);
+  if (def.id === 'shake' && act.obj && act.obj.kind === 'tree') shakeTree(act.obj);
   if (def.stat) bumpStat(def.stat);
   const o = act.obj;
   if (o && o.kind === 'venue') { S.progress.places[o.id] = 1; saveProgress(); }
@@ -1892,6 +2058,107 @@ function addMemory(name, text, f = friendship(name)) {
   f.mem = f.mem.slice(0, 8);
   S.progress.friends[name] = f;
 }
+
+// ---------- a town that notices you (see js/townlife.js) ----------
+/** Neighbours close by (or named in `also`) notice what you just did, react, and remember it. */
+function townNews(ev, also = []) {
+  const near = sceneName === 'venue' || sceneName === 'city'
+    ? npcs.filter(x => !x.generic && x.name && npcVisible(x) && Math.hypot(x.x - player.x, x.y - player.y) < 7)
+    : [];
+  for (const x of near) { if (!x.task || x.task.kind !== 'chat') x.face(player.x, player.y); x.say(TL.cheerFor(ev.t), 2); }
+  S.progress.news = TL.addNews(S.progress.news, ev, gameDay(), [...near.map(x => x.name), ...also]);
+  saveProgress();
+}
+/** Two neighbours finished a chat: they may pass on news about you. */
+function gossipBetween(a, b) {
+  const passed = TL.gossip(S.progress.news, a.name, b.name);
+  for (const p of passed) { const who = p.listener === a.name ? a : b; who.say(['😮', '🤭', '😲'][Math.floor(Math.random() * 3)], 2); }
+  if (passed.length) saveProgress();
+}
+/** Walking up to a neighbour: once a day they say something, about you if they've heard anything. */
+function greetPlayer(n) {
+  const key = 'greet:' + gameDay() + ':' + n.name;
+  if (n.generic || !n.name || S.progress.daily[key]) { n.say(['👋', '☀️', '💛', '🎵'][n.seed % 4]); return; }
+  S.progress.daily[key] = 1;
+  const line = TL.greetingFor(n.name, n.traits || [], S.progress.news, { hour: hourOf(S.progress.clock), weather: weatherNow(), hunger: n.needs?.hunger, energy: n.needs?.energy, mood: mood(n.needs || {}), ownLine: n.data?.line });
+  n.say(line.icon, 2.6); n.speak(line.text, 5.5); SND.sfx('pop');
+  saveProgress();
+}
+/** A rounded speech bubble with up to three short lines of text. */
+function drawSpeech(x, y, text, alpha) {
+  const fs = Math.round(Math.max(12, Math.min(15, 13 * cam.zoom)));
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.font = `700 ${fs}px Nunito, system-ui, sans-serif`;
+  const maxW = Math.min(230, W * 0.6), words = text.split(' '), lines = [];
+  let cur = '';
+  for (const w of words) { const tryL = cur ? cur + ' ' + w : w; if (ctx.measureText(tryL).width > maxW && cur) { lines.push(cur); cur = w; } else cur = tryL; }
+  if (cur) lines.push(cur);
+  const shown = lines.slice(0, 3), lh = fs * 1.25, pad = 9;
+  const bw = Math.max(...shown.map(l => ctx.measureText(l).width)) + pad * 2, bh = shown.length * lh + pad * 1.4;
+  const bx = Math.max(8, Math.min(W - bw - 8, x - bw / 2)), by = y - bh;
+  ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = 'rgba(38,57,90,.18)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 12); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - 6, by + bh - 1); ctx.lineTo(x, by + bh + 8); ctx.lineTo(x + 6, by + bh - 1); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#26395A'; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+  shown.forEach((l, k) => ctx.fillText(l, bx + pad, by + pad * 0.7 + k * lh));
+  ctx.restore();
+}
+// The land grows by itself: flowers and saplings spread a little every day, and grass wears into
+// paths where you walk. On Reddit, every player who finishes the daily errands plants something too.
+function growSeed(id) { return hashStr('grow:' + id); }
+function growthOf(id) {
+  let g = S.progress.growth[id];
+  if (!g || typeof g.day !== 'number' || !Array.isArray(g.sprouts) || !g.worn || typeof g.worn !== 'object') g = S.progress.growth[id] = TL.freshGrowth(dayOf(S.progress.clock));
+  return g;
+}
+function sproutDecor(rec, s, day) {
+  const [i, j, kind, born, seed] = s;
+  if (kind === 'flowers') return { kind: 'flowers', i, j, seed, sprout: true };
+  const kinds = rec.world.decor.filter(d => d.kind === 'tree' && !d.sprout).map(d => d.tree);
+  const tree = kinds.length ? kinds[seed % kinds.length] : 'round';
+  return { kind: 'tree', i, j, tree, seed, sprout: true, born, grow: TL.sproutSize(born, day) };
+}
+function growCity(rec) {
+  const g = growthOf(rec.id), day = dayOf(S.progress.clock), wd = rec.world;
+  if (!rec.grown) {
+    rec.grown = true;
+    const ds = g.sprouts.map(s => sproutDecor(rec, s, day));
+    wd.decor.push(...ds); addDecor(rec.things, rec.flats, ds);
+    plantCommunity(rec);
+  }
+  const added = TL.growTown(g, wd, day, d => rng(growSeed(rec.id) + d * 977));
+  if (added.length) { const ds = added.map(s => sproutDecor(rec, s, day)); wd.decor.push(...ds); addDecor(rec.things, rec.flats, ds); }
+  for (const t of rec.things) if (t.o && t.o.sprout && t.o.kind === 'tree') t.o.grow = TL.sproutSize(t.o.born, day);
+  saveLocal();
+}
+function plantCommunity(rec) {
+  const want = RD && RD.homes ? RD.homes : 0;
+  if (!want) return;
+  const all = TL.communityPlants(rec.world, want, d => rng(growSeed(rec.id) + d));
+  const fresh = all.slice(rec.community || 0).map(s => Object.assign(sproutDecor(rec, s, dayOf(S.progress.clock)), { grow: 1, community: true }));
+  rec.community = all.length;
+  rec.world.decor.push(...fresh); addDecor(rec.things, rec.flats, fresh);
+}
+window.addEventListener('wv-community', () => { for (const rec of Object.values(CITIES)) plantCommunity(rec); });
+let lastStep = '';
+function trackSteps() {
+  if (world !== cityWorld || !C || !player.moving) return;
+  const i = Math.floor(player.x), j = Math.floor(player.y), key = C.id + i + ',' + j;
+  if (key === lastStep) return;
+  lastStep = key; TL.stepOn(growthOf(C.id), cityWorld, i, j);
+}
+function drawWorn(z) {
+  const g = S.progress.growth[C.id]; if (!g) return;
+  ctx.save();
+  for (const [key, n] of Object.entries(g.worn)) {
+    if (n < TL.WORN_AT) continue;
+    const [i, j] = key.split(',').map(Number), [cx, cy] = toScreen(i + 0.5, j + 0.5);
+    if (cx < -80 || cx > W + 80 || cy < -80 || cy > H + 80) continue;
+    const a = Math.min(0.5, 0.12 + (n - TL.WORN_AT) * 0.025), pts = [toScreen(i + 0.15, j + 0.15), toScreen(i + 0.85, j + 0.15), toScreen(i + 0.85, j + 0.85), toScreen(i + 0.15, j + 0.85)];
+    ctx.fillStyle = `rgba(176,134,88,${a})`; ctx.beginPath(); pts.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
 function renderQueue() {
   const el = $('queue'); el.innerHTML = '';
   queue.forEach((q, k) => {
@@ -1916,7 +2183,7 @@ const warned = {};
 function tickClock(gm) {
   const before = S.progress.clock; S.progress.clock += gm;
   for (const p of S.progress.plots) L.growPlot(p, S.progress.clock, raining());
-  if (Math.floor(before / 1440) !== Math.floor(S.progress.clock / 1440)) { toast(`Good morning! Day ${dayOf(S.progress.clock)} in ${C.meta.name}.`); chargeRent(); prunePicked(); pruneDaily(); checkAchievements(); }
+  if (Math.floor(before / 1440) !== Math.floor(S.progress.clock / 1440)) { toast(`Good morning! Day ${dayOf(S.progress.clock)} in ${C.meta.name}.`); chargeRent(); prunePicked(); pruneDaily(); checkAchievements(); if (C) growCity(C); }
   if (Math.floor(before / 30) !== Math.floor(S.progress.clock / 30)) saveProgress();
 }
 function tickNeeds(gm, curDef) {
@@ -2087,7 +2354,8 @@ async function showHomes(filter = 'all') {
   const mineElsewhere = Object.entries(S.progress.homes).filter(([, x]) => x.city !== C.id);
   if (mineElsewhere.length) body.append(h(`<div class="notice"><b>Your other homes</b><span>${mineElsewhere.map(([, x]) => `${esc(x.name)} in ${esc(cityMeta(x.city).name)}`).join(' · ')}</span></div>`));
   body.append(h(`<p class="lead">Rent a home in any town to sleep, cook and relax there. Rent is paid each morning with coins. These homes are in your own world, so other players never take them.</p>`));
-  const homes = world.objects.filter(o => o.home && (filter === 'all' || o.kind === filter));
+  // The town's homes, even when the list is opened from inside your house or a shop.
+  const homes = cityWorld.objects.filter(o => o.home && (filter === 'all' || o.kind === filter));
   for (const o of homes) body.append(homeCard(o));
 }
 function showHome(o) { if (!localHomes()) loadProperties().then(() => { if (S.sheet === 'home:' + o.id) { const b = $('sheet-body'); b.innerHTML = ''; b.append(homeCard(o, true)); } }); openSheet('home:' + o.id, 'Home', o.name, homeCard(o, true), { tab: 'homes' }); }
@@ -2196,6 +2464,7 @@ function showNeighbour(n) {
     <div class="friend-row"><span>${esc(friendLevel(f.hearts || 0))}</span>${hearts(f.hearts)}</div>
     ${(() => { const rq = requestOpen(n); return rq ? `<div class="notice"><b>${esc(n.name)} would love ${rq.n} ${ITEMS[rq.item].icon} ${esc(itemName(rq.item, rq.n))} today</b><span>You have ${have(rq.item)}. Reward: ✦ ${rq.coins} and a heart.</span></div>` : ''; })()}
     <div class="trait-row">${n.traits.map(t => `<span class="chip">${TRAITS[t]?.icon || ''} ${esc(t)}</span>`).join('')}<span class="chip chip-sun">${moodLabel(mood(n.needs))} mood</span><span class="chip">📍 ${esc(n.doing || 'Out for a walk')}</span></div>
+    ${(() => { const k = TL.knownBy(S.progress.news, n.name); return k.length ? `<h4 class="group-title">${esc(n.name)} has heard</h4><ul class="log">${k.map(x => `<li><b>${x.icon} ${esc(x.text)}</b><span>${x.from ? 'from ' + esc(x.from) : 'saw it'}</span></li>`).join('')}</ul>` : ''; })()}
     ${(f.mem || []).length ? `<h4 class="group-title">Things ${esc(n.name)} remembers</h4><ul class="log">${f.mem.map(m => `<li><b>${esc(m.text)}</b><span>Day ${m.day}</span></li>`).join('')}</ul>` : ''}
     <div class="actions-col">
       <button class="btn btn-primary btn-wide" data-a="hello" ${met ? 'disabled' : ''}>${met ? 'You said hello today ✓' : 'Say hello'}</button>
@@ -2212,7 +2481,7 @@ function showNeighbour(n) {
     if ((S.progress.inventory[wants] || 0) < 1) return;
     addItem(wants, -1);
     bump(n.name, c => { c.gift = today(); c.hearts = Math.min(5, (c.hearts || 0) + 1); addMemory(n.name, `You gave me a ${ITEMS[wants].icon} ${itemName(wants, 1)}`, c); });
-    n.say('😊', 3); setCoins(S.coins + 10, true); S.progress.daily[today() + ':gift'] = 1; saveProgress(); checkGoals(); showNeighbour(n);
+    n.say('😊', 3); setCoins(S.coins + 10, true); S.progress.daily[today() + ':gift'] = 1; townNews({ t: 'gift', who: n.name, item: itemName(wants, 1) }, [n.name]); saveProgress(); checkGoals(); showNeighbour(n);
   };
   openSheet('neighbour:' + n.name, A.SPECIES[n.species].label + ' · neighbour', n.name, el, { tab: 'friends' });
 }
@@ -2257,7 +2526,7 @@ function showDistricts() {
   body.append(more);
   body.append(h(`<h4 class="group-title">Tram stops in ${esc(C.meta.name)}</h4>`));
   for (const [k, d] of Object.entries(C.districts)) {
-    const here = C.districtAt(player.x, player.y) === k;
+    const here = C.districtAt(...outsidePos()) === k;
     const el = h(`<button class="district-row ${here ? 'here' : ''}"><i style="background:${d.color}"></i><span><b>${esc(d.name)}</b><small>${esc(d.blurb)}</small></span><em>${here ? 'You’re here' : 'Take the tram'}</em></button>`);
     el.onclick = () => { if (here) { closeSheet(); return; } travel(k); };
     body.append(el);
@@ -2426,7 +2695,10 @@ function showProfile(message) {
   redraw();
   const acc = el.querySelector('.account');
   if (S.token) renderAccount(acc);
-  else {
+  else if (RD) {
+    acc.innerHTML = `<h4 class="group-title">Save your game</h4><p class="lead">Log in to Reddit and your town saves to your account, so you can carry on from any device.</p><button class="btn btn-sun" id="rd-login">Log in to Reddit</button>`;
+    acc.querySelector('#rd-login').onclick = () => RD.login();
+  } else {
     acc.innerHTML = `<h4 class="group-title">Save your game to the cloud</h4>
       <p class="lead">With an account your game saves online, so you can carry on from another phone or computer. Use a nickname, never your real name. No email needed.</p>
       <label class="field"><span>Nickname</span><input id="auth-username" autocomplete="username" maxlength="20" placeholder="3–20 letters, numbers or _"></label>
@@ -2480,9 +2752,26 @@ function renderAccount(acc) {
     <details class="danger"><summary>Delete my account</summary><p class="lead">This removes your account and cloud save for good. Your game stays on this device.</p>
       <label class="field"><span>Type your password to confirm</span><input id="del-password" type="password" autocomplete="current-password"></label>
       <p class="form-error" id="del-error" role="alert"></p><button class="btn btn-ghost" id="del-button">Delete account</button></details>`;
+  if (RD) {
+    acc.querySelector('.row2 #logout-button').remove();
+    acc.querySelector('.lead').innerHTML = `Saving to your Reddit account, <b>u/${esc(S.user?.username || RD.user?.username || '')}</b>.`;
+    // On Reddit there's no Willowvale account to delete, but players can wipe their saved game.
+    acc.querySelector('details.danger').innerHTML = `<summary>Delete my Willowvale data</summary><p class="lead">This erases your saved game and streak from the app and this device, and you start fresh. Saved games also clear themselves after 30 days without playing.</p>
+      <p class="form-error" id="del-error" role="alert"></p><button class="btn btn-ghost" id="rd-del-button">Delete my data</button>`;
+    acc.querySelector('#rd-del-button').onclick = async e => {
+      const b = e.currentTarget;
+      if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'Tap again to delete for good'; return; }
+      try {
+        await request('/api/save', 'DELETE');
+        RESETTING = true; CLOUD.version = 0; CLOUD.dirty = false; CLOUD.savedAt = 0; storeCloud();
+        try { for (const k of ['willowvale_progress_v2', 'willowvale_progress_v1', 'willowvale_player_v2']) localStorage.removeItem(k); } catch { /* ignore */ }
+        location.reload();
+      } catch (er) { acc.querySelector('#del-error').textContent = er.message; }
+    };
+  }
   acc.querySelector('#cloud-now').onclick = async () => { CLOUD.dirty = true; await cloudPush().catch(() => {}); renderAccount(acc); };
-  acc.querySelector('#logout-button').onclick = async () => { await logout(); showProfile(); };
-  acc.querySelector('#del-button').onclick = async () => {
+  if (!RD) acc.querySelector('#logout-button').onclick = async () => { await logout(); showProfile(); };
+  if (!RD) acc.querySelector('#del-button').onclick = async () => {
     try { await request('/api/account', 'DELETE', { password: acc.querySelector('#del-password').value }); await logout(); toast('Your account and cloud save were deleted.'); showProfile(); }
     catch (e) { acc.querySelector('#del-error').textContent = e.message; }
   };
@@ -2492,7 +2781,8 @@ async function cloudAfterLogin() {
   try {
     const r = await request('/api/save');
     const sameUser = CLOUD.user === S.user?.username;
-    if (!r.data) { CLOUD.version = 0; CLOUD.user = S.user?.username; CLOUD.ready = true; CLOUD.dirty = true; await cloudPush(); return; }
+    // No cloud save yet: push this game, but wait until a new player has made their character.
+    if (!r.data) { CLOUD.version = 0; CLOUD.user = S.user?.username; CLOUD.ready = true; CLOUD.dirty = true; if (!document.body.classList.contains('onboarding-open')) await cloudPush(); return; }
     if (sameUser && CLOUD.version === r.version) { CLOUD.ready = true; CLOUD.state = 'saved'; if (CLOUD.dirty) cloudPush(); return; }
     const fresh = (S.progress.clock || 0) < 900 && !Object.keys(S.progress.places || {}).length;
     if (fresh || (sameUser && !CLOUD.dirty)) { applyCloud(r.data, r.version); return; }
@@ -2537,7 +2827,7 @@ async function cloudPush() {
 setInterval(() => {
   if (!S.token) return;
   if (CLOUD.state === 'conflict' && S.sheet !== 'choose-save') { CLOUD.state = 'offline'; cloudAfterLogin(); return; }
-  if (CLOUD.ready && CLOUD.dirty) cloudPush();
+  if (CLOUD.ready && CLOUD.dirty && !document.body.classList.contains('onboarding-open')) cloudPush();
 }, 20000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && S.token && CLOUD.ready && CLOUD.dirty) cloudPush(); });
 window.addEventListener('online', () => { if (S.token) (CLOUD.ready ? cloudPush() : cloudAfterLogin()); });
@@ -2552,6 +2842,7 @@ async function logout() {
 function showSettings() {
   const el = h(`<div class="settings">
     <label class="switch"><input type="checkbox" id="set-labels" ${S.settings.labels ? 'checked' : ''}><span class="track"></span><span>Show place names</span></label>
+    <label class="switch"><input type="checkbox" id="set-follow" ${S.settings.follow ? 'checked' : ''}><span class="track"></span><span>Follow camera: a close view that follows you and looks ahead</span></label>
     <label class="switch"><input type="checkbox" id="set-reduced" ${S.settings.reduced ? 'checked' : ''}><span class="track"></span><span>Reduce motion</span></label>
     <label class="switch"><input type="checkbox" id="set-music" ${S.settings.music ? 'checked' : ''}><span class="track"></span><span>Music</span></label>
     <label class="switch"><input type="checkbox" id="set-sfx" ${S.settings.sfx ? 'checked' : ''}><span class="track"></span><span>Sound effects</span></label>
@@ -2563,6 +2854,7 @@ function showSettings() {
     <h4 class="group-title">For grown-ups</h4>
     <ul class="tips"><li><b>Chat</b> Players talk only with emojis. There is no typing, so nobody can send words, links or personal details.</li><li><b>Names</b> Town names allow letters only. Accounts use a nickname, never a real name.</li><li><b>Money</b> Coins are earned in the game. There are no purchases with real money.</li><li><b>Saving</b> As a guest, progress stays on this device only.</li></ul></div>`);
   el.querySelector('#set-labels').onchange = e => { S.settings.labels = e.target.checked; saveSettings(); };
+  el.querySelector('#set-follow').onchange = e => toggleFollow(e.target.checked);
   el.querySelector('#set-reduced').onchange = e => { S.settings.reduced = e.target.checked; saveSettings(); };
   el.querySelector('#set-music').onchange = e => { S.settings.music = e.target.checked; SND.setPrefs({ music: e.target.checked }); saveSettings(); };
   el.querySelector('#set-sfx').onchange = e => { S.settings.sfx = e.target.checked; SND.setPrefs({ sfx: e.target.checked }); saveSettings(); };
@@ -2572,7 +2864,7 @@ function showSettings() {
   el.prepend(h(`<div class="pause-actions"><button class="btn btn-primary btn-wide btn-big" id="resume-button">Resume</button><button class="btn btn-ghost btn-wide" id="pause-profile">Character &amp; account</button></div>`));
   el.querySelector('#resume-button').onclick = closeSheet;
   el.querySelector('#pause-profile').onclick = () => showProfile();
-  el.querySelector('.tips').insertAdjacentHTML('beforeend', '<li><b>Controls</b> Stick to move, hand button to talk or go inside, shoe to run, camera to centre and zoom.</li><li><b>Keyboard</b> WASD to move, Shift or R to run, E or Space to interact, C for camera, P to pause.</li>');
+  el.querySelector('.tips').insertAdjacentHTML('beforeend', '<li><b>Controls</b> Stick to move, hand button to talk or go inside, shoe to run, camera to centre and zoom, eye for the follow camera.</li><li><b>Keyboard</b> WASD to move, Shift or R to run, E or Space to interact, C for camera, V for the follow camera, P to pause.</li>');
   const adm = h(`<button class="btn btn-ghost btn-wide" id="admin-open">${ADMIN.on ? '🛠️ Admin panel' : '🔐 Admin sign-in (grown-ups)'}</button>`);
   adm.onclick = () => (ADMIN.on ? showAdmin() : showAdminLogin());
   el.append(adm);
@@ -2641,7 +2933,7 @@ function showAdmin() {
     day: () => adminDo('next day', () => { S.progress.clock = (Math.floor(S.progress.clock / 1440) + 1) * 1440 + 7 * 60; }),
     weekday: () => adminDo('next weekday, 9 AM', () => { let d = Math.floor(S.progress.clock / 1440) + 1; while ((d + 1) % 7 === 6 || (d + 1) % 7 === 0) d++; S.progress.clock = d * 1440 + 9 * 60; }),
     overview: () => { closeSheet(); cam.free = true; $('cam-button').classList.add('free'); const c2 = A.P(22, 22, 0); cam.x = c2[0]; cam.y = c2[1]; cam.zoom = mobile() ? 0.14 : 0.24; cam.manual = true; toast('Drag to look around. Tap the camera button to come back.'); },
-    centre: () => { closeSheet(); cam.free = false; cam.manual = false; cam.zoom = mobile() ? 0.56 : 0.72; $('cam-button').classList.remove('free'); },
+    centre: () => { closeSheet(); cam.free = false; cam.manual = false; cam.zoom = outdoorZoom(); $('cam-button').classList.remove('free'); },
     labels: () => { S.settings.labels = !S.settings.labels; saveSettings(); showAdmin(); },
     freewill: () => { S.settings.freewill = !S.settings.freewill; saveSettings(); showAdmin(); },
     reset: e => { const b = e.currentTarget; if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'Tap again to erase everything'; return; } RESETTING = true; try { for (const k of ['willowvale_progress_v2', 'willowvale_progress_v1', 'willowvale_player_v2']) localStorage.removeItem(k); } catch { /* ignore */ } location.reload(); },
@@ -2669,6 +2961,7 @@ function loadIo() {
 }
 // Everyone joins their town's shared streets, signed in or not (signed-in players show their nickname).
 async function connect() {
+  if (RD) { S.online = 'guest'; return; } // no shared streets inside Reddit yet
   if (!(await loadIo())) return;
   if (socket) { socket.removeAllListeners(); socket.disconnect(); }
   peers.clear();
@@ -3012,6 +3305,18 @@ $('decor-button').onclick = () => (DECOR.on ? endDecor() : startDecor());
 $('speed-button').onclick = cycleSpeed;
 $('run-button').onclick = toggleRun;
 $('cam-button').onclick = cameraButton;
+$('view-button').onclick = () => toggleFollow();
+$('view-button').setAttribute('aria-pressed', String(!!S.settings.follow));
+// Follow camera on/off. Resets any manual zoom so the view eases to the right distance.
+function toggleFollow(on = !S.settings.follow) {
+  S.settings.follow = !!on; saveSettings();
+  cam.free = false; cam.manual = false; cam.lead = [0, 0]; cam.last = null;
+  $('cam-button').classList.remove('free');
+  if (!world.interior) cam.tz = outdoorZoom();
+  $('view-button').setAttribute('aria-pressed', String(S.settings.follow));
+  const box = document.getElementById('set-follow'); if (box) box.checked = S.settings.follow;
+  toastQuiet(S.settings.follow ? 'Follow camera on' : 'Follow camera off');
+}
 function toggleRun() { S.run = !S.run; $('run-button').setAttribute('aria-pressed', String(S.run)); toastQuiet(S.run ? 'Running' : 'Walking'); }
 // Camera: first press brings the view back to you; after that it steps through three zoom levels.
 function cameraButton() {
@@ -3107,6 +3412,8 @@ function startOnboarding() {
     setScene('home', ...homeWorld.insideDoor);
     player.wave = 1.6; player.say('👋');
     $('hint').classList.remove('hidden'); setTimeout(hideHint, 9000);
+    // Save the new character to the cloud straight away, not on the next 20-second tick.
+    CLOUD.dirty = true; if (S.token && CLOUD.ready) cloudPush();
     if (then) then();
   };
   $('start-button').onclick = () => begin();
@@ -3125,6 +3432,7 @@ $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 700);
 
 // Small read-only hook for automated play-testing.
-window.__willowvale = { state: S, open: k => ({ homes: showHomes, places: showPlaces, friends: showFriends, journal: showJournal, profile: showProfile, shop: showShop, island: showIsland, market: showMarket, craft: showCraft, restore: showRestore, settings: showSettings, wardrobe: showWardrobe, needs: showNeeds, districts: showDistricts, adminLogin: showAdminLogin, venue: () => showVenue(C.venues[0]), home: () => showHome(cityWorld.objects.find(o => o.home)), neighbour: () => showNeighbour(cityNpcs.find(n => !n.generic)), chat: () => showEmojiChat(cityNpcs.find(n => !n.generic)) })[k](),
+window.__willowvale = { state: S, follow: on => toggleFollow(on), leaveHome: () => leaveHome(),camera: () => ({ x: cam.x, y: cam.y, zoom: cam.zoom, lead: [...cam.lead], player: A.P(player.x, player.y, 34) }),quests: () => questState(), news: () => S.progress.news, growth: () => S.progress.growth[C.id], greet: name => { const n = npcs.find(x => x.name === name); if (!n) return null; delete S.progress.daily['greet:' + gameDay() + ':' + n.name]; greetPlayer(n); return n.line; }, townNews: (ev, also) => townNews(ev, also), gossip: (a, b) => TL.gossip(S.progress.news, a, b, () => 0), sprouts: () => things.filter(t => t.o && t.o.sprout).length, step: (i, j, n = 1) => { for (let k = 0; k < n; k++) TL.stepOn(growthOf(C.id), cityWorld, i, j); }, checkQuests: () => checkQuests(), open: k => ({ homes: showHomes, places: showPlaces, friends: showFriends, journal: showJournal, profile: showProfile, shop: showShop, island: showIsland, market: showMarket, craft: showCraft, restore: showRestore, settings: showSettings, wardrobe: showWardrobe, needs: showNeeds, districts: showDistricts, adminLogin: showAdminLogin, venue: () => showVenue(C.venues[0]), home: () => showHome(cityWorld.objects.find(o => o.home)), neighbour: () => showNeighbour(cityNpcs.find(n => !n.generic)), chat: () => showEmojiChat(cityNpcs.find(n => !n.generic)) })[k](),
+  birds: () => (C ? birdsFor(C).map(b => ({ x: +b.x.toFixed(2), y: +b.y.toFixed(2), fly: b.fly > 0, gone: b.gone > 0 })) : []), tapBird: () => { const b = C && birdsFor(C).find(x => !x.fly && !x.gone); return b ? tapBirds(b.x, b.y) : false; }, shakeNearestTree: () => { const t = things.filter(x => x.o && x.o.kind === 'tree').sort((a, b) => Math.hypot(a.ax - player.x, a.ay - player.y) - Math.hypot(b.ax - player.x, b.ay - player.y))[0]; if (!t) return false; const d = actionsFor('tree')[0]; queueAction(d, { o: t.o }); return t.o.tree; }, homeCount: () => world.objects.filter(o => o.home).length, treeCount: () => things.filter(t => t.o && t.o.kind === 'tree').length,
   pieList: () => { const out = [], seen = new Set(); for (const t of things) { const o = t.o; if (!t.interactive || !o) continue; const key = o.type || o.kind; if (seen.has(key)) continue; seen.add(key); out.push(key); } for (const n of npcs) if (npcVisible(n) && !seen.has('npc')) { seen.add('npc'); out.push('npc'); } return out; },
-  pieFor: key => { closeSheet(); if (key === 'npc') { const n = npcs.find(n => npcVisible(n)); if (n) showPie({ npc: n }, W / 2, H / 2); return !!n; } const t = things.find(t => t.interactive && t.o && (t.o.type || t.o.kind) === key); if (t) showPie({ o: t.o }, W / 2, H / 2); return !!t; }, cancel: () => cancelActions(), peers: () => shownPeers().map(p => ({ name: p.name, x: +p.x.toFixed(2), y: +p.y.toFixed(2), emote: p.emote || null })), allPeers: () => [...peers.values()].map(p => ({ name: p.name, scene: p.scene })), emoteTo: e => sendEmote(e, [...peers.values()][0]), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { S.progress.clock = m; }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); if (!f) return false; const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); if (!t) return false; queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
+  pieFor: key => { closeSheet(); if (key === 'npc') { const n = npcs.find(n => npcVisible(n)); if (n) showPie({ npc: n }, W / 2, H / 2); return !!n; } const t = things.find(t => t.interactive && t.o && (t.o.type || t.o.kind) === key); if (t) showPie({ o: t.o }, W / 2, H / 2); return !!t; }, cancel: () => cancelActions(), peers: () => shownPeers().map(p => ({ name: p.name, x: +p.x.toFixed(2), y: +p.y.toFixed(2), emote: p.emote || null })), allPeers: () => [...peers.values()].map(p => ({ name: p.name, scene: p.scene })), emoteTo: e => sendEmote(e, [...peers.values()][0]), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, x: n.x, y: n.y, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { const d0 = Math.floor(S.progress.clock / 1440); S.progress.clock = m; if (Math.floor(m / 1440) !== d0 && C) growCity(C); }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); if (!f) return false; const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); if (!t) return false; queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };

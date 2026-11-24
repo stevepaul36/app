@@ -90,6 +90,11 @@ export const ACTIONS = {
 
   // Town
   myhome: [{ id: 'enter', label: 'Go inside', icon: '🏡', special: 'enter' }],
+  // Every outdoor tree: give it a shake (once a day per tree, something may fall out) or rest under it.
+  tree: [
+    { id: 'shake', label: 'Shake the tree', icon: '🌳', mins: 4, pose: 'stand', arms: 'cheer', tick: 'pop', gain: { fun: 9 }, emotes: ['🍃', '😆'] },
+    { id: 'shade', label: 'Rest in the shade', icon: '😌', mins: 20, pose: 'ground', gain: { comfort: 24, energy: 6 }, emotes: ['🍃', '😌', '🐦'] },
+  ],
   bench: [{ id: 'sit', label: 'Sit for a while', icon: '🪑', mins: 25, pose: 'sit', gain: { comfort: 32, fun: 4 }, emotes: ['☀️', '😌'] }],
   fountain: [{ id: 'wish', label: 'Toss a coin & wish', icon: '🪙', mins: 5, pose: 'stand', arms: 'toss', prop: 'coin', gain: { fun: 12 }, coins: -1, emotes: ['✨'] }],
   cafe: [

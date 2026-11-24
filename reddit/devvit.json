@@ -1,0 +1,45 @@
+{
+  "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
+  "name": "willowvale-town",
+  "post": {
+    "entrypoints": {
+      "default": {
+        "entry": "splash.html",
+        "height": "tall"
+      },
+      "game": {
+        "entry": "game.html"
+      }
+    }
+  },
+  "server": {},
+  "permissions": {
+    "redis": true,
+    "reddit": {"enable": true, "scope": "user"}
+  },
+  "menu": {
+    "items": [
+      {
+        "label": "Post today's Willowvale",
+        "description": "Create today's Willowvale post with the daily errands.",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/on/menu/new-post"
+      }
+    ]
+  },
+  "triggers": {
+    "onAppInstall": "/internal/on/app/install"
+  },
+  "scheduler": {
+    "tasks": {
+      "daily-post": {
+        "endpoint": "/internal/scheduler/daily-post",
+        "cron": "2 0 * * *"
+      }
+    }
+  },
+  "scripts": {
+    "dev": "npm run watch"
+  }
+}
