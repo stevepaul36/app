@@ -1,7 +1,7 @@
 // Runs before Willowvale's app.js inside the Reddit post. It tells the game who is playing, tracks
 // today's errands, and when all three are done reports it so the streak and the shared town grow.
 import {canRunAsUser, context, showLoginPrompt} from '@devvit/web/client'
-import type {DailyRsp, ShareRsp} from '../shared/api.ts'
+import type {DailyRsp, ShareRsp, StateRsp} from '../shared/api.ts'
 import {dayNoOf, ERRAND_ICON, shareLine} from '../shared/daily.ts'
 
 type Quest = {id: string; text: string; n: number; have: number; done: boolean}
@@ -11,6 +11,7 @@ declare global {
     WV_REDDIT?: {
       user: {username: string} | null
       dayNo: number
+      homes: number
       login: () => void
     }
     __willowvale?: Hook
@@ -21,7 +22,21 @@ const dayNo = dayNoOf()
 // context is undefined outside Reddit (local testing), so read it carefully.
 const ctx = context as typeof context | undefined
 const user = ctx?.userId ? {username: ctx.username ?? 'player'} : null
-window.WV_REDDIT = {user, dayNo, login: () => showLoginPrompt()}
+window.WV_REDDIT = {user, dayNo, homes: 0, login: () => showLoginPrompt()}
+
+/** Tell the game how many players have finished their errands: each one plants something in town. */
+function setCommunity(homes: number): void {
+  const rd = window.WV_REDDIT
+  if (!rd || homes <= rd.homes) return
+  rd.homes = homes
+  window.dispatchEvent(new Event('wv-community'))
+}
+void fetch('api/state')
+  .then(r => (r.ok ? (r.json() as Promise<StateRsp>) : null))
+  .then(s => {
+    if (s) setCommunity(s.homes)
+  })
+  .catch(() => {})
 
 const store = {
   get(k: string): string | null {
@@ -136,6 +151,7 @@ async function finish(): Promise<void> {
     if (!rsp.ok) throw Error(`${rsp.status}`)
     const d = (await rsp.json()) as DailyRsp
     store.set(doneKey, '1')
+    setCommunity(d.homes)
     showDone(d)
   } catch {
     reported = false // try again on the next tick
@@ -145,8 +161,8 @@ async function finish(): Promise<void> {
 function showDone(d: DailyRsp | null): void {
   const inner = d
     ? el(`<h2>All of today’s errands done! 🏡</h2>
-      <div class="rd-stats"><div><b>🔥${d.streak}</b><span>day streak</span></div><div><b>#${d.rank}</b><span>to finish today</span></div><div><b>${d.homes}</b><span>homes in town</span></div></div>
-      <p class="rd-note">You added a home to the town everyone here is building. New errands tomorrow!</p>
+      <div class="rd-stats"><div><b>🔥${d.streak}</b><span>day streak</span></div><div><b>#${d.rank}</b><span>to finish today</span></div><div><b>${d.homes}</b><span>planted in town</span></div></div>
+      <p class="rd-note">You planted something in the town everyone here shares. Look around for it! New errands tomorrow.</p>
       <button class="rd-go rd-share" type="button">💬 Share in the comments</button>
       <button class="rd-soft rd-close" type="button">Keep playing</button>`)
     : el(`<h2>All of today’s errands done! 🏡</h2>

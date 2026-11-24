@@ -10,6 +10,7 @@ import { CITY_LIST, ROUTES, CITY_PACKS, cityMeta, buildCity, addWillowvaleRoad }
 import * as CA from './js/cityart.js';
 import { GAME } from './js/games.js';
 import * as L from './js/life.js';
+import * as TL from './js/townlife.js';
 const { ITEMS, itemName } = L;
 import { NEEDS, freshNeeds, mood, moodLabel, moodColor, needColor, SPEEDS, GAME_MIN_PER_SEC, clockText, dayOf, hourOf, skyTint, isNight, actionsFor, TRAITS, SKILLS, SKILL_MAX, xpForLevel, CAREER, CAREERS, friendLevel } from './js/sim.js';
 
@@ -33,8 +34,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 // A save can come back damaged (an old version, a half-written write, a hand-edited cloud save).
 // Drop any part that has the wrong type so the setup below fills it with a fresh default.
 const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
-const SHAPE_LISTS = ['done', 'achievements', 'owned', 'packs', 'decor', 'plots'];
-const SHAPE_MAPS = ['visits', 'friends', 'daily', 'stats', 'places', 'skills', 'jobs', 'visited', 'unlocked', 'homes', 'found', 'restore', 'picked', 'needs'];
+const SHAPE_LISTS = ['done', 'achievements', 'owned', 'packs', 'decor', 'plots', 'news'];
+const SHAPE_MAPS = ['visits', 'friends', 'daily', 'stats', 'places', 'skills', 'jobs', 'visited', 'unlocked', 'homes', 'found', 'restore', 'picked', 'needs', 'growth'];
 function fixShape(p) {
   for (const k of SHAPE_LISTS) if (k in p && !Array.isArray(p[k])) delete p[k];
   for (const k of SHAPE_MAPS) if (k in p && !isObj(p[k])) delete p[k];
@@ -75,6 +76,8 @@ S.progress.owned = S.progress.owned || [];
 S.progress.skills = Object.assign(Object.fromEntries(SKILLS.map(k => [k.k, { lv: 0, xp: 0 }])), S.progress.skills || {});
 // careers: one ladder per town, one shift a day across all of them
 S.progress.jobs = S.progress.jobs || {};
+if (!Array.isArray(S.progress.news)) S.progress.news = [];
+if (!S.progress.growth || typeof S.progress.growth !== 'object' || Array.isArray(S.progress.growth)) S.progress.growth = {};
 if (S.progress.job) { S.progress.jobs.tram = { level: S.progress.job.level || 0, good: S.progress.job.good || 0 }; S.progress.lastWorkDay = S.progress.job.lastDay || 0; delete S.progress.job; }
 for (const k of Object.keys(CAREERS)) S.progress.jobs[k] = Object.assign({ level: 0, good: 0 }, S.progress.jobs[k] || {});
 S.progress.lastWorkDay = S.progress.lastWorkDay || 0;
@@ -239,6 +242,7 @@ class Walker {
   update(dt) {
     this.tick(dt);
     if (this.emote) { this.emoteLife -= dt; if (this.emoteLife <= 0) this.emote = null; }
+    if (this.line) { this.lineLife -= dt; if (this.lineLife <= 0) this.line = null; }
     if (this.wave > 0) this.wave -= dt;
     if (!this.path.length) { this.moving = false; return; }
     const [tx, ty] = this.path[0], dx = tx - this.x, dy = ty - this.y, dist = Math.hypot(dx, dy);
@@ -252,6 +256,7 @@ class Walker {
     this.walk += step * 5.2;
   }
   say(emoji, life = 2.4) { this.emote = emoji; this.emoteLife = life; }
+  speak(text, life = 5) { this.line = text; this.lineLife = life; }
 }
 
 const playerStart = [23.5, 23.5];
@@ -298,6 +303,7 @@ function waterPlot(k) {
 function harvestPlot(k) {
   const p = S.progress.plots[k]; const n = L.harvestCount(p, L.seasonOf(gameDay()));
   addItem(p.crop, n); toast(`You picked ${n} ${itemName(p.crop, n)}! ${ITEMS[p.crop].icon}`); player.say(ITEMS[p.crop].icon, 2);
+  townNews({ t: 'harvest', item: itemName(p.crop, 2) });
   S.progress.plots[k] = {}; bumpStat('harvests'); addXP('creativity', 3); SND.sfx('coin'); saveProgress(); checkQuests(); checkAchievements();
 }
 function drawPlotLive(f, sx, sy, z) {
@@ -361,7 +367,7 @@ function nearestPickup(x, y, r = 1.3) { let best = null, bd = r; for (const p of
 // Shaking a tree: each tree drops something once a game day. What falls depends on the tree.
 const TREE_DROPS = { blossom: ['flowers', 'flowers', 'feather'], cherry: ['flowers', 'flowers', 'feather'], palm: ['shell', 'wood', 'berries'], pine: ['wood', 'wood', 'feather'], maple: ['wood', 'berries', 'feather'], banyan: ['wood', 'feather', 'berries'], bamboo: ['wood', 'wood'], willow: ['wood', 'feather'] };
 function shakeTree(o) {
-  o.shakeT = 1.2; shakingTrees.add(o);
+  o.shakeT = 1.2; shakingTrees.add(o); townNews({ t: 'tree' });
   const day = gameDay(), key = (C ? C.id : '') + ':' + o.i + ',' + o.j;
   const sh = S.progress.shaken && S.progress.shaken.day === day ? S.progress.shaken : (S.progress.shaken = { day, trees: [] });
   if (sh.trees.includes(key)) { toast('Only leaves fell. Try another tree, or come back tomorrow.'); player.say('🍃', 1.4); return; }
@@ -379,14 +385,14 @@ function collectPickup(p) {
     const [px, py] = pickupPos(p); player.face(px, py);
     if (p.bug && (p.item === 'bee' || p.item === 'butterfly') && Math.random() < 0.2 - skillLv('fitness') * 0.015) { toast(`The ${itemName(p.item, 1)} flew away! Try again.`); player.say('💨', 1.4); p.ph += 2; return; }
     S.progress.picked[pickedKey(C, p)] = 1;
-    addItem(p.item, 1); bumpStat(p.bug ? 'bugs' : 'gathers'); SND.sfx('pop'); player.say(ITEMS[p.item].icon, 1.5);
+    addItem(p.item, 1); bumpStat(p.bug ? 'bugs' : 'gathers'); if (p.bug) townNews({ t: 'bug', item: itemName(p.item, 1) }); SND.sfx('pop'); player.say(ITEMS[p.item].icon, 1.5);
     toast(`${p.bug ? 'Caught' : 'Found'} a ${ITEMS[p.item].icon} ${itemName(p.item, 1)}!`); checkQuests(); checkAchievements();
   };
   const [px, py] = pickupPos(p);
   if (Math.hypot(px - player.x, py - player.y) < 1.2) go(); else walkTo(px, py, go);
 }
 // old picked keys are cleared away so the save stays small
-function pruneDaily() { const d = gameDay(); for (const k of Object.keys(S.progress.daily)) { const m = k.match(/^(?:req|mail|q):(\d+)/); if (m && +m[1] < d - 2) delete S.progress.daily[k]; } }
+function pruneDaily() { const d = gameDay(); for (const k of Object.keys(S.progress.daily)) { const m = k.match(/^(?:req|mail|q|greet):(\d+)/); if (m && +m[1] < d - 2) delete S.progress.daily[k]; } }
 function prunePicked() { const d = gameDay(); for (const k of Object.keys(S.progress.picked)) if (+k.split(':')[1] < d) delete S.progress.picked[k]; }
 
 // ---------- the market: buy seeds, sell what you've gathered ----------
@@ -424,7 +430,7 @@ function showCraft() {
     const needs = Object.entries(r.needs).map(([k, n]) => `<span class="need-chip ${have(k) >= n ? 'ok' : ''}">${ITEMS[k].icon} ${Math.min(have(k), n)}/${n}</span>`).join('');
     const el = h(`<div class="trade-row ${known ? '' : 'locked'}"><span class="trade-icon">${known ? it.icon : '🔒'}</span><div class="trade-main"><b>${esc(it.one[0].toUpperCase() + it.one.slice(1))}${it.cat === 'decor' ? ' <small class="tag">for your home</small>' : ''}</b><small>${known ? needs : `Learn it from ${esc(r.teach)} (3 hearts)`}</small></div>${known ? `<button class="btn ${ok ? 'btn-primary' : 'btn-ghost'} btn-small" ${ok ? '' : 'disabled'}>Make</button>` : ''}</div>`);
     const b = el.querySelector('button');
-    if (b) b.onclick = () => { if (!L.craft(r, inv)) return; if (!S.progress.found[r.id]) { S.progress.found[r.id] = 1; } addXP(r.skill, 6); bumpStat('crafted'); SND.sfx('done'); player.say(it.icon, 2); toast(`You made a ${it.icon} ${it.one}!${it.cat === 'decor' ? ' Tap 🛋️ Decorate at home to place it.' : ''}`); saveProgress(); checkQuests(); checkAchievements(); showCraft(); };
+    if (b) b.onclick = () => { if (!L.craft(r, inv)) return; if (!S.progress.found[r.id]) { S.progress.found[r.id] = 1; } addXP(r.skill, 6); bumpStat('crafted'); townNews({ t: 'craft', item: it.one }); SND.sfx('done'); player.say(it.icon, 2); toast(`You made a ${it.icon} ${it.one}!${it.cat === 'decor' ? ' Tap 🛋️ Decorate at home to place it.' : ''}`); saveProgress(); checkQuests(); checkAchievements(); showCraft(); };
     body.append(el);
   }
 }
@@ -446,6 +452,7 @@ function deliverRequest(n, rq) {
     addMemory(n.name, `You brought me ${rq.n} ${itemName(rq.item, rq.n)} when I needed ${rq.n === 1 ? 'it' : 'them'}`, f);
     S.progress.friends[n.name] = f;
     n.say('🥰', 3); player.say('💛', 2); SND.sfx('unlock'); bumpStat('delivered');
+    townNews({ t: 'delivered', who: n.name, item: itemName(rq.item, 1) }, [n.name]);
     toast(`${n.name} is so happy! +${rq.coins} ✦ and a heart.`); saveProgress(); checkQuests(); checkAchievements();
   };
   if (d < 2) give(); else walkTo(n.x, n.y + 0.8, give);
@@ -602,6 +609,7 @@ function showRestore() {
       addItem(k, -n); r.given[k] = (r.given[k] || 0) + n; SND.sfx('pop');
       if (Object.keys(step.needs).every(x => left(x) <= 0)) {
         r.stage++; r.given = {}; setCoins(S.coins + 40, true); SND.sfx('unlock');
+        townNews({ t: 'garden' }, (CITIES.willowvale?.npcs || []).slice(0, 2).map(x => x.name));
         celebrations.push({ title: 'The garden grows!', emojis: ['🌱', '🌼', '🦋'].slice(0, 1 + r.stage % 3), label: `${step.title}: done! +40 ✦` });
         const rec = CITIES.willowvale; if (rec && rec.garden) { rec.garden.stage = r.stage; const t = rec.things.find(t2 => t2.o === rec.garden); if (t) { t.sprite = CA.landmarkSprite(rec.garden); t.top = CA.oldGardenTop(r.stage); } }
         if (r.stage >= L.RESTORE.length && rec) { addFern(rec); celebrations.push({ title: 'A new neighbour!', emojis: ['🦌', '🏡'], label: 'Fern the deer loved the garden so much she moved in.' }); }
@@ -638,7 +646,7 @@ function gameDone(id, res) {
   if (coins) setCoins(S.coins + coins, true);
   S.progress.needs.fun = Math.min(100, S.progress.needs.fun + 10 + Math.min(20, sc));
   addXP('logic', Math.min(12, sc / 3));
-  bumpStat('games');
+  bumpStat('games'); townNews({ t: 'game', item: GAMES[id].name });
   if (sc) { player.say(sc > best ? '🏆' : '😄', 2); toast(`${GAMES[id].name}: ${sc} points${coins ? `, +${coins} ✦` : ''}${sc > best && best ? '. New high score!' : ''}`); }
   staffReact({ emotes: ['🏆'] });
   saveProgress(); checkAchievements();
@@ -684,7 +692,7 @@ function castLine() {
     if (res && res.caught) {
       const f = res.caught;
       S.progress.inventory.fish = (S.progress.inventory.fish || 0) + 1;
-      setCoins(S.coins + f.coins, true); bumpStat('fish');
+      setCoins(S.coins + f.coins, true); bumpStat('fish'); townNews({ t: 'fish', item: f.name });
       S.progress.catches = S.progress.catches || {}; S.progress.catches[f.name] = (S.progress.catches[f.name] || 0) + 1;
       S.progress.needs.fun = Math.min(100, S.progress.needs.fun + 14);
       player.say(f.icon, 2.5); SND.sfx('coin'); toast(`You caught a ${f.name}! +${f.coins} ✦ and a fish for your bag.`);
@@ -812,6 +820,7 @@ function getCity(id) {
   const made = makeThings(rec.world);
   Object.assign(rec, made, { venuesById: made.byId, myHome: rec.world.objects.find(o => o.kind === 'myhome') || null });
   rec.npcs = makeNpcs(rec.neighbours, rec.world, id.length * 97);
+  growCity(rec);
   if (rec.garden && S.progress.restore.stage >= L.RESTORE.length) addFern(rec);
   rec.meta = cityMeta(id);
   CITIES[id] = rec;
@@ -1005,14 +1014,14 @@ function npcThink(n, dt, gm) {
       t.emoteT -= dt;
       if (t.emoteT <= 0 && t.emotes && n.pose !== 'inside') { t.emoteT = 2.2 + Math.random() * 2; n.say(t.emotes[Math.floor(Math.random() * t.emotes.length)], 1.8); }
       if (t.kind === 'chat' && t.partner && (!t.partner.task || t.partner.task.partner !== n)) { npcEnd(n); return; }
-      if (t.t >= t.mins - 0.001) npcEnd(n);
+      if (t.t >= t.mins - 0.001) { if (t.kind === 'chat' && t.partner && n.name < t.partner.name) gossipBetween(n, t.partner); npcEnd(n); }
     } else if (t.phase === 'wait') { if (!t.partner.task || t.partner.task.partner !== n) npcEnd(n); }
     else if (t.kind === 'jog') { t.emoteT -= dt; if (t.emoteT <= 0) { t.emoteT = 3 + Math.random() * 3; n.say(['💦', '🏃', '💪', '☀️'][Math.floor(Math.random() * 4)], 1.4); } if (!n.path.length && !n.onArrive) npcEnd(n); }
     else if (!n.path.length && !n.onArrive) npcEnd(n);
     return;
   }
   if (n.path.length) return;
-  if (sceneName === 'city' && Math.hypot(player.x - n.x, player.y - n.y) < 2.2) { n.face(player.x, player.y); if (!n.greeted) { n.greeted = true; n.say(['👋', '☀️', '💛', '🎵'][n.seed % 4]); } }
+  if (sceneName === 'city' && Math.hypot(player.x - n.x, player.y - n.y) < 2.2) { n.face(player.x, player.y); if (!n.greeted) { n.greeted = true; greetPlayer(n); } }
   else n.greeted = false;
   n.wait -= dt;
   if (n.wait > 0) return;
@@ -1179,6 +1188,7 @@ function drawFrame(now) {
     (t.shadow || TREE_SHADOW).draw(ctx, sx, sy, z);
   }
   ctx.globalAlpha = 1;
+  if (world === cityWorld && C) drawWorn(z);
   for (const f of flats) { const [sx, sy] = toScreen(f.x, f.y); if (onScreen(sx, sy, (f.obj ? 420 : 80) * z)) { f.sprite.draw(ctx, sx, sy, z); if (f.furn && f.furn.type === 'plot') drawPlotLive(f, sx, sy, z); } }
   drawPickups(z);
   if (world === homeWorld) drawDecorGrid(z);
@@ -1228,6 +1238,7 @@ function drawFrame(now) {
     const [sx, sy] = toScreen(c.x, c.y);
     A.drawEmote(ctx, sx, sy - 74 * z, Math.max(0.7, z), c.emote, c.emoteLife);
   }
+  for (const c of npcs) if (c.line && npcVisible(c)) { const [sx, sy] = toScreen(c.x, c.y); drawSpeech(sx, sy - (c.emote ? 112 : 84) * z, c.line, Math.min(1, c.lineLife * 2)); }
   drawLabels(z);
   drawPeerNames(z);
   if (!indoor) drawBirds(dt);
@@ -1321,8 +1332,9 @@ function drawThing(t, z) {
     // gentle sway
     const shook = t.o.shakeT > 0 ? Math.sin(time * 28) * 0.11 * Math.min(1, t.o.shakeT) : 0;
     ctx.save(); ctx.translate(sx, sy); ctx.transform(1, 0, Math.sin(time * 1.2 + t.ax * 0.7 + t.ay) * 0.025 + shook, 1, 0, 0);
-    t.sprite.draw(ctx, 0, 0, z); ctx.restore();
-  } else if (t.flipX) { ctx.save(); ctx.translate(sx, sy); ctx.scale(-1, 1); t.sprite.draw(ctx, 0, 0, z); ctx.restore(); }
+    t.sprite.draw(ctx, 0, 0, z * (t.o.grow || 1)); ctx.restore();
+  } else if (t.o.grow) t.sprite.draw(ctx, sx, sy, z * t.o.grow);
+  else if (t.flipX) { ctx.save(); ctx.translate(sx, sy); ctx.scale(-1, 1); t.sprite.draw(ctx, 0, 0, z); ctx.restore(); }
   else t.sprite.draw(ctx, sx, sy, z);
   if (t.live === 'fountain') A.drawFountainWater(ctx, sx, sy, z, time);
   else if (t.live === 'clock') A.drawClockHands(ctx, sx, sy, z, new Date());
@@ -1497,6 +1509,7 @@ function drawGroundBird(b, z) {
 const shakingTrees = new Set();
 function update(dt) {
   updateBirds(dt);
+  trackSteps();
   const onboardingOpen = !$('onboarding').classList.contains('hidden');
   // trees wobble while being shaken, then settle
   if (act && act.phase === 'do' && act.item.def.id === 'shake' && act.obj && act.obj.kind === 'tree') { act.obj.shakeT = 1; shakingTrees.add(act.obj); }
@@ -2028,6 +2041,107 @@ function addMemory(name, text, f = friendship(name)) {
   f.mem = f.mem.slice(0, 8);
   S.progress.friends[name] = f;
 }
+
+// ---------- a town that notices you (see js/townlife.js) ----------
+/** Neighbours close by (or named in `also`) notice what you just did, react, and remember it. */
+function townNews(ev, also = []) {
+  const near = sceneName === 'venue' || sceneName === 'city'
+    ? npcs.filter(x => !x.generic && x.name && npcVisible(x) && Math.hypot(x.x - player.x, x.y - player.y) < 7)
+    : [];
+  for (const x of near) { if (!x.task || x.task.kind !== 'chat') x.face(player.x, player.y); x.say(TL.cheerFor(ev.t), 2); }
+  S.progress.news = TL.addNews(S.progress.news, ev, gameDay(), [...near.map(x => x.name), ...also]);
+  saveProgress();
+}
+/** Two neighbours finished a chat: they may pass on news about you. */
+function gossipBetween(a, b) {
+  const passed = TL.gossip(S.progress.news, a.name, b.name);
+  for (const p of passed) { const who = p.listener === a.name ? a : b; who.say(['😮', '🤭', '😲'][Math.floor(Math.random() * 3)], 2); }
+  if (passed.length) saveProgress();
+}
+/** Walking up to a neighbour: once a day they say something, about you if they've heard anything. */
+function greetPlayer(n) {
+  const key = 'greet:' + gameDay() + ':' + n.name;
+  if (n.generic || !n.name || S.progress.daily[key]) { n.say(['👋', '☀️', '💛', '🎵'][n.seed % 4]); return; }
+  S.progress.daily[key] = 1;
+  const line = TL.greetingFor(n.name, n.traits || [], S.progress.news, { hour: hourOf(S.progress.clock), weather: weatherNow(), hunger: n.needs?.hunger, energy: n.needs?.energy, mood: mood(n.needs || {}), ownLine: n.data?.line });
+  n.say(line.icon, 2.6); n.speak(line.text, 5.5); SND.sfx('pop');
+  saveProgress();
+}
+/** A rounded speech bubble with up to three short lines of text. */
+function drawSpeech(x, y, text, alpha) {
+  const fs = Math.round(Math.max(12, Math.min(15, 13 * cam.zoom)));
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.font = `700 ${fs}px Nunito, system-ui, sans-serif`;
+  const maxW = Math.min(230, W * 0.6), words = text.split(' '), lines = [];
+  let cur = '';
+  for (const w of words) { const tryL = cur ? cur + ' ' + w : w; if (ctx.measureText(tryL).width > maxW && cur) { lines.push(cur); cur = w; } else cur = tryL; }
+  if (cur) lines.push(cur);
+  const shown = lines.slice(0, 3), lh = fs * 1.25, pad = 9;
+  const bw = Math.max(...shown.map(l => ctx.measureText(l).width)) + pad * 2, bh = shown.length * lh + pad * 1.4;
+  const bx = Math.max(8, Math.min(W - bw - 8, x - bw / 2)), by = y - bh;
+  ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = 'rgba(38,57,90,.18)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 12); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - 6, by + bh - 1); ctx.lineTo(x, by + bh + 8); ctx.lineTo(x + 6, by + bh - 1); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#26395A'; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+  shown.forEach((l, k) => ctx.fillText(l, bx + pad, by + pad * 0.7 + k * lh));
+  ctx.restore();
+}
+// The land grows by itself: flowers and saplings spread a little every day, and grass wears into
+// paths where you walk. On Reddit, every player who finishes the daily errands plants something too.
+function growSeed(id) { return hashStr('grow:' + id); }
+function growthOf(id) {
+  let g = S.progress.growth[id];
+  if (!g || typeof g.day !== 'number' || !Array.isArray(g.sprouts) || !g.worn || typeof g.worn !== 'object') g = S.progress.growth[id] = TL.freshGrowth(dayOf(S.progress.clock));
+  return g;
+}
+function sproutDecor(rec, s, day) {
+  const [i, j, kind, born, seed] = s;
+  if (kind === 'flowers') return { kind: 'flowers', i, j, seed, sprout: true };
+  const kinds = rec.world.decor.filter(d => d.kind === 'tree' && !d.sprout).map(d => d.tree);
+  const tree = kinds.length ? kinds[seed % kinds.length] : 'round';
+  return { kind: 'tree', i, j, tree, seed, sprout: true, born, grow: TL.sproutSize(born, day) };
+}
+function growCity(rec) {
+  const g = growthOf(rec.id), day = dayOf(S.progress.clock), wd = rec.world;
+  if (!rec.grown) {
+    rec.grown = true;
+    const ds = g.sprouts.map(s => sproutDecor(rec, s, day));
+    wd.decor.push(...ds); addDecor(rec.things, rec.flats, ds);
+    plantCommunity(rec);
+  }
+  const added = TL.growTown(g, wd, day, d => rng(growSeed(rec.id) + d * 977));
+  if (added.length) { const ds = added.map(s => sproutDecor(rec, s, day)); wd.decor.push(...ds); addDecor(rec.things, rec.flats, ds); }
+  for (const t of rec.things) if (t.o && t.o.sprout && t.o.kind === 'tree') t.o.grow = TL.sproutSize(t.o.born, day);
+  saveLocal();
+}
+function plantCommunity(rec) {
+  const want = RD && RD.homes ? RD.homes : 0;
+  if (!want) return;
+  const all = TL.communityPlants(rec.world, want, d => rng(growSeed(rec.id) + d));
+  const fresh = all.slice(rec.community || 0).map(s => Object.assign(sproutDecor(rec, s, dayOf(S.progress.clock)), { grow: 1, community: true }));
+  rec.community = all.length;
+  rec.world.decor.push(...fresh); addDecor(rec.things, rec.flats, fresh);
+}
+window.addEventListener('wv-community', () => { for (const rec of Object.values(CITIES)) plantCommunity(rec); });
+let lastStep = '';
+function trackSteps() {
+  if (world !== cityWorld || !C || !player.moving) return;
+  const i = Math.floor(player.x), j = Math.floor(player.y), key = C.id + i + ',' + j;
+  if (key === lastStep) return;
+  lastStep = key; TL.stepOn(growthOf(C.id), cityWorld, i, j);
+}
+function drawWorn(z) {
+  const g = S.progress.growth[C.id]; if (!g) return;
+  ctx.save();
+  for (const [key, n] of Object.entries(g.worn)) {
+    if (n < TL.WORN_AT) continue;
+    const [i, j] = key.split(',').map(Number), [cx, cy] = toScreen(i + 0.5, j + 0.5);
+    if (cx < -80 || cx > W + 80 || cy < -80 || cy > H + 80) continue;
+    const a = Math.min(0.5, 0.12 + (n - TL.WORN_AT) * 0.025), pts = [toScreen(i + 0.15, j + 0.15), toScreen(i + 0.85, j + 0.15), toScreen(i + 0.85, j + 0.85), toScreen(i + 0.15, j + 0.85)];
+    ctx.fillStyle = `rgba(176,134,88,${a})`; ctx.beginPath(); pts.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
 function renderQueue() {
   const el = $('queue'); el.innerHTML = '';
   queue.forEach((q, k) => {
@@ -2052,7 +2166,7 @@ const warned = {};
 function tickClock(gm) {
   const before = S.progress.clock; S.progress.clock += gm;
   for (const p of S.progress.plots) L.growPlot(p, S.progress.clock, raining());
-  if (Math.floor(before / 1440) !== Math.floor(S.progress.clock / 1440)) { toast(`Good morning! Day ${dayOf(S.progress.clock)} in ${C.meta.name}.`); chargeRent(); prunePicked(); pruneDaily(); checkAchievements(); }
+  if (Math.floor(before / 1440) !== Math.floor(S.progress.clock / 1440)) { toast(`Good morning! Day ${dayOf(S.progress.clock)} in ${C.meta.name}.`); chargeRent(); prunePicked(); pruneDaily(); checkAchievements(); if (C) growCity(C); }
   if (Math.floor(before / 30) !== Math.floor(S.progress.clock / 30)) saveProgress();
 }
 function tickNeeds(gm, curDef) {
@@ -2333,6 +2447,7 @@ function showNeighbour(n) {
     <div class="friend-row"><span>${esc(friendLevel(f.hearts || 0))}</span>${hearts(f.hearts)}</div>
     ${(() => { const rq = requestOpen(n); return rq ? `<div class="notice"><b>${esc(n.name)} would love ${rq.n} ${ITEMS[rq.item].icon} ${esc(itemName(rq.item, rq.n))} today</b><span>You have ${have(rq.item)}. Reward: ✦ ${rq.coins} and a heart.</span></div>` : ''; })()}
     <div class="trait-row">${n.traits.map(t => `<span class="chip">${TRAITS[t]?.icon || ''} ${esc(t)}</span>`).join('')}<span class="chip chip-sun">${moodLabel(mood(n.needs))} mood</span><span class="chip">📍 ${esc(n.doing || 'Out for a walk')}</span></div>
+    ${(() => { const k = TL.knownBy(S.progress.news, n.name); return k.length ? `<h4 class="group-title">${esc(n.name)} has heard</h4><ul class="log">${k.map(x => `<li><b>${x.icon} ${esc(x.text)}</b><span>${x.from ? 'from ' + esc(x.from) : 'saw it'}</span></li>`).join('')}</ul>` : ''; })()}
     ${(f.mem || []).length ? `<h4 class="group-title">Things ${esc(n.name)} remembers</h4><ul class="log">${f.mem.map(m => `<li><b>${esc(m.text)}</b><span>Day ${m.day}</span></li>`).join('')}</ul>` : ''}
     <div class="actions-col">
       <button class="btn btn-primary btn-wide" data-a="hello" ${met ? 'disabled' : ''}>${met ? 'You said hello today ✓' : 'Say hello'}</button>
@@ -2349,7 +2464,7 @@ function showNeighbour(n) {
     if ((S.progress.inventory[wants] || 0) < 1) return;
     addItem(wants, -1);
     bump(n.name, c => { c.gift = today(); c.hearts = Math.min(5, (c.hearts || 0) + 1); addMemory(n.name, `You gave me a ${ITEMS[wants].icon} ${itemName(wants, 1)}`, c); });
-    n.say('😊', 3); setCoins(S.coins + 10, true); S.progress.daily[today() + ':gift'] = 1; saveProgress(); checkGoals(); showNeighbour(n);
+    n.say('😊', 3); setCoins(S.coins + 10, true); S.progress.daily[today() + ':gift'] = 1; townNews({ t: 'gift', who: n.name, item: itemName(wants, 1) }, [n.name]); saveProgress(); checkGoals(); showNeighbour(n);
   };
   openSheet('neighbour:' + n.name, A.SPECIES[n.species].label + ' · neighbour', n.name, el, { tab: 'friends' });
 }
@@ -3249,6 +3364,8 @@ function startOnboarding() {
     setScene('home', ...homeWorld.insideDoor);
     player.wave = 1.6; player.say('👋');
     $('hint').classList.remove('hidden'); setTimeout(hideHint, 9000);
+    // Save the new character to the cloud straight away, not on the next 20-second tick.
+    CLOUD.dirty = true; if (S.token && CLOUD.ready) cloudPush();
     if (then) then();
   };
   $('start-button').onclick = () => begin();
@@ -3267,7 +3384,7 @@ $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 700);
 
 // Small read-only hook for automated play-testing.
-window.__willowvale = { state: S, quests: () => questState(), checkQuests: () => checkQuests(), open: k => ({ homes: showHomes, places: showPlaces, friends: showFriends, journal: showJournal, profile: showProfile, shop: showShop, island: showIsland, market: showMarket, craft: showCraft, restore: showRestore, settings: showSettings, wardrobe: showWardrobe, needs: showNeeds, districts: showDistricts, adminLogin: showAdminLogin, venue: () => showVenue(C.venues[0]), home: () => showHome(cityWorld.objects.find(o => o.home)), neighbour: () => showNeighbour(cityNpcs.find(n => !n.generic)), chat: () => showEmojiChat(cityNpcs.find(n => !n.generic)) })[k](),
+window.__willowvale = { state: S, quests: () => questState(), news: () => S.progress.news, growth: () => S.progress.growth[C.id], greet: name => { const n = npcs.find(x => x.name === name); if (!n) return null; delete S.progress.daily['greet:' + gameDay() + ':' + n.name]; greetPlayer(n); return n.line; }, townNews: (ev, also) => townNews(ev, also), gossip: (a, b) => TL.gossip(S.progress.news, a, b, () => 0), sprouts: () => things.filter(t => t.o && t.o.sprout).length, step: (i, j, n = 1) => { for (let k = 0; k < n; k++) TL.stepOn(growthOf(C.id), cityWorld, i, j); }, checkQuests: () => checkQuests(), open: k => ({ homes: showHomes, places: showPlaces, friends: showFriends, journal: showJournal, profile: showProfile, shop: showShop, island: showIsland, market: showMarket, craft: showCraft, restore: showRestore, settings: showSettings, wardrobe: showWardrobe, needs: showNeeds, districts: showDistricts, adminLogin: showAdminLogin, venue: () => showVenue(C.venues[0]), home: () => showHome(cityWorld.objects.find(o => o.home)), neighbour: () => showNeighbour(cityNpcs.find(n => !n.generic)), chat: () => showEmojiChat(cityNpcs.find(n => !n.generic)) })[k](),
   birds: () => (C ? birdsFor(C).map(b => ({ x: +b.x.toFixed(2), y: +b.y.toFixed(2), fly: b.fly > 0, gone: b.gone > 0 })) : []), tapBird: () => { const b = C && birdsFor(C).find(x => !x.fly && !x.gone); return b ? tapBirds(b.x, b.y) : false; }, shakeNearestTree: () => { const t = things.filter(x => x.o && x.o.kind === 'tree').sort((a, b) => Math.hypot(a.ax - player.x, a.ay - player.y) - Math.hypot(b.ax - player.x, b.ay - player.y))[0]; if (!t) return false; const d = actionsFor('tree')[0]; queueAction(d, { o: t.o }); return t.o.tree; }, homeCount: () => world.objects.filter(o => o.home).length, treeCount: () => things.filter(t => t.o && t.o.kind === 'tree').length,
   pieList: () => { const out = [], seen = new Set(); for (const t of things) { const o = t.o; if (!t.interactive || !o) continue; const key = o.type || o.kind; if (seen.has(key)) continue; seen.add(key); out.push(key); } for (const n of npcs) if (npcVisible(n) && !seen.has('npc')) { seen.add('npc'); out.push('npc'); } return out; },
-  pieFor: key => { closeSheet(); if (key === 'npc') { const n = npcs.find(n => npcVisible(n)); if (n) showPie({ npc: n }, W / 2, H / 2); return !!n; } const t = things.find(t => t.interactive && t.o && (t.o.type || t.o.kind) === key); if (t) showPie({ o: t.o }, W / 2, H / 2); return !!t; }, cancel: () => cancelActions(), peers: () => shownPeers().map(p => ({ name: p.name, x: +p.x.toFixed(2), y: +p.y.toFixed(2), emote: p.emote || null })), allPeers: () => [...peers.values()].map(p => ({ name: p.name, scene: p.scene })), emoteTo: e => sendEmote(e, [...peers.values()][0]), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { S.progress.clock = m; }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); if (!f) return false; const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); if (!t) return false; queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
+  pieFor: key => { closeSheet(); if (key === 'npc') { const n = npcs.find(n => npcVisible(n)); if (n) showPie({ npc: n }, W / 2, H / 2); return !!n; } const t = things.find(t => t.interactive && t.o && (t.o.type || t.o.kind) === key); if (t) showPie({ o: t.o }, W / 2, H / 2); return !!t; }, cancel: () => cancelActions(), peers: () => shownPeers().map(p => ({ name: p.name, x: +p.x.toFixed(2), y: +p.y.toFixed(2), emote: p.emote || null })), allPeers: () => [...peers.values()].map(p => ({ name: p.name, scene: p.scene })), emoteTo: e => sendEmote(e, [...peers.values()][0]), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, x: n.x, y: n.y, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { const d0 = Math.floor(S.progress.clock / 1440); S.progress.clock = m; if (Math.floor(m / 1440) !== d0 && C) growCity(C); }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); if (!f) return false; const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); if (!t) return false; queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };

@@ -57,7 +57,7 @@ async function load(): Promise<void> {
     list.append(li)
   }
   $('town').textContent =
-    `🏡 ${s.homes} home${s.homes === 1 ? '' : 's'} in town · ${s.finishedToday} finished today`
+    `🌳 ${s.homes} planted in town · ${s.finishedToday} finished today`
   const me = $('me')
   if (s.me.doneToday)
     me.textContent = `✓ You finished today’s errands${s.me.rank ? ` (#${s.me.rank})` : ''} · 🔥 ${s.me.streak}`

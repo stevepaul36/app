@@ -70,4 +70,4 @@ Other commands:
 | Server: saves, daily errands, streaks, board, share, daily post | `src/server/`                                     |
 | Daily errand picking (shared by client and server)              | `src/shared/daily.ts`                             |
 
-Willowvale is a children's game: there is no typed chat, and the art is all drawn in code.
+Willowvale is a gentle, all-ages game: there is no typed chat (only emoji), and the art is all drawn in code.
