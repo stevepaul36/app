@@ -26,7 +26,8 @@ in the **Best Ported Daily Game** category.
    from any device.
 
 Tips: the 🧭 map shows every place in town; the Journal lists your goals; neighbours have little
-requests that pay well; the market buys what you gather.
+requests that pay well; the market buys what you gather; tap 🎲 to play **Paws & Properties**, and
+open **Homes** to buy, trade and style houses.
 
 ## What's new for this hackathon
 
@@ -41,6 +42,27 @@ Everything in this folder was made during the hackathon:
 - **A new post every day** at 00:02 UTC (scheduled task), plus a mod menu item to post one now.
 - Fonts bundled locally, and the game's own server features (multiplayer streets, nickname accounts)
   switched off inside Reddit.
+
+New in the game itself during the hackathon (so it's on the web too):
+
+- **Paws & Properties, a Monopoly-style game played in the town, with no board.** Tap 🎲 to roll and
+  stroll round the town's 40 places, then walk to where you landed (a 📍 marks it):
+  - Buy the home you land on, put it up for auction against the neighbours, or pay its owner rent.
+  - Lucky Leaf and Town Chest cards, ✦ 100 for passing GO, council and luxury taxes, and a Wishing
+    Fountain pot that the next visitor collects.
+  - The Ranger's office is the jail: roll doubles, pay ✦ 50 or use a free card to get out.
+  - Four bus lines and two utilities work like the railroads and utilities.
+  - Own a whole street to double its rent, then upgrade its homes evenly up to a Grand manor, from a
+    limited supply in the builder's yard. Sell upgrades back, mortgage, and trade or swap homes.
+  - AI neighbours with their own personalities buy, sell, bid against you and pay you rent. If one
+    can't pay, it sells upgrades, then mortgages, then goes bankrupt and everything it owns passes to
+    whoever it owes. If you can't pay, you get caught and spend time with the Ranger.
+- **Make every home your own.** Each home keeps its own furniture. Choose a bed (canopy, bunk beds or
+  a day cot), colours for the bedding, wood, sofa, armchair, rug and wardrobe, plus wallpaper, floors
+  and carpets. A furniture shop sells 20 pieces. Repaint the homes you own and rename them from word
+  lists (no typed text).
+- **Comfort:** a follow camera with a close-up view, larger text, a battery saver, tooltips on every
+  icon button, and a 🚪 button to leave any home in one tap.
 
 The game itself lives one folder up (`../public`). `npm run build` copies it into `public/` here, so
 there's one copy of the game for the web, Android and Reddit.
@@ -78,4 +100,5 @@ Other commands:
 | Server: saves, daily errands, streaks, board, share, daily post | `src/server/`                                     |
 | Daily errand picking (shared by client and server)              | `src/shared/daily.ts`                             |
 
-Willowvale is a gentle, all-ages game: there is no typed chat (only emoji), and the art is all drawn in code.
+Willowvale is a gentle, all-ages game: there is no typed chat (only emoji), home names are picked
+from word lists, it uses coins only (no real money), and the art is all drawn in code.
