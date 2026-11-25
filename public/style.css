@@ -71,6 +71,8 @@ body.touch .joystick { display: block; }
 .ctl-view svg { width: 22px; height: 22px; }
 .ctl-view[aria-pressed="true"] { background: var(--sun); color: #5A3B00; box-shadow: 0 4px 0 var(--sun-d), 0 8px 18px rgba(28,54,92,.2); }
 body.indoors .ctl-view { display: none; }
+/* Larger text setting: panels, hints and messages scale up; their boxes keep fitting the screen. */
+body.big-text :is(.sheet-head, .sheet-body, .hint, .toast, .queue, .clock, .ctl-act small, .decor-bar) { zoom: 1.18; }
 .ctl-run { width: 54px; height: 54px; right: 104px; bottom: 14px; }
 .ctl-run[aria-pressed="true"] { background: var(--sun); color: #5A3B00; box-shadow: 0 4px 0 var(--sun-d), 0 8px 18px rgba(28,54,92,.2); }
 .ctl-act { width: 86px; height: 86px; right: 0; bottom: 6px; background: var(--leaf); color: #fff; box-shadow: 0 5px 0 var(--leaf-d), 0 10px 22px rgba(28,54,92,.25); }

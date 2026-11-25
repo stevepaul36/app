@@ -59,7 +59,7 @@ const S = {
   user: null,
   profile: (v => isObj(v) && typeof v.species === 'string' ? v : null)(store.get('willowvale_player_v2', null)),
   progress: loadProgress(),
-  settings: Object.assign({ labels: true, reduced: false, music: true, sfx: true, freewill: true, follow: false }, store.get('willowvale_settings_v2', {})),
+  settings: Object.assign({ labels: true, reduced: false, music: true, sfx: true, freewill: true, follow: false, bigText: false, saver: false }, store.get('willowvale_settings_v2', {})),
   coins: 0,
   properties: null,
   online: 'guest',
@@ -1041,7 +1041,8 @@ let birds = null;
 
 // ---------- view ----------
 function resize() {
-  DPR = Math.min(2, window.devicePixelRatio || 1);
+  // Battery saver draws at 1x: on a 3x phone screen that's far fewer pixels each frame.
+  DPR = S.settings.saver ? 1 : Math.min(2, window.devicePixelRatio || 1);
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
@@ -1113,10 +1114,16 @@ function drawSea() {
 }
 
 // One bad frame must never stop the game: log it and keep the loop running.
+let lastDraw = 0;
 function frame(now) {
-  try { drawFrame(now); } catch (e) { console.error('frame error', e); }
   requestAnimationFrame(frame);
+  // Battery saver: about 30 frames a second instead of the screen's full rate.
+  if (S.settings.saver && now - lastDraw < 30) return;
+  lastDraw = now;
+  try { drawFrame(now); } catch (e) { console.error('frame error', e); }
 }
+// Text size for words drawn on the map (place names, speech bubbles, player names).
+const textScale = () => (S.settings.bigText ? 1.25 : 1);
 function drawFrame(now) {
   const dt = S.sheet === 'pause' ? 0 : Math.min(0.05, (now - t0) / 1000); t0 = now; time += S.settings.reduced ? dt * 0.4 : dt;
   update(dt);
@@ -1129,8 +1136,9 @@ function drawFrame(now) {
   const j0 = Math.max(0, Math.floor(Math.min(...corners.map(c => c[1]))) - 2), j1 = Math.min(N - 1, Math.ceil(Math.max(...corners.map(c => c[1]))) + 4);
 
   const indoor = !!world.interior;
+  const fancy = !S.settings.saver; // battery saver skips purely decorative effects
   // sea sparkle
-  if (!indoor) {
+  if (!indoor && fancy) {
   ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 2 * z; ctx.lineCap = 'round';
   ctx.beginPath();
   for (let j = j0 - 6; j <= j1 + 6; j += 2) for (let i = i0 - 6; i <= i1 + 6; i += 2) {
@@ -1173,7 +1181,7 @@ function drawFrame(now) {
   ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = (3.2 + Math.sin(time * 2) * 0.8) * z; ctx.stroke();
   }
   // cloud shadows drift across the island
-  if (!S.settings.reduced && !indoor) {
+  if (!S.settings.reduced && !indoor && fancy) {
     ctx.fillStyle = 'rgba(30,60,90,.07)';
     for (const c of clouds) {
       const x = ((c.x + time * 0.35) % 60) - 8, y = c.y;
@@ -1230,7 +1238,7 @@ function drawFrame(now) {
   drawFx(z);
 
   // overlays
-  if (!indoor) for (const b of butterflies) {
+  if (!indoor && fancy) for (const b of butterflies) {
     const x = b.cx + Math.sin(time * 0.6 + b.seed) * 1.6, y = b.cy + Math.cos(time * 0.45 + b.seed * 2) * 1.6;
     const [sx, sy] = toScreen(x, y, 30 + Math.sin(time * 3 + b.seed) * 8);
     if (!onScreen(sx, sy, 20)) continue;
@@ -1402,7 +1410,7 @@ function drawPlayerIfHidden(z) {
 function drawLabels(z) {
   if (!S.settings.labels || z < 0.38) return;
   ctx.save();
-  const fs = Math.round(Math.max(11, Math.min(15, 13 * z * 1.4)));
+  const fs = Math.round(Math.max(11, Math.min(15, 13 * z * 1.4)) * textScale());
   ctx.font = `700 ${fs}px "Baloo 2", system-ui, sans-serif`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
   const flatTags = world.interior ? [] : flats.filter(f => f.obj && !f.obj.deco).map(f => ({ o: f.obj, top: 30 }));
   for (const t of [...drawn, ...flatTags]) {
@@ -2086,7 +2094,7 @@ function greetPlayer(n) {
 }
 /** A rounded speech bubble with up to three short lines of text. */
 function drawSpeech(x, y, text, alpha) {
-  const fs = Math.round(Math.max(12, Math.min(15, 13 * cam.zoom)));
+  const fs = Math.round(Math.max(12, Math.min(15, 13 * cam.zoom)) * textScale());
   ctx.save(); ctx.globalAlpha = alpha;
   ctx.font = `700 ${fs}px Nunito, system-ui, sans-serif`;
   const maxW = Math.min(230, W * 0.6), words = text.split(' '), lines = [];
@@ -2844,6 +2852,8 @@ function showSettings() {
     <label class="switch"><input type="checkbox" id="set-labels" ${S.settings.labels ? 'checked' : ''}><span class="track"></span><span>Show place names</span></label>
     <label class="switch"><input type="checkbox" id="set-follow" ${S.settings.follow ? 'checked' : ''}><span class="track"></span><span>Follow camera: a close view that follows you and looks ahead</span></label>
     <label class="switch"><input type="checkbox" id="set-reduced" ${S.settings.reduced ? 'checked' : ''}><span class="track"></span><span>Reduce motion</span></label>
+    <label class="switch"><input type="checkbox" id="set-bigtext" ${S.settings.bigText ? 'checked' : ''}><span class="track"></span><span>Larger text</span></label>
+    <label class="switch"><input type="checkbox" id="set-saver" ${S.settings.saver ? 'checked' : ''}><span class="track"></span><span>Battery saver: simpler effects and fewer frames, for older phones</span></label>
     <label class="switch"><input type="checkbox" id="set-music" ${S.settings.music ? 'checked' : ''}><span class="track"></span><span>Music</span></label>
     <label class="switch"><input type="checkbox" id="set-sfx" ${S.settings.sfx ? 'checked' : ''}><span class="track"></span><span>Sound effects</span></label>
     <label class="slider"><span>Music volume</span><input type="range" id="set-mvol" min="0" max="100" value="${Math.round((S.settings.musicVol ?? 1) * 100)}"></label>
@@ -2856,6 +2866,8 @@ function showSettings() {
   el.querySelector('#set-labels').onchange = e => { S.settings.labels = e.target.checked; saveSettings(); };
   el.querySelector('#set-follow').onchange = e => toggleFollow(e.target.checked);
   el.querySelector('#set-reduced').onchange = e => { S.settings.reduced = e.target.checked; saveSettings(); };
+  el.querySelector('#set-bigtext').onchange = e => { S.settings.bigText = e.target.checked; applyTextSize(); saveSettings(); };
+  el.querySelector('#set-saver').onchange = e => { S.settings.saver = e.target.checked; saveSettings(); resize(); };
   el.querySelector('#set-music').onchange = e => { S.settings.music = e.target.checked; SND.setPrefs({ music: e.target.checked }); saveSettings(); };
   el.querySelector('#set-sfx').onchange = e => { S.settings.sfx = e.target.checked; SND.setPrefs({ sfx: e.target.checked }); saveSettings(); };
   el.querySelector('#set-mvol').oninput = e => { S.settings.musicVol = e.target.value / 100; SND.setPrefs({ musicVol: S.settings.musicVol }); saveSettings(); };
@@ -3306,6 +3318,18 @@ $('speed-button').onclick = cycleSpeed;
 $('run-button').onclick = toggleRun;
 $('cam-button').onclick = cameraButton;
 $('view-button').onclick = () => toggleFollow();
+// Larger text: the page's panels scale up (CSS), and map text uses textScale().
+function applyTextSize() { document.body.classList.toggle('big-text', !!S.settings.bigText); }
+applyTextSize();
+// Hover tooltips for the icon buttons, with their keyboard shortcut where there is one.
+{
+  const keysFor = { 'cam-button': 'C', 'view-button': 'V', 'run-button': 'R or Shift', 'act-button': 'E or Space', 'pause-button': 'P' };
+  for (const b of document.querySelectorAll('button[aria-label]')) {
+    if (b.title) continue;
+    const label = b.id === 'act-button' ? 'Interact' : b.getAttribute('aria-label');
+    b.title = keysFor[b.id] ? `${label} (${keysFor[b.id]})` : label;
+  }
+}
 $('view-button').setAttribute('aria-pressed', String(!!S.settings.follow));
 // Follow camera on/off. Resets any manual zoom so the view eases to the right distance.
 function toggleFollow(on = !S.settings.follow) {
