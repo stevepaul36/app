@@ -51,6 +51,16 @@ export const ITEMS = {
   jackolantern: { icon: '🎃', one: 'pumpkin lantern', many: 'pumpkin lanterns', cat: 'decor', price: 24 },
   rug: { icon: '🟫', one: 'round rug', many: 'round rugs', cat: 'decor', price: 12 },
   shellchime: { icon: '🎐', one: 'shell wind chime', many: 'shell wind chimes', cat: 'decor', price: 14 },
+  cot: { icon: '👶', one: 'baby cot', many: 'baby cots', cat: 'decor', price: 22 },
+  beanbag: { icon: '🫘', one: 'beanbag', many: 'beanbags', cat: 'decor', price: 12 },
+  piano: { icon: '🎹', one: 'piano', many: 'pianos', cat: 'decor', price: 60 },
+  fireplace: { icon: '🔥', one: 'fireplace', many: 'fireplaces', cat: 'decor', price: 45 },
+  grandclock: { icon: '🕰️', one: 'grandfather clock', many: 'grandfather clocks', cat: 'decor', price: 35 },
+  toybox: { icon: '🧩', one: 'toy box', many: 'toy boxes', cat: 'decor', price: 14 },
+  tallshelf: { icon: '📖', one: 'bookcase', many: 'bookcases', cat: 'decor', price: 24 },
+  cosychair: { icon: '🛋️', one: 'cosy chair', many: 'cosy chairs', cat: 'decor', price: 20 },
+  sidetable: { icon: '☕', one: 'side table', many: 'side tables', cat: 'decor', price: 12 },
+  easel: { icon: '🎨', one: 'painting easel', many: 'painting easels', cat: 'decor', price: 18 },
 };
 export const itemName = (k, n) => (n === 1 ? ITEMS[k].one : ITEMS[k].many);
 export const CATS = { crop: 'Crops', bug: 'Bugs', fish: 'Fish', material: 'Materials', nature: 'Nature', made: 'Made by you', decor: 'Furniture', food: 'Food', seed: 'Seeds' };

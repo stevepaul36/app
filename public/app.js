@@ -92,6 +92,9 @@ S.progress.homes = S.progress.homes || {};
 // garden, decorating, collections, the Old Garden
 S.progress.plots = S.progress.plots || Array.from({ length: 6 }, () => ({}));
 S.progress.decor = S.progress.decor || [];
+if (!S.progress.decorByHome) { S.progress.decorByHome = {}; S.progress.decorMigrate = true; }
+S.progress.homeStyle = S.progress.homeStyle || {};
+S.progress.homeLooks = S.progress.homeLooks || {};
 S.progress.found = S.progress.found || {};
 S.progress.restore = S.progress.restore || { stage: 0, given: {} };
 S.progress.picked = S.progress.picked || {};
@@ -105,7 +108,7 @@ SND.setPrefs({ music: S.settings.music, sfx: S.settings.sfx, musicVol: S.setting
 let RESETTING = false;
 // One wallet: coins live in the save, on this device and (when signed in) in the cloud.
 const CLOUD = Object.assign({ version: 0, user: null, dirty: false, state: 'off', savedAt: 0, ready: false }, store.get('willowvale_cloud_v1', {}));
-const saveProgress = () => { if (RESETTING) return; S.progress.coins = S.coins; store.set('willowvale_progress_v2', S.progress); CLOUD.dirty = true; };
+const saveProgress = () => { if (RESETTING) return; S.progress.coins = S.coins; if (!S.progress.decorMigrate) S.progress.decorByHome[S.progress.homeKey || 'cottage'] = S.progress.decor; store.set('willowvale_progress_v2', S.progress); CLOUD.dirty = true; };
 // The clock and needs change every second without anything calling saveProgress, so keep this device's
 // copy fresh: every 15 seconds and whenever the page is hidden or closed. This doesn't count as a cloud
 // change; the next real save carries the time along.
@@ -149,6 +152,7 @@ const BUILDING_KINDS = ['house', 'apartment', 'villa', 'venue', 'shop', 'myhome'
 function makeThings(wd) {
   const list = [], flatList = [], byId = {};
   for (const o of wd.objects) {
+    if (o.home && S.progress.homeLooks?.[o.id]) Object.assign(o, S.progress.homeLooks[o.id]); // your paint and name
     const t = { o, box: [o.i, o.j, o.i + o.w, o.j + o.d], ax: o.i, ay: o.j, interactive: true };
     if (o.kind === 'venue') byId[o.id] = o;
     if (o.flatArt) { flatList.push({ d: o, obj: o, x: o.i, y: o.j, sprite: CA.flatSprite(o) }); continue; }
@@ -216,8 +220,8 @@ for (const w of homeWorld.walls) {
 }
 for (const f of homeWorld.objects) {
   if (f.type === 'sofa') {
-    homeThings.push({ o: f, furn: true, sprite: F.furnitureSprite(f, 'seat'), ax: f.i, ay: f.j, box: [f.i, f.j, f.i + f.w, f.j + 0.7], interactive: true });
-    homeThings.push({ o: f, furn: true, sprite: F.furnitureSprite(f, 'back'), ax: f.i, ay: f.j, box: [f.i, f.j + 0.72, f.i + f.w, f.j + f.d], interactive: true });
+    homeThings.push({ o: f, furn: true, part: 'seat', sprite: F.furnitureSprite(f, 'seat'), ax: f.i, ay: f.j, box: [f.i, f.j, f.i + f.w, f.j + 0.7], interactive: true });
+    homeThings.push({ o: f, furn: true, part: 'back', sprite: F.furnitureSprite(f, 'back'), ax: f.i, ay: f.j, box: [f.i, f.j + 0.72, f.i + f.w, f.j + f.d], interactive: true });
     continue;
   }
   const t = { o: f, furn: true, sprite: F.furnitureSprite(f), ax: f.i, ay: f.j, box: [f.i, f.j, f.i + f.w, f.j + f.d], interactive: !f.decor && !f.flat };
@@ -492,7 +496,8 @@ function collectionHtml() {
 
 // ---------- decorating your home ----------
 const DECOR = { on: false, sel: null, pick: -1, undo: [], things: [] };
-const placedCount = k => S.progress.decor.filter(d => d.item === k).length;
+// placed in any of your homes (the home you're in uses the live list)
+const placedCount = k => Object.entries(S.progress.decorByHome).filter(([key]) => key !== (S.progress.homeKey || 'cottage')).reduce((a, [, arr]) => a + arr.filter(d => d.item === k).length, 0) + S.progress.decor.filter(d => d.item === k).length;
 const freeDecor = k => have(k) - placedCount(k);
 function decorTileOK(i, j, ignore = -1) {
   const t = homeWorld.get(i, j);
@@ -535,10 +540,10 @@ function renderDecorBar() {
   const picked = DECOR.pick >= 0 ? S.progress.decor[DECOR.pick] : null;
   bar.innerHTML = `<div class="decor-top"><b>${picked ? `${ITEMS[picked.item].icon} ${esc(itemName(picked.item, 1))}` : DECOR.sel ? `Tap a spot for your ${esc(itemName(DECOR.sel, 1))}` : 'Decorate'}</b>
     ${picked ? '<button class="btn btn-ghost btn-small" data-a="rot">↻ Turn</button><button class="btn btn-ghost btn-small" data-a="move">✥ Move</button><button class="btn btn-ghost btn-small" data-a="store">📦 Put away</button>' : ''}
-    <button class="btn btn-ghost btn-small" data-a="undo" ${DECOR.undo.length ? '' : 'disabled'}>↶ Undo</button><button class="btn btn-primary btn-small" data-a="done">Done</button></div>
+    <button class="btn btn-ghost btn-small" data-a="style">🎨 Style</button><button class="btn btn-ghost btn-small" data-a="undo" ${DECOR.undo.length ? '' : 'disabled'}>↶ Undo</button><button class="btn btn-primary btn-small" data-a="done">Done</button></div>
     <div class="decor-tray">${items.length ? items.map(k => `<button class="decor-item ${DECOR.sel === k ? 'on' : ''}" data-k="${k}" ${freeDecor(k) > 0 ? '' : 'disabled'}><span>${ITEMS[k].icon}</span><small>${freeDecor(k)} left</small></button>`).join('') : '<p class="lead">Make furniture at your workbench (🪑 stool: 4 sticks) and it will show up here.</p>'}</div>`;
   bar.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { DECOR.sel = DECOR.sel === b.dataset.k ? null : b.dataset.k; DECOR.pick = -1; renderDecorBar(); });
-  const act2 = { done: endDecor,
+  const act2 = { done: endDecor, style: () => { endDecor(); showStyle(); },
     undo: () => { const u = DECOR.undo.pop(); if (!u) return; S.progress.decor = u; refreshDecor(); DECOR.pick = -1; renderDecorBar(); },
     rot: () => { DECOR.undo.push(JSON.parse(JSON.stringify(S.progress.decor))); picked.rot = picked.rot ? 0 : 1; refreshDecor(); renderDecorBar(); },
     move: () => { DECOR.moving = DECOR.pick; toast('Tap where it should go.'); },
@@ -577,7 +582,98 @@ function drawDecorGrid(z) {
   ctx.restore();
 }
 
+// ---------- making each home your own: its own decor, furniture styles, walls, floors and paint ----------
+const homeKey = () => S.progress.homeKey || 'cottage';
+// Each home keeps its own decor. Entering a home swaps the decor in; your old decor moves into the first home you enter.
+function switchHome(key) {
+  const by = S.progress.decorByHome;
+  if (S.progress.decorMigrate) { delete S.progress.decorMigrate; by[key] = S.progress.decor; }
+  else { by[homeKey()] = S.progress.decor; S.progress.decor = by[key] ||= []; }
+  S.progress.homeKey = key;
+  refreshDecor(); applyHomeStyle(); saveProgress();
+}
+const STYLE_OPTS = {
+  bed: [['classic', 'Cosy bed'], ['canopy', 'Canopy bed'], ['bunk', 'Bunk beds'], ['cot', 'Day cot']],
+  bedding: ['#7FB8E6', '#F7A8C4', '#FFD27A', '#9ED99B', '#B9A8EC', '#F4F1EA', '#E8665A'],
+  wood: ['#C98A4B', '#E3C08F', '#8C5A3C', '#5E3A26', '#F4EDE2', '#7A8798'],
+  sofa: ['#F0587A', '#3F8FB8', '#3FA86A', '#FFC83D', '#8E7CE0', '#7A8798', '#E8823A'],
+  chair: ['#3F8FB8', '#F0587A', '#3FA86A', '#FFC83D', '#8E7CE0', '#7A8798', '#E8823A'],
+  rug: ['#F2A93B', '#F7A8C4', '#7FC8DD', '#9ED99B', '#B9A8EC', '#E8665A'],
+  wardrobe: ['#E8B87A', '#FAF7F2', '#8C5A3C', '#7FC8DD', '#F7A8C4', '#9ED99B'],
+};
+const FLOORS = [['Honey wood', null, '#D9A066'], ['Terracotta', 15, '#E8A87E'], ['Cream tiles', 16, '#F2ECDF'], ['Sandstone', 22, '#F2D7AE'], ['Grey stone', 14, '#D9D4CC']];
+const CARPETS = [['Lilac', null, '#C9BBF0'], ['Moss', 19, '#98CC6E'], ['Coral', 20, '#D98A70'], ['Rose', 17, '#D96A62'], ['Sand', 22, '#F2D7AE']];
+const PAINTS = ['#FBF1DD', '#FFE3A3', '#E2F2DA', '#F7D9E3', '#DDEBF7'];
+const STYLED = new Set(['bed', 'table', 'chair', 'sofa', 'armchair', 'rug', 'wardrobe']);
+const homeStyleOf = key => ({ ...F.STYLE_DEFAULT, floor: 0, carpet: 0, ...(S.progress.homeStyle[key] || {}) });
+function applyHomeStyle() {
+  const st = homeStyleOf(homeKey());
+  for (const f of homeWorld.objects) f.style = st;
+  for (const t of homeThings) {
+    if (t.wall) t.sprite = F.wallSprite({ ...t.wall, palette: st.walls });
+    else if (t.o && STYLED.has(t.o.type) && t.o.decorIdx === undefined) t.sprite = F.furnitureSprite(t.o, t.part);
+  }
+  for (const fl of homeFlats) if (fl.furn && STYLED.has(fl.furn.type)) fl.sprite = F.furnitureSprite(fl.furn);
+  homeWorld.skin = { 9: FLOORS[st.floor]?.[1] ?? undefined, 11: CARPETS[st.carpet]?.[1] ?? undefined };
+}
+function repaintHome(o) {
+  const t = cityThings.find(x => x.o === o);
+  if (t) t.sprite = o.style ? CA.cityBuildingSprite(o) : A.buildingSprite(o);
+}
+const SHOP_MARKUP = 3;
+function showStyle(o) {
+  const key = o?.home ? o.id : homeKey();
+  const obj = o?.home ? o : cityWorld.objects.find(q => q.id === key);
+  const st = homeStyleOf(key), own = S.progress.homes[key]?.type === 'own';
+  const set = (k, v) => { S.progress.homeStyle[key] = { ...(S.progress.homeStyle[key] || {}), [k]: v }; if (key === homeKey()) applyHomeStyle(); saveProgress(); SND.sfx('pop'); showStyle(o); };
+  const sw = (k, label) => `<section class="style-sec"><h4>${label}</h4><div class="swatches">${STYLE_OPTS[k].map(c => `<button class="swatch ${st[k] === c ? 'on' : ''}" style="background:${c}" data-k="${k}" data-v="${c}" aria-label="${label} colour"></button>`).join('')}</div></section>`;
+  const chips = (k, label, list) => `<section class="style-sec"><h4>${label}</h4><div class="filter-row">${list.map(([v, l, c]) => `<button class="filter ${String(st[k]) === String(v) ? 'on' : ''}" data-k="${k}" data-v="${v}">${c ? `<i class="dot" style="background:${c}"></i>` : ''}${esc(l)}</button>`).join('')}</div></section>`;
+  const walls = Object.entries(F.WALL_PALETTES).map(([k, c]) => [k, k[0].toUpperCase() + k.slice(1), c || '#FFF1D9']);
+  const shop = Object.keys(ITEMS).filter(k => ITEMS[k].cat === 'decor');
+  const el = h(`<div class="style-sheet">
+    <p class="lead">Make ${esc(obj?.name || 'your cottage')} your own. Changes are free and only change this home.</p>
+    ${chips('bed', 'Bed', STYLE_OPTS.bed)}
+    ${sw('bedding', 'Bedding')}
+    ${sw('wood', 'Wood: bed, table and chairs')}
+    ${sw('sofa', 'Sofa')}
+    ${sw('chair', 'Armchair')}
+    ${sw('rug', 'Living room rug')}
+    ${sw('wardrobe', 'Wardrobe')}
+    ${chips('walls', 'Wallpaper', walls)}
+    ${chips('floor', 'Floor', FLOORS.map(([l, , c], k) => [k, l, c]))}
+    ${chips('carpet', 'Bedroom carpet', CARPETS.map(([l, , c], k) => [k, l, c]))}
+    <section class="style-sec"><h4>Furniture shop <small>place them with 🛋️ inside</small></h4><div class="shop-grid">${shop.map(k => `<button class="shop-item" data-buy="${k}"><span>${ITEMS[k].icon}</span><b>${esc(ITEMS[k].one)}</b><small>✦ ${ITEMS[k].price * SHOP_MARKUP} · have ${have(k)}</small></button>`).join('')}</div></section>
+    ${own && obj ? `<section class="style-sec"><h4>Outside</h4>
+      <div class="swatches">${PAINTS.map((c, n) => `<button class="swatch ${(obj.look || 0) % 5 === n ? 'on' : ''}" style="background:${c}" data-paint="${n}" aria-label="Paint scheme ${n + 1}"></button>`).join('')}<small class="paint-cost">Repaint ✦ 30</small></div>
+      <div class="offer-form"><input maxlength="22" value="${esc(obj.name)}" aria-label="Home name"><button class="btn btn-primary" data-act="rename">Rename</button></div></section>` : ''}
+  </div>`);
+  el.querySelectorAll('[data-k]').forEach(b => b.onclick = () => set(b.dataset.k, b.dataset.k === 'floor' || b.dataset.k === 'carpet' ? +b.dataset.v : b.dataset.v));
+  el.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => {
+    const k = b.dataset.buy, cost = ITEMS[k].price * SHOP_MARKUP;
+    if (S.coins < cost) { toast(`You need ✦ ${cost}.`); return; }
+    setCoins(S.coins - cost, true); addItem(k, 1); SND.sfx('coin'); saveProgress();
+    toast(`Bought a ${itemName(k, 1)}. Tap 🛋️ inside your home to place it.`); showStyle(o);
+  });
+  el.querySelectorAll('[data-paint]').forEach(b => b.onclick = () => {
+    const n = +b.dataset.paint;
+    if ((obj.look || 0) % 5 === n) return;
+    if (S.coins < 30) { toast('You need ✦ 30 to repaint.'); return; }
+    setCoins(S.coins - 30, true); obj.look = n; S.progress.homeLooks[obj.id] = { ...(S.progress.homeLooks[obj.id] || {}), look: n };
+    repaintHome(obj); saveProgress(); SND.sfx('pop'); toast(`${obj.name} has a fresh coat of paint!`); showStyle(o);
+  });
+  const rn = el.querySelector('[data-act=rename]');
+  if (rn) rn.onclick = () => {
+    const v = el.querySelector('.offer-form input').value.trim().slice(0, 22);
+    if (!v) return;
+    obj.name = v; S.progress.homeLooks[obj.id] = { ...(S.progress.homeLooks[obj.id] || {}), name: v };
+    if (S.progress.homes[obj.id]) S.progress.homes[obj.id].name = v;
+    saveProgress(); toast(`Renamed to ${v}.`); showStyle(o);
+  };
+  openSheet('style:' + key, 'Style', obj?.name || 'Your cottage', el, { tab: 'homes' });
+}
+
 refreshDecor();
+applyHomeStyle();
 
 // ---------- the Old Garden: a Willowvale community project ----------
 function placeOldGarden(wd) {
@@ -867,7 +963,7 @@ function enterHome(o) {
   cancelActions(); closePie();
   const door = o && o.doorTile ? o.doorTile : myHome ? myHome.doorTile : C.stop.doorTile;
   S.progress.homeDoor = { city: C.id, x: door[0] + 0.5, y: door[1] + 0.5, name: o?.name || 'Your cottage' };
-  fadeTo(() => { setScene('home', ...homeWorld.insideDoor); player.face(player.x - 1, player.y - 1); toast(o && o.home ? `Welcome home to ${o.name}` : 'Home sweet home'); });
+  fadeTo(() => { switchHome(o && o.home ? o.id : 'cottage'); setScene('home', ...homeWorld.insideDoor); player.face(player.x - 1, player.y - 1); toast(o && o.home ? `Welcome home to ${o.name}` : 'Home sweet home'); });
 }
 // Where you are in town: your own spot outdoors, or the door of the building you're inside.
 function outsidePos() {
@@ -2393,8 +2489,8 @@ function homeCard(o, big = false) {
     ${big ? `<button class="btn btn-sun" data-act="reno" ${d.level >= 3 || d.mort ? 'disabled' : ''}>${d.level >= 3 ? 'Deluxe ✓' : `Renovate ✦ ${ES.renovateCost(T, o.id)}`}</button>
     <button class="btn btn-ghost" data-act="let" ${d.mort ? 'disabled' : ''}>${d.letting ? 'Stop renting out' : 'Rent it out'}</button>
     <button class="btn btn-ghost" data-act="mort">${d.mort ? `Pay off ✦ ${ES.liftCost(T, o.id)}` : `Mortgage +✦ ${ES.mortgageGet(T, o.id)}`}</button>
-    <button class="btn btn-ghost" data-act="sell">Sell to bank +✦ ${ES.sellPrice(T, o.id)}</button>` : '<button class="btn btn-ghost" data-act="manage">Manage</button>'}`;
-  else if (renting) acts = '<button class="btn btn-primary" data-act="enter">Go inside</button><button class="btn btn-ghost" data-act="leave">Move out</button>';
+    <button class="btn btn-ghost" data-act="sell">Sell to bank +✦ ${ES.sellPrice(T, o.id)}</button><button class="btn btn-ghost" data-act="style">🎨 Style</button>` : '<button class="btn btn-ghost" data-act="manage">Manage</button>'}`;
+  else if (renting) acts = `<button class="btn btn-primary" data-act="enter">Go inside</button><button class="btn btn-ghost" data-act="leave">Move out</button>${big ? '<button class="btn btn-ghost" data-act="style">🎨 Style</button>' : ''}`;
   else acts = `${ES.rentable(T, o.id) ? `<button class="btn btn-primary" data-act="rent">Rent ✦ ${rent}/day</button>` : ''}
     ${d.owner === 'bank' ? `<button class="btn btn-sun" data-act="buy">Buy ✦ ${ES.buyPrice(T, o.id)}</button>` : ''}
     ${ask !== null ? '<button class="btn btn-sun" data-act="offer">Make an offer</button><button class="btn btn-ghost" data-act="swap">Trade</button>' : ''}`;
@@ -2427,6 +2523,7 @@ function homeCard(o, big = false) {
   on('leave', () => { delete S.progress.homes[o.id]; d.renter = null; saveProgress(); toast(`You moved out of ${o.name}.`); refreshHomeSheet(o); });
   on('go', () => { closeSheet(); visitThing(o); });
   on('manage', () => showHome(o));
+  on('style', () => showStyle(o));
   on('reno', () => deal(you => ES.renovate(E, T, o.id, you), o));
   on('let', () => deal(() => ES.setLetting(T, o.id, !d.letting), o));
   on('mort', () => deal(you => (d.mort ? ES.liftMortgage : ES.mortgage)(E, T, o.id, you), o));
@@ -2493,8 +2590,8 @@ function showTrade(who) {
   const T = townFor(), E = estate(), npc = T.npc[who];
   if (!npc) return;
   const theirs = ES.ownedBy(T, who).filter(id => T.deeds[id].lives !== who), mine = ES.ownedBy(T, 'you');
-  const row = (id, side) => `<label class="trade-row"><input type="checkbox" data-side="${side}" value="${esc(id)}"><span>${esc(homeName(id))}<small>${esc(ES.streetOf(T, id).name)} · worth ✦ ${ES.value(T, id)}${T.deeds[id].mort ? ' · mortgaged' : ''}</small></span></label>`;
-  const el = h(`<div class="trade">
+  const row = (id, side) => `<label class="swap-row"><input type="checkbox" data-side="${side}" value="${esc(id)}"><span>${esc(homeName(id))}<small>${esc(ES.streetOf(T, id).name)} · worth ✦ ${ES.value(T, id)}${T.deeds[id].mort ? ' · mortgaged' : ''}</small></span></label>`;
+  const el = h(`<div class="swap">
     <p class="lead">${esc(who)} is a ${esc(ES.PERSONAS[npc.persona].label.toLowerCase())} with ✦ ${npc.coins}. Pick homes to swap, and add coins either way.</p>
     <h4>You get</h4>${theirs.map(id => row(id, 'get')).join('') || `<p class="lead">${esc(who)} has no spare homes.</p>`}
     <h4>You give</h4>${mine.map(id => row(id, 'give')).join('') || '<p class="lead">You don’t own a home here yet.</p>'}
@@ -3624,4 +3721,4 @@ setTimeout(() => $('loading').remove(), 700);
 window.__willowvale = { state: S, follow: on => toggleFollow(on), leaveHome: () => leaveHome(),camera: () => ({ x: cam.x, y: cam.y, zoom: cam.zoom, lead: [...cam.lead], player: A.P(player.x, player.y, 34) }),quests: () => questState(), news: () => S.progress.news, growth: () => S.progress.growth[C.id], greet: name => { const n = npcs.find(x => x.name === name); if (!n) return null; delete S.progress.daily['greet:' + gameDay() + ':' + n.name]; greetPlayer(n); return n.line; }, townNews: (ev, also) => townNews(ev, also), gossip: (a, b) => TL.gossip(S.progress.news, a, b, () => 0), sprouts: () => things.filter(t => t.o && t.o.sprout).length, step: (i, j, n = 1) => { for (let k = 0; k < n; k++) TL.stepOn(growthOf(C.id), cityWorld, i, j); }, checkQuests: () => checkQuests(), open: k => ({ homes: showHomes, places: showPlaces, friends: showFriends, journal: showJournal, profile: showProfile, shop: showShop, island: showIsland, market: showMarket, craft: showCraft, restore: showRestore, settings: showSettings, wardrobe: showWardrobe, needs: showNeeds, districts: showDistricts, adminLogin: showAdminLogin, venue: () => showVenue(C.venues[0]), home: () => showHome(cityWorld.objects.find(o => o.home)), neighbour: () => showNeighbour(cityNpcs.find(n => !n.generic)), chat: () => showEmojiChat(cityNpcs.find(n => !n.generic)) })[k](),
   birds: () => (C ? birdsFor(C).map(b => ({ x: +b.x.toFixed(2), y: +b.y.toFixed(2), fly: b.fly > 0, gone: b.gone > 0 })) : []), tapBird: () => { const b = C && birdsFor(C).find(x => !x.fly && !x.gone); return b ? tapBirds(b.x, b.y) : false; }, shakeNearestTree: () => { const t = things.filter(x => x.o && x.o.kind === 'tree').sort((a, b) => Math.hypot(a.ax - player.x, a.ay - player.y) - Math.hypot(b.ax - player.x, b.ay - player.y))[0]; if (!t) return false; const d = actionsFor('tree')[0]; queueAction(d, { o: t.o }); return t.o.tree; }, homeCount: () => world.objects.filter(o => o.home).length, treeCount: () => things.filter(t => t.o && t.o.kind === 'tree').length,
   pieList: () => { const out = [], seen = new Set(); for (const t of things) { const o = t.o; if (!t.interactive || !o) continue; const key = o.type || o.kind; if (seen.has(key)) continue; seen.add(key); out.push(key); } for (const n of npcs) if (npcVisible(n) && !seen.has('npc')) { seen.add('npc'); out.push('npc'); } return out; },
-  pieFor: key => { closeSheet(); if (key === 'npc') { const n = npcs.find(n => npcVisible(n)); if (n) showPie({ npc: n }, W / 2, H / 2); return !!n; } const t = things.find(t => t.interactive && t.o && (t.o.type || t.o.kind) === key); if (t) showPie({ o: t.o }, W / 2, H / 2); return !!t; }, cancel: () => cancelActions(), peers: () => shownPeers().map(p => ({ name: p.name, x: +p.x.toFixed(2), y: +p.y.toFixed(2), emote: p.emote || null })), allPeers: () => [...peers.values()].map(p => ({ name: p.name, scene: p.scene })), emoteTo: e => sendEmote(e, [...peers.values()][0]), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, x: n.x, y: n.y, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { const d0 = Math.floor(S.progress.clock / 1440); S.progress.clock = m; if (Math.floor(m / 1440) !== d0 && C) growCity(C); }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); if (!f) return false; const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); if (!t) return false; queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), property: () => showProperty(), estate: () => S.progress.estate, morning: () => { estate().lastMorning = -1; estateMorning(); return estate().post; }, chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
+  pieFor: key => { closeSheet(); if (key === 'npc') { const n = npcs.find(n => npcVisible(n)); if (n) showPie({ npc: n }, W / 2, H / 2); return !!n; } const t = things.find(t => t.interactive && t.o && (t.o.type || t.o.kind) === key); if (t) showPie({ o: t.o }, W / 2, H / 2); return !!t; }, cancel: () => cancelActions(), peers: () => shownPeers().map(p => ({ name: p.name, x: +p.x.toFixed(2), y: +p.y.toFixed(2), emote: p.emote || null })), allPeers: () => [...peers.values()].map(p => ({ name: p.name, scene: p.scene })), emoteTo: e => sendEmote(e, [...peers.values()][0]), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, x: n.x, y: n.y, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { const d0 = Math.floor(S.progress.clock / 1440); S.progress.clock = m; if (Math.floor(m / 1440) !== d0 && C) growCity(C); }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); if (!f) return false; const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); if (!t) return false; queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), property: () => showProperty(), style: () => showStyle(), homeStyle: () => homeStyleOf(homeKey()), homeKey: () => homeKey(), estate: () => S.progress.estate, morning: () => { estate().lastMorning = -1; estateMorning(); return estate().post; }, chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
