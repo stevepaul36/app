@@ -622,6 +622,9 @@ function repaintHome(o) {
   if (t) t.sprite = o.style ? CA.cityBuildingSprite(o) : A.buildingSprite(o);
 }
 const SHOP_MARKUP = 3;
+// home names come from word lists, so there's no free text anywhere in the game on Reddit
+const NAME_A = ['Willow', 'Maple', 'Clover', 'Honey', 'Sunny', 'Mossy', 'Acorn', 'Bramble', 'Pebble', 'Lantern', 'Meadow', 'Fern', 'Cozy', 'Little', 'Old', 'Rosy'];
+const NAME_B = ['Cottage', 'Nook', 'Burrow', 'Den', 'Lodge', 'House', 'Hollow', 'Rest', 'Haven', 'Corner', 'Manor', 'Hideaway'];
 function showStyle(o) {
   const key = o?.home ? o.id : homeKey();
   const obj = o?.home ? o : cityWorld.objects.find(q => q.id === key);
@@ -646,7 +649,7 @@ function showStyle(o) {
     <section class="style-sec"><h4>Furniture shop <small>place them with 🛋️ inside</small></h4><div class="shop-grid">${shop.map(k => `<button class="shop-item" data-buy="${k}"><span>${ITEMS[k].icon}</span><b>${esc(ITEMS[k].one)}</b><small>✦ ${ITEMS[k].price * SHOP_MARKUP} · have ${have(k)}</small></button>`).join('')}</div></section>
     ${own && obj ? `<section class="style-sec"><h4>Outside</h4>
       <div class="swatches">${PAINTS.map((c, n) => `<button class="swatch ${(obj.look || 0) % 5 === n ? 'on' : ''}" style="background:${c}" data-paint="${n}" aria-label="Paint scheme ${n + 1}"></button>`).join('')}<small class="paint-cost">Repaint ✦ 30</small></div>
-      <div class="offer-form"><input maxlength="22" value="${esc(obj.name)}" aria-label="Home name"><button class="btn btn-primary" data-act="rename">Rename</button></div></section>` : ''}
+      <h4>Name</h4><div class="name-pick"><select data-name="0" aria-label="First word">${NAME_A.map(w => `<option>${w}</option>`).join('')}</select><select data-name="1" aria-label="Second word">${NAME_B.map(w => `<option>${w}</option>`).join('')}</select><button class="btn btn-primary" data-act="rename">Rename</button></div></section>` : ''}
   </div>`);
   el.querySelectorAll('[data-k]').forEach(b => b.onclick = () => set(b.dataset.k, b.dataset.k === 'floor' || b.dataset.k === 'carpet' ? +b.dataset.v : b.dataset.v));
   el.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => {
@@ -664,8 +667,9 @@ function showStyle(o) {
   });
   const rn = el.querySelector('[data-act=rename]');
   if (rn) rn.onclick = () => {
-    const v = el.querySelector('.offer-form input').value.trim().slice(0, 22);
-    if (!v) return;
+    const [a, b] = [...el.querySelectorAll('[data-name]')].map(x => x.value);
+    if (!NAME_A.includes(a) || !NAME_B.includes(b)) return;
+    const v = a + ' ' + b;
     obj.name = v; S.progress.homeLooks[obj.id] = { ...(S.progress.homeLooks[obj.id] || {}), name: v };
     if (S.progress.homes[obj.id]) S.progress.homes[obj.id].name = v;
     saveProgress(); toast(`Renamed to ${v}.`); showStyle(o);

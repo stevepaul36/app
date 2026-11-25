@@ -606,3 +606,6 @@ label.check input { width: 18px; height: 18px; accent-color: var(--green, #3FA86
 .biz-row span { flex: 1; }
 .biz-row small { color: var(--ink-2); font-weight: 700; }
 .landing .home-card { margin-bottom: 10px; }
+
+.name-pick { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.name-pick select { flex: 1; min-width: 110px; padding: 8px; border-radius: 12px; font: inherit; font-weight: 800; }
