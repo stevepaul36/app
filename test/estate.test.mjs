@@ -54,23 +54,45 @@ test('can’t buy without enough coins, or a home the bank doesn’t own', () =>
   assert.equal(E.buyFromBank(Est, T, 'h6', { coins: 9999 }, 1).ok, false);
 });
 
-test('renovating raises rent and value; mortgaged homes earn nothing and can’t be renovated', () => {
+test('upgrades need the whole street, go up evenly to a manor, and raise visitor rent', () => {
+  const { T, Est, you } = fresh();
+  you.coins = 20000;
+  E.buyFromBank(Est, T, 'h6', you, 1);
+  assert.match(E.renovate(Est, T, 'h6', you).msg, /Own all of/);
+  E.buyFromBank(Est, T, 'h7', you, 1);
+  const base = E.landRent(T, 'h6');
+  assert.equal(base, 25 * 2); // full street doubles an unbuilt home
+  const r0 = E.rentOf(T, 'h6');
+  assert.ok(E.renovate(Est, T, 'h6', you).ok);
+  assert.ok(E.rentOf(T, 'h6') > r0);
+  assert.equal(E.landRent(T, 'h6'), 25 * 4);
+  assert.match(E.renovate(Est, T, 'h6', you).msg, /evenly/);
+  for (let k = 0; k < 9; k++) assert.ok(E.renovate(Est, T, k % 2 ? 'h6' : 'h7', you).ok, 'step ' + k);
+  assert.equal(T.deeds.h6.level, E.MANOR);
+  assert.equal(T.deeds.h7.level, E.MANOR);
+  assert.equal(E.landRent(T, 'h6'), 25 * 45);
+  assert.equal(E.renovate(Est, T, 'h6', you).ok, false);
+  assert.deepEqual(E.buildSupply(T), { upgrades: 32, manors: 10 });
+  // can't mortgage or sell while the street has upgrades; sell upgrades back for half, evenly
+  assert.match(E.mortgage(Est, T, 'h6', you).msg, /upgrades/);
+  const c = you.coins;
+  assert.ok(E.sellUpgrade(Est, T, 'h6', you).ok);
+  assert.equal(you.coins, c + Math.round(E.renovateCost(T, 'h6') / 2));
+  assert.match(E.sellUpgrade(Est, T, 'h6', you).msg, /evenly/);
+});
+
+test('mortgaged homes earn nothing, can’t be let, and cost 10% more to pay off', () => {
   const { T, Est, you } = fresh();
   E.buyFromBank(Est, T, 'h1', you, 1);
-  const r0 = E.rentOf(T, 'h1');
-  assert.ok(E.renovate(Est, T, 'h1', you).ok);
-  assert.ok(E.rentOf(T, 'h1') > r0);
-  E.renovate(Est, T, 'h1', you); E.renovate(Est, T, 'h1', you);
-  assert.equal(T.deeds.h1.level, 3);
-  assert.equal(E.renovate(Est, T, 'h1', you).ok, false); // already Deluxe
   const c = you.coins;
   assert.ok(E.mortgage(Est, T, 'h1', you).ok);
   assert.ok(you.coins > c);
   assert.equal(E.rentOf(T, 'h1'), 0);
+  assert.equal(E.landRent(T, 'h1'), 0);
   assert.equal(E.mortgage(Est, T, 'h1', you).ok, false);
   assert.equal(E.setLetting(T, 'h1', true).ok, false);
   const got = you.coins - c;
-  assert.equal(E.liftCost(T, 'h1'), Math.round(got * 1.1)); // pay back 10% more
+  assert.equal(E.liftCost(T, 'h1'), Math.round(got * 1.1));
   assert.ok(E.liftMortgage(Est, T, 'h1', you).ok);
   assert.ok(E.rentOf(T, 'h1') > 0);
 });
@@ -197,7 +219,7 @@ test('a month of mornings: neighbours buy and sell, coins never go negative, dee
     for (const n of Object.values(T.npc)) assert.ok(n.coins >= 0);
     for (const d of Object.values(T.deeds)) {
       assert.ok(d.owner === 'bank' || d.owner === 'you' || T.npc[d.owner]);
-      assert.ok(d.level >= 0 && d.level <= 3);
+      assert.ok(d.level >= 0 && d.level <= E.MANOR);
       if (d.lives) assert.equal(d.owner, d.lives); // nobody loses the home they live in
     }
     assert.ok(T.index >= 0.75 && T.index <= 1.4);

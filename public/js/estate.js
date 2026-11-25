@@ -7,13 +7,19 @@
 
 // ---------- numbers ----------
 
+// Upgrades work like Monopoly houses: four upgrades, then a manor (the hotel). value and rent are for
+// the home's worth and its tenant's daily rent; land is the rent a visitor pays when their stroll lands there.
 export const LEVELS = [
-  { name: 'Original', value: 1, rent: 1 },
-  { name: 'Fresh paint & garden', value: 1.3, rent: 1.6 },
-  { name: 'Extension', value: 1.7, rent: 2.4 },
-  { name: 'Deluxe', value: 2.2, rent: 3.4 },
+  { name: 'Original', value: 1, rent: 1, land: 1 },
+  { name: 'Fresh paint & garden', value: 1.2, rent: 1.4, land: 4 },
+  { name: 'New kitchen', value: 1.4, rent: 1.8, land: 10 },
+  { name: 'Extension', value: 1.65, rent: 2.3, land: 25 },
+  { name: 'Conservatory', value: 1.9, rent: 2.8, land: 35 },
+  { name: 'Grand manor', value: 2.4, rent: 3.6, land: 45 },
 ]
-export const RENOVATE_SHARE = 0.25 // each level costs a quarter of the base price
+export const MANOR = LEVELS.length - 1
+export const BUILD_SHARE = 0.4 // each upgrade costs 40% of the home's base price (the same for every level)
+export const SUPPLY = { upgrades: 32, manors: 12 } // the builders' yard: Monopoly's 32 houses and 12 hotels
 export const SELL_SHARE = 0.7 // the bank pays 70% of value
 export const MORTGAGE_SHARE = 0.5
 export const LIFT_SHARE = 0.55 // paying off costs 10% more than you got
@@ -127,12 +133,37 @@ export function rentOf(T, id) {
 }
 export const buyPrice = (T, id) => Math.round(value(T, id))
 export const sellPrice = (T, id) => Math.max(0, Math.round(value(T, id) * SELL_SHARE) - (T.deeds[id].mort ? liftCost(T, id) : 0))
-export const renovateCost = (T, id) => Math.round(T.deeds[id].p * RENOVATE_SHARE * (T.deeds[id].level + 1))
+export const renovateCost = (T, id) => Math.round(T.deeds[id].p * BUILD_SHARE)
+export const streetHomes = (T, id) => deedsOn(T, T.deeds[id].st)
+/** What a visitor pays when their stroll lands on this home (Monopoly rent): a full street doubles an unbuilt home. */
+export function landRent(T, id) {
+  const d = T.deeds[id]
+  if (d.mort || d.owner === 'bank') return 0
+  return Math.round(d.r * LEVELS[d.level].land * (d.level === 0 && fullStreet(T, id) ? 2 : 1))
+}
+/** Upgrades and manors left in the builders' yard. */
+export function buildSupply(T) {
+  const lv = Object.values(T.deeds).map(d => d.level)
+  return { upgrades: SUPPLY.upgrades - lv.filter(l => l > 0 && l < MANOR).reduce((a, l) => a + l, 0), manors: SUPPLY.manors - lv.filter(l => l === MANOR).length }
+}
+/** Can this home take one more upgrade? Monopoly's rules: whole street, nothing mortgaged, build evenly, yard has stock. */
+export function canBuild(T, id, owner = T.deeds[id].owner) {
+  const d = T.deeds[id], on = streetHomes(T, id)
+  if (d.owner !== owner) return 'You don’t own that home.'
+  if (d.level >= MANOR) return 'It’s already a Grand manor.'
+  if (!fullStreet(T, id, owner)) return `Own all of ${streetOf(T, id).name} first.`
+  if (on.some(h => T.deeds[h].mort)) return 'Pay off the mortgages on this street first.'
+  if (d.level > Math.min(...on.map(h => T.deeds[h].level))) return 'Build evenly: upgrade the other homes on this street first.'
+  const y = buildSupply(T)
+  if (d.level === MANOR - 1 ? y.manors < 1 : y.upgrades < 1) return 'The builders’ yard has run out. Wait for someone to sell.'
+  return null
+}
 export const mortgageGet = (T, id) => Math.round(value(T, id) * MORTGAGE_SHARE)
 export const liftCost = (T, id) => T.deeds[id].mortAmt ? Math.round(T.deeds[id].mortAmt * (LIFT_SHARE / MORTGAGE_SHARE)) : Math.round(value(T, id) * LIFT_SHARE)
 export const ownedBy = (T, owner) => Object.keys(T.deeds).filter(id => T.deeds[id].owner === owner)
 export function worth(T, owner, coins = 0) {
-  return coins + ownedBy(T, owner).reduce((a, id) => a + (T.deeds[id].mort ? value(T, id) - liftCost(T, id) : value(T, id)), 0)
+  const lines = Object.entries(T.biz || {}).filter(([, b]) => b.owner === owner).reduce((a, [k, b]) => a + (k.startsWith('bus') ? 200 : 150) * (b.mort ? 0.5 : 1), 0)
+  return coins + lines + ownedBy(T, owner).reduce((a, id) => a + (T.deeds[id].mort ? value(T, id) - liftCost(T, id) : value(T, id)), 0)
 }
 
 // ---------- your actions (each returns { ok, msg } and changes `you.coins`) ----------
@@ -185,8 +216,8 @@ export function offerToNeighbour(E, T, id, you, amount, day) {
 
 export function sellToBank(E, T, id, you, day) {
   const d = T.deeds[id]
-  if (frozen(E, day)) return no('The Ranger has paused your property trading until tomorrow.')
   if (d.owner !== 'you') return no('You don’t own that home.')
+  if (streetHomes(T, id).some(h => T.deeds[h].level > 0 && h !== id)) return no('Sell the upgrades on this street first.')
   const get = sellPrice(T, id)
   you.coins += get
   Object.assign(d, { owner: 'bank', level: 0, mort: false, mortAmt: 0, tenant: null })
@@ -196,20 +227,32 @@ export function sellToBank(E, T, id, you, day) {
 
 export function renovate(E, T, id, you) {
   const d = T.deeds[id]
-  if (d.owner !== 'you') return no('You don’t own that home.')
-  if (d.mort) return no('Pay off the mortgage before renovating.')
-  if (d.level >= LEVELS.length - 1) return no('It’s already Deluxe.')
+  const why = canBuild(T, id, 'you')
+  if (why) return no(why)
   const cost = renovateCost(T, id)
   if (you.coins < cost) return no(`You need ✦ ${cost}.`)
   you.coins -= cost
   d.level++
-  return yes(`Renovated: ${LEVELS[d.level].name}! Rent is now ✦ ${rentOf(T, id)} a day.`)
+  return yes(`${LEVELS[d.level].name}! Visitors now pay ✦ ${landRent(T, id)} and tenants ✦ ${rentOf(T, id)} a day.`)
+}
+/** Sell one upgrade back to the yard for half what it cost (evenly, highest first). */
+export function sellUpgrade(E, T, id, you) {
+  const d = T.deeds[id]
+  if (d.owner !== 'you') return no('You don’t own that home.')
+  if (!d.level) return no('There’s nothing to sell.')
+  if (d.level < Math.max(...streetHomes(T, id).map(h => T.deeds[h].level))) return no('Sell evenly: start with the most upgraded home on the street.')
+  if (d.level === MANOR && buildSupply(T).upgrades < MANOR - 1) return no('The yard has no upgrades to swap for your manor.')
+  const get = Math.round(renovateCost(T, id) / 2)
+  you.coins += get
+  d.level--
+  return yes(`Sold an upgrade for ✦ ${get}.`)
 }
 
 export function mortgage(E, T, id, you) {
   const d = T.deeds[id]
   if (d.owner !== 'you') return no('You don’t own that home.')
   if (d.mort) return no('It’s already mortgaged.')
+  if (streetHomes(T, id).some(h => T.deeds[h].level > 0)) return no('Sell the upgrades on this street before mortgaging.')
   const get = mortgageGet(T, id)
   you.coins += get
   Object.assign(d, { mort: true, mortAmt: get })
@@ -304,7 +347,7 @@ export const LETTERS = [
   { text: 'The inspector found weeds at your homes that aren’t renovated: ✦ 10 each.', do: 'perPlain', n: -10 },
   { text: 'Lucky find: an old coin jar in the attic. Collect ✦ 35.', do: 'coins', n: 35 },
   { text: 'Roof tiles blew off in the storm. Pay ✦ 30.', do: 'coins', n: -30 },
-  { text: 'The Mayor is giving a homeowner’s grant: ✦ 25 for each Deluxe home.', do: 'perDeluxe', n: 25 },
+  { text: 'The Mayor is giving a homeowner’s grant: ✦ 25 for each Grand manor.', do: 'perDeluxe', n: 25 },
   { text: 'Street party! Every neighbour gives you ✦ 5.', do: 'party', n: 5 },
 ]
 function applyLetter(T, L, you, costs) {
@@ -399,7 +442,7 @@ export function morning(E, T, day, you, { letters = true } = {}) {
       out.events.push(`${name} bought a home on ${streetOf(T, id).name}.`)
       continue
     }
-    const fix = ownedBy(T, name).find(id => T.deeds[id].level < LEVELS.length - 1 && renovateCost(T, id) <= n.coins - p.reserve)
+    const fix = ownedBy(T, name).find(id => !canBuild(T, id, name) && renovateCost(T, id) <= n.coins - p.reserve)
     if (fix) {
       n.coins -= renovateCost(T, fix)
       T.deeds[fix].level++
@@ -480,6 +523,15 @@ export function payCosts(E, towns, costs, you, day) {
   const total = costs.reduce((a, c) => a + c.amount, 0)
   if (total <= 0) return msgs
   const all = () => Object.entries(towns).flatMap(([cid, T]) => ownedBy(T, 'you').map(id => [cid, T, id]))
+  // Monopoly order: sell upgrades for half, then mortgage, then the bank takes homes back
+  while (you.coins < total) {
+    const top = all().filter(([, T, id]) => T.deeds[id].level > 0).sort((a, b) => b[1].deeds[b[2]].level - a[1].deeds[a[2]].level)[0]
+    if (!top) break
+    const [, T, id] = top
+    you.coins += Math.round(renovateCost(T, id) / 2)
+    T.deeds[id].level--
+    msgs.push(`To cover what you owe, an upgrade on ${streetOf(T, id).name} was sold.`)
+  }
   if (you.coins < total) {
     for (const [, T, id] of all().filter(([, T, id]) => !T.deeds[id].mort).sort((a, b) => value(a[1], a[2]) - value(b[1], b[2]))) {
       if (you.coins >= total) break
@@ -497,14 +549,25 @@ export function payCosts(E, towns, costs, you, day) {
     }
   }
   if (you.coins < total) {
-    msgs.push(`You couldn’t pay everything. The Ranger caught you: ✦ ${CAUGHT_FINE} fine added and no property trading until tomorrow.`)
+    msgs.push(`You couldn’t pay everything. The Ranger caught you: ✦ ${CAUGHT_FINE} fine, off to the Ranger’s office, and no buying property until tomorrow.`)
+    let left = you.coins
+    for (const c of costs) { const paid = Math.min(left, c.amount); left -= paid; credit(towns, c, paid) }
     you.coins = 0
     E.caughtUntil = day
     E.fines = (E.fines || 0) + CAUGHT_FINE
+    E.jail = { tries: 0, day }
     return msgs
   }
   you.coins -= total
+  for (const c of costs) credit(towns, c, c.amount)
   return msgs
+}
+// Where paid money goes: a neighbour you owed, or the Wishing Fountain pot for taxes and fines.
+function credit(towns, c, amount) {
+  const T = c.town ? towns[c.town] : null
+  if (!T || amount <= 0) return
+  if (c.to && T.npc[c.to]) T.npc[c.to].coins += amount
+  else if (c.why === 'tax' || c.why === 'fine') T.pot = (T.pot || 0) + amount
 }
 
 /** Fines from being caught are paid first thing when you have coins again. */
@@ -522,3 +585,5 @@ export function richList(T, youCoins) {
   for (const [name, n] of Object.entries(T.npc)) rows.push({ name, worth: worth(T, name, n.coins), homes: ownedBy(T, name).length })
   return rows.sort((a, b) => b.worth - a.worth)
 }
+
+export { news as addNews }
