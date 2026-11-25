@@ -12,6 +12,7 @@ import { GAME } from './js/games.js';
 import * as L from './js/life.js';
 import * as TL from './js/townlife.js';
 import * as FC from './js/followcam.js';
+import * as ES from './js/estate.js';
 const { ITEMS, itemName } = L;
 import { NEEDS, freshNeeds, mood, moodLabel, moodColor, needColor, SPEEDS, GAME_MIN_PER_SEC, clockText, dayOf, hourOf, skyTint, isNight, actionsFor, TRAITS, SKILLS, SKILL_MAX, xpForLevel, CAREER, CAREERS, friendLevel } from './js/sim.js';
 
@@ -1417,7 +1418,7 @@ function drawLabels(z) {
     const o = t.o; if (!o || !t.top) continue;
     let text = null, icon = '', col = '#26395A';
     if (o.kind === 'venue') { const c = insideCount(o.id); text = o.name.replace(/^The /, '') + (c ? `  👥 ${c}` : ''); icon = o.icon; col = o.color; }
-    else if (o.home && S.sheet === 'homes') { const st = homeStatus(o); text = st === 'Available' ? `✦ ${o.rent}/day` : st; icon = '🏠'; col = '#3FA86A'; }
+    else if (o.home && S.sheet === 'homes') { const dd = townFor().deeds[o.id]; text = dd ? (dd.owner === 'bank' ? `✦ ${ES.buyPrice(townFor(), o.id)}` : ownerLabel(dd)) : `✦ ${o.rent}/day`; icon = '🏠'; col = '#3FA86A'; }
     else if (o.kind === 'sunwheel') { text = 'Sunwheel'; icon = '🎡'; col = '#F0587A'; }
     else if (o.kind === 'myhome') { text = 'Your home'; icon = '🏡'; col = '#F2A93B'; }
     else if (o.home && homeIsMine(o)) { text = 'Your home'; icon = '🏡'; col = '#F2A93B'; }
@@ -2191,7 +2192,7 @@ const warned = {};
 function tickClock(gm) {
   const before = S.progress.clock; S.progress.clock += gm;
   for (const p of S.progress.plots) L.growPlot(p, S.progress.clock, raining());
-  if (Math.floor(before / 1440) !== Math.floor(S.progress.clock / 1440)) { toast(`Good morning! Day ${dayOf(S.progress.clock)} in ${C.meta.name}.`); chargeRent(); prunePicked(); pruneDaily(); checkAchievements(); if (C) growCity(C); }
+  if (Math.floor(before / 1440) !== Math.floor(S.progress.clock / 1440)) { toast(`Good morning! Day ${dayOf(S.progress.clock)} in ${C.meta.name}.`); chargeRent(); estateMorning(); prunePicked(); pruneDaily(); checkAchievements(); if (C) growCity(C); }
   if (Math.floor(before / 30) !== Math.floor(S.progress.clock / 30)) saveProgress();
 }
 function tickNeeds(gm, curDef) {
@@ -2324,85 +2325,249 @@ function homeStatus(o) {
   if (homeIsMine(o)) return p.owner === S.user.username ? 'Yours' : 'Your rental';
   return p.status === 'owned' ? 'Owned' : p.status === 'rented' ? 'Rented' : 'Available';
 }
+// ---------- Paws & Properties: the town's property market (rules live in js/estate.js) ----------
+const dayNo = () => Math.floor(S.progress.clock / 1440);
+function estate() { return (S.progress.estate ||= { towns: {}, taxDay: dayNo(), post: null }); }
+function cityHash(id) { let x = 7; for (const c of id) x = (x * 31 + c.charCodeAt(0)) | 0; return x; }
+function townFor(rec = C) {
+  const E = estate();
+  let T = E.towns[rec.id];
+  if (T && rec.deedsChecked) return T;
+  const homes = rec.world.objects.filter(o => o.home);
+  if (!T) {
+    const info = Object.fromEntries(Object.entries(rec.districts).map(([k, d]) => [k, [d.name, d.color]]));
+    const streets = ES.makeStreets(homes, o => rec.districtAt(o.i, o.j), info);
+    T = E.towns[rec.id] = ES.newTown(homes, streets, (rec.neighbours || []).filter(n => n.name), cityHash(rec.id));
+    // homes you had before the market opened stay yours
+    for (const [id, x] of Object.entries(S.progress.homes)) {
+      const d = T.deeds[id];
+      if (!d || x.city !== rec.id) continue;
+      if (x.type === 'own') Object.assign(d, { owner: 'you', lives: null }); else d.renter = 'you';
+    }
+    saveProgress();
+  }
+  for (const o of homes) if (!T.deeds[o.id]) { T.streets[0].homes.push(o.id); T.deeds[o.id] = { owner: 'bank', p: o.price, r: o.rent, st: T.streets[0].id, level: 0, mort: false, tenant: null, lives: null }; }
+  rec.deedsChecked = true;
+  return T;
+}
+const homeName = id => cityWorld.objects.find(o => o.id === id)?.name || S.progress.homes[id]?.name || 'a home';
+// Your list of homes follows the deeds: sold, swapped or repossessed homes leave it.
+function syncHomes() {
+  for (const [cid, T] of Object.entries(estate().towns)) for (const [id, d] of Object.entries(T.deeds)) {
+    const x = S.progress.homes[id];
+    if (d.owner === 'you' && x?.type !== 'own') S.progress.homes[id] = { city: cid, type: 'own', name: homeName(id), rent: d.r };
+    else if (d.owner !== 'you' && x?.type === 'own' && x.city === cid) delete S.progress.homes[id];
+  }
+  saveProgress();
+}
+function refreshHomeSheet(o) {
+  if (S.sheet === 'homes') showHomes(S.homesFilter || 'all');
+  else if (S.sheet === 'property' || S.sheet?.startsWith('trade:')) showProperty();
+  else if (o && S.sheet === 'home:' + o.id) showHome(o);
+}
+// Run one market action against your coins, then tell you how it went.
+function deal(fn, o) {
+  const you = { coins: S.coins }, r = fn(you);
+  if (you.coins !== S.coins) setCoins(you.coins, true);
+  syncHomes(); toast(r.msg);
+  if (r.ok) { SND.sfx('unlock'); player.say('🏡'); checkAchievements(); refreshHomeSheet(o); }
+  else SND.sfx('close');
+  return r;
+}
+function ownerLabel(d) {
+  if (d.owner === 'you') return d.tenant ? 'Yours · let' : 'Yours';
+  if (d.renter === 'you') return 'Your rental';
+  if (d.owner === 'bank') return 'For sale';
+  return d.lives === d.owner ? `${d.owner}’s home` : `${d.owner}’s spare`;
+}
+function streetDots(T, st) {
+  return `<span class="street-dots">${st.homes.map(id => { const x = T.deeds[id], who = x.owner === 'you' ? 'You' : x.owner === 'bank' ? 'Bank' : x.owner; return `<i class="own-dot ${x.owner === 'you' ? 'you' : x.owner === 'bank' ? 'bank' : 'npc'}" title="${esc(who)}"></i>`; }).join('')}</span>`;
+}
 function homeCard(o, big = false) {
-  const p = propFor(o.id) || { ...o, status: 'available' };
-  const status = homeStatus(o), mine = status === 'Yours' || status === 'Your rental';
-  const rental = S.progress.homes[o.id];
+  const T = townFor(), E = estate(), d = T.deeds[o.id], st = ES.streetOf(T, o.id), lvl = ES.LEVELS[d.level];
+  const mine = d.owner === 'you', renting = d.renter === 'you', ask = ES.askPrice(T, o.id);
+  const full = d.owner !== 'bank' && ES.fullStreet(T, o.id), rent = ES.rentOf(T, o.id);
+  const chip = mine || renting ? 'chip-mine' : d.owner === 'bank' ? 'chip-ok' : 'chip-off';
+  let acts = '';
+  if (mine) acts = `${d.tenant ? '' : '<button class="btn btn-primary" data-act="enter">Go inside</button>'}
+    ${big ? `<button class="btn btn-sun" data-act="reno" ${d.level >= 3 || d.mort ? 'disabled' : ''}>${d.level >= 3 ? 'Deluxe ✓' : `Renovate ✦ ${ES.renovateCost(T, o.id)}`}</button>
+    <button class="btn btn-ghost" data-act="let" ${d.mort ? 'disabled' : ''}>${d.letting ? 'Stop renting out' : 'Rent it out'}</button>
+    <button class="btn btn-ghost" data-act="mort">${d.mort ? `Pay off ✦ ${ES.liftCost(T, o.id)}` : `Mortgage +✦ ${ES.mortgageGet(T, o.id)}`}</button>
+    <button class="btn btn-ghost" data-act="sell">Sell to bank +✦ ${ES.sellPrice(T, o.id)}</button>` : '<button class="btn btn-ghost" data-act="manage">Manage</button>'}`;
+  else if (renting) acts = '<button class="btn btn-primary" data-act="enter">Go inside</button><button class="btn btn-ghost" data-act="leave">Move out</button>';
+  else acts = `${ES.rentable(T, o.id) ? `<button class="btn btn-primary" data-act="rent">Rent ✦ ${rent}/day</button>` : ''}
+    ${d.owner === 'bank' ? `<button class="btn btn-sun" data-act="buy">Buy ✦ ${ES.buyPrice(T, o.id)}</button>` : ''}
+    ${ask !== null ? '<button class="btn btn-sun" data-act="offer">Make an offer</button><button class="btn btn-ghost" data-act="swap">Trade</button>' : ''}`;
+  const facts = [
+    `<span><b>✦ ${ES.value(T, o.id)}</b> value</span>`,
+    `<span><b>✦ ${rent}</b> a day rent</span>`,
+    d.level ? `<span>🔨 ${esc(lvl.name)}</span>` : '',
+    d.mort ? '<span class="warn">Mortgaged</span>' : '',
+    d.tenant ? `<span>🧳 Let to ${esc(d.tenant)}</span>` : d.letting ? '<span>🪧 Looking for a tenant</span>' : '',
+  ].join('');
   const el = h(`<article class="card home-card ${big ? 'big' : ''}">
     <div class="card-art"></div>
     <div class="card-main">
-      <div class="card-top"><h3>${esc(o.name)}</h3><span class="chip ${status === 'Available' ? 'chip-ok' : mine ? 'chip-mine' : 'chip-off'}">${status}</span></div>
-      <p class="card-sub">${esc(o.kind[0].toUpperCase() + o.kind.slice(1))} · ${esc(C.districts[C.districtAt(o.i, o.j)].name)}</p>
-      ${big ? `<p class="card-text">${esc(p.description || o.description)}</p>` : ''}
-      <div class="price-row"><span><b>✦ ${o.rent}</b> a day to rent</span><span><b>✦ ${o.price}</b> to buy</span></div>
-      <div class="card-actions">
-        ${mine ? `<button class="btn btn-primary" data-act="enter">Go inside</button>${rental && rental.type === 'rent' ? '<button class="btn btn-ghost" data-act="leave">Move out</button>' : ''}` : `
-        <button class="btn btn-primary" data-act="rent" ${status !== 'Available' ? 'disabled' : ''}>Rent</button>
-        <button class="btn btn-sun" data-act="buy" ${status !== 'Available' ? 'disabled' : ''}>Buy</button>`}
-        ${big ? '' : '<button class="btn btn-ghost" data-act="go">Visit</button>'}
-      </div>
+      <div class="card-top"><h3>${esc(o.name)}</h3><span class="chip ${chip}">${esc(ownerLabel(d))}</span></div>
+      <p class="card-sub"><i class="street-sw" style="background:${st.color}"></i>${esc(st.name)} ${streetDots(T, st)}${full ? ' <b class="full-badge">Full street · rent ×2</b>' : ''}</p>
+      ${big ? `<p class="card-text">${esc(o.description || '')}</p>` : ''}
+      <div class="price-row">${facts}</div>
+      ${big && ask !== null ? `<p class="card-text">${esc(d.owner)} might sell for about <b>✦ ${ask}</b>. ${ES.PERSONAS[T.npc[d.owner].persona].label}.</p>` : ''}
+      ${big && d.owner !== 'bank' && !mine && d.lives === d.owner ? `<p class="card-text">${esc(d.owner)} lives here and won’t sell it.</p>` : ''}
+      ${ES.frozen(E, dayNo()) && big ? '<p class="caught-note">🚨 The Ranger paused your trading until tomorrow.</p>' : ''}
+      <div class="card-actions">${acts}${big ? '' : '<button class="btn btn-ghost" data-act="go">Visit</button>'}</div>
+      <div class="offer-form hidden"><input type="number" min="1" step="10" inputmode="numeric" aria-label="Your offer in coins"><button class="btn btn-primary" data-act="send">Send offer</button></div>
     </div></article>`);
   el.querySelector('.card-art').append(thumb(o, big ? 120 : 84));
   const on = (k, fn) => { const b = el.querySelector(`[data-act=${k}]`); if (b) b.onclick = fn; };
+  const day = dayNo();
   on('rent', () => propertyAction(o, 'rent'));
   on('buy', () => propertyAction(o, 'buy'));
   on('enter', () => { closeSheet(); queueAction(actionsFor('myhome')[0], { o }); });
-  on('leave', () => { delete S.progress.homes[o.id]; saveProgress(); toast(`You moved out of ${o.name}.`); S.sheet === 'homes' ? showHomes() : showHome(o); });
+  on('leave', () => { delete S.progress.homes[o.id]; d.renter = null; saveProgress(); toast(`You moved out of ${o.name}.`); refreshHomeSheet(o); });
   on('go', () => { closeSheet(); visitThing(o); });
+  on('manage', () => showHome(o));
+  on('reno', () => deal(you => ES.renovate(E, T, o.id, you), o));
+  on('let', () => deal(() => ES.setLetting(T, o.id, !d.letting), o));
+  on('mort', () => deal(you => (d.mort ? ES.liftMortgage : ES.mortgage)(E, T, o.id, you), o));
+  on('sell', () => deal(you => ES.sellToBank(E, T, o.id, you, day), o));
+  on('swap', () => showTrade(d.owner));
+  on('offer', () => { const f = el.querySelector('.offer-form'), inp = f.querySelector('input'); f.classList.remove('hidden'); inp.value = Math.round(ask * 0.9 / 10) * 10; inp.focus(); });
+  on('send', () => deal(you => ES.offerToNeighbour(E, T, o.id, you, Math.floor(+el.querySelector('.offer-form input').value || 0), day), o));
   return el;
 }
-async function showHomes(filter = 'all') {
-  const body = openSheet('homes', C.meta.name + ' homes', 'Find your place', '<div class="loading-text">Checking which homes are free…</div>', { tab: 'homes' });
-  if (!localHomes()) await loadProperties();
-  if (S.sheet !== 'homes') return;
-  body.innerHTML = '';
-  const tabs = h(`<div class="filter-row" role="tablist">${[['all', 'All'], ['house', 'Houses'], ['apartment', 'Apartments'], ['villa', 'Villas']].map(([k, l]) => `<button class="filter ${k === filter ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>`);
-  tabs.querySelectorAll('button').forEach(b => b.onclick = () => showHomes(b.dataset.f));
-  body.append(tabs);
+function homesTabs(active) {
+  const tabs = h(`<div class="filter-row" role="tablist">${[['all', 'All'], ['mine', 'Mine'], ['market', 'Market 📈'], ['house', 'Houses'], ['apartment', 'Apartments'], ['villa', 'Villas']].map(([k, l]) => `<button class="filter ${k === active ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>`);
+  tabs.querySelectorAll('button').forEach(b => b.onclick = () => b.dataset.f === 'market' ? showProperty() : showHomes(b.dataset.f));
+  return tabs;
+}
+function showHomes(filter = 'all') {
+  S.homesFilter = filter;
+  const T = townFor();
+  const body = openSheet('homes', 'Paws & Properties', C.meta.name + ' homes', '', { tab: 'homes' });
+  body.append(homesTabs(filter));
   const mineElsewhere = Object.entries(S.progress.homes).filter(([, x]) => x.city !== C.id);
-  if (mineElsewhere.length) body.append(h(`<div class="notice"><b>Your other homes</b><span>${mineElsewhere.map(([, x]) => `${esc(x.name)} in ${esc(cityMeta(x.city).name)}`).join(' · ')}</span></div>`));
-  body.append(h(`<p class="lead">Rent a home in any town to sleep, cook and relax there. Rent is paid each morning with coins. These homes are in your own world, so other players never take them.</p>`));
-  // The town's homes, even when the list is opened from inside your house or a shop.
-  const homes = cityWorld.objects.filter(o => o.home && (filter === 'all' || o.kind === filter));
+  if (mineElsewhere.length) body.append(h(`<div class="notice"><b>Your homes in other towns</b><span>${mineElsewhere.map(([, x]) => `${esc(x.name)} in ${esc(cityMeta(x.city).name)}`).join(' · ')}</span></div>`));
+  if (filter === 'all') body.append(h('<p class="lead">Buy from the bank, make offers to neighbours, swap homes and rent them out. Own a whole street and its rent doubles. Bills come each morning; if you can’t pay, the Ranger catches you.</p>'));
+  const homes = cityWorld.objects.filter(o => o.home && (filter === 'all' || (filter === 'mine' ? T.deeds[o.id]?.owner === 'you' || T.deeds[o.id]?.renter === 'you' : o.kind === filter)));
+  if (!homes.length) body.append(h('<p class="lead">No homes here yet. Buy one from the bank, or make a neighbour an offer.</p>'));
   for (const o of homes) body.append(homeCard(o));
 }
-function showHome(o) { if (!localHomes()) loadProperties().then(() => { if (S.sheet === 'home:' + o.id) { const b = $('sheet-body'); b.innerHTML = ''; b.append(homeCard(o, true)); } }); openSheet('home:' + o.id, 'Home', o.name, homeCard(o, true), { tab: 'homes' }); }
-async function propertyAction(o, action) {
-  if (localHomes()) {
-    const cost = action === 'buy' ? o.price : o.rent;
-    if (S.coins < cost) { toast(`You need ✦ ${cost} to ${action} ${o.name}.`); return; }
-    if (Object.values(S.progress.homes).filter(x => x.type === 'rent').length >= 3 && action === 'rent') { toast('You can rent up to 3 homes. Move out of one first.'); return; }
-    setCoins(S.coins - cost, true);
-    S.progress.homes[o.id] = { city: C.id, type: action === 'buy' ? 'own' : 'rent', name: o.name, rent: o.rent };
-    S.progress.rentDay = Math.floor(S.progress.clock / 1440);
-    saveProgress(); player.say('🏡'); SND.sfx('unlock');
-    toast(action === 'buy' ? `${o.name} is yours! Tap it to go inside.` : `You rented ${o.name}. Tap it to go inside.`);
-    checkAchievements();
-    if (S.sheet === 'homes') showHomes(); else showHome(o);
-    return;
+function showHome(o) { openSheet('home:' + o.id, 'Home', o.name, homeCard(o, true), { tab: 'homes' }); }
+function showProperty() {
+  S.homesFilter = 'market';
+  const T = townFor(), E = estate(), day = dayNo();
+  const body = openSheet('property', 'Paws & Properties', C.meta.name + ' market', '', { tab: 'homes' });
+  body.append(homesTabs('market'));
+  if (ES.frozen(E, day)) body.append(h('<div class="notice caught"><b>🚨 Caught by the Ranger</b><span>You couldn’t pay your bills, so property trading is paused until tomorrow.</span></div>'));
+  if (E.fines) body.append(h(`<div class="notice caught"><b>Fine owed: ✦ ${E.fines}</b><span>It’s paid from your coins each morning.</span></div>`));
+  const idx = Math.round(T.index * 100);
+  body.append(h(`<div class="notice"><b>Home prices ${idx >= 100 ? '📈' : '📉'} ${idx}% of normal</b><span>You own ${ES.ownedBy(T, 'you').length} of ${Object.keys(T.deeds).length} homes here. Weekly tax: ✦ ${ES.taxDue(T)}.</span></div>`));
+  // offers from neighbours, in any town
+  for (const [cid, TT] of Object.entries(E.towns)) for (const f of (TT.offers || []).filter(f => f.day >= day - 2 && TT.deeds[f.id]?.owner === 'you')) {
+    const el = h(`<div class="offer-card"><span>💌 <b>${esc(f.from)}</b> offers <b>✦ ${f.price}</b> for ${esc(homeName(f.id))}${cid !== C.id ? ` in ${esc(cityMeta(cid).name)}` : ''} (worth ✦ ${ES.value(TT, f.id)}).</span><span class="card-actions"><button class="btn btn-primary" data-a="y">Sell</button><button class="btn btn-ghost" data-a="n">No thanks</button></span></div>`);
+    el.querySelector('[data-a=y]').onclick = () => { deal(you => ES.answerOffer(E, TT, f, true, you, day)); showProperty(); };
+    el.querySelector('[data-a=n]').onclick = () => { deal(you => ES.answerOffer(E, TT, f, false, you, day)); showProperty(); };
+    body.append(el);
   }
-  try {
-    const d = await request('/api/properties/' + encodeURIComponent(o.id) + '/' + action, 'POST', {});
-    if (d.world) setCoins(d.world.coins, true);
-    toast(d.message || (action === 'buy' ? 'Home bought!' : 'Home rented!'));
-    player.say('🏡');
-    await loadProperties();
-    if (S.sheet === 'homes') showHomes(); else showHome(o);
-  } catch (e) { toast(e.message); }
+  if (E.post?.day === day && E.post.lines.length) body.append(h(`<section class="market-box"><h4>📬 This morning</h4><ul>${E.post.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul></section>`));
+  body.append(h(`<section class="market-box"><h4>🏆 Richest in town</h4><ol class="rich-list">${ES.richList(T, S.coins).map(r => `<li class="${r.you ? 'me' : ''}"><span>${esc(r.name)}</span><small>${r.homes} home${r.homes === 1 ? '' : 's'}</small><b>✦ ${r.worth}</b></li>`).join('')}</ol></section>`));
+  const streets = h('<section class="market-box"><h4>🏘️ Streets</h4></section>');
+  for (const st of T.streets) {
+    const owners = [...new Set(st.homes.map(id => T.deeds[id].owner))];
+    const full = st.homes.length > 1 && owners.length === 1 && owners[0] !== 'bank';
+    const row = h(`<button class="street-row"><i class="street-sw" style="background:${st.color}"></i><span>${esc(st.name)}<small>${st.homes.map(id => esc(homeName(id))).join(' · ')}</small></span>${streetDots(T, st)}${full ? `<b class="full-badge">${owners[0] === 'you' ? 'Yours' : esc(owners[0])} ×2</b>` : ''}</button>`);
+    row.onclick = () => { const o = cityWorld.objects.find(q => q.id === st.homes[0]); if (o) showHome(o); };
+    streets.append(row);
+  }
+  body.append(streets);
+  const traders = Object.keys(T.npc).filter(n => ES.ownedBy(T, n).some(id => T.deeds[id].lives !== n));
+  if (traders.length) {
+    const box = h('<section class="market-box"><h4>🤝 Trade with a neighbour</h4><div class="card-actions"></div></section>');
+    for (const n of traders) { const b = h(`<button class="btn btn-ghost">${esc(n)}</button>`); b.onclick = () => showTrade(n); box.querySelector('.card-actions').append(b); }
+    body.append(box);
+  }
+  if (T.news.length) body.append(h(`<section class="market-box"><h4>📰 Town news</h4><ul>${T.news.slice(0, 10).map(n => `<li><small>Day ${n.day + 1}</small> ${esc(n.text)}</li>`).join('')}</ul></section>`));
 }
-// Rent comes out each morning; if you can't pay, you move out (gently).
+function showTrade(who) {
+  const T = townFor(), E = estate(), npc = T.npc[who];
+  if (!npc) return;
+  const theirs = ES.ownedBy(T, who).filter(id => T.deeds[id].lives !== who), mine = ES.ownedBy(T, 'you');
+  const row = (id, side) => `<label class="trade-row"><input type="checkbox" data-side="${side}" value="${esc(id)}"><span>${esc(homeName(id))}<small>${esc(ES.streetOf(T, id).name)} · worth ✦ ${ES.value(T, id)}${T.deeds[id].mort ? ' · mortgaged' : ''}</small></span></label>`;
+  const el = h(`<div class="trade">
+    <p class="lead">${esc(who)} is a ${esc(ES.PERSONAS[npc.persona].label.toLowerCase())} with ✦ ${npc.coins}. Pick homes to swap, and add coins either way.</p>
+    <h4>You get</h4>${theirs.map(id => row(id, 'get')).join('') || `<p class="lead">${esc(who)} has no spare homes.</p>`}
+    <h4>You give</h4>${mine.map(id => row(id, 'give')).join('') || '<p class="lead">You don’t own a home here yet.</p>'}
+    <label class="field"><span>Coins: more than 0 means you pay, less than 0 means ${esc(who)} pays you</span><input type="number" step="10" value="0" data-cash></label>
+    <button class="btn btn-primary btn-wide" data-act="propose">Propose the trade</button></div>`);
+  el.querySelector('[data-act=propose]').onclick = () => {
+    const ids = side => [...el.querySelectorAll(`input[data-side=${side}]:checked`)].map(i => i.value);
+    deal(you => ES.proposeSwap(E, T, { give: ids('give'), get: ids('get'), cash: Math.round(+el.querySelector('[data-cash]').value || 0) }, you, dayNo()));
+  };
+  openSheet('trade:' + who, 'Trade', 'Trade with ' + who, el, { tab: 'homes' });
+}
+function propertyAction(o, action) {
+  const T = townFor(), d = T.deeds[o.id];
+  if (action === 'buy') return deal(you => ES.buyFromBank(estate(), T, o.id, you, dayNo()), o);
+  if (!ES.rentable(T, o.id) || d.renter === 'you') { toast('That home isn’t for rent right now.'); return; }
+  const cost = ES.rentOf(T, o.id);
+  if (S.coins < cost) { toast(`You need ✦ ${cost} to rent ${o.name}.`); return; }
+  if (Object.values(S.progress.homes).filter(x => x.type === 'rent').length >= 3) { toast('You can rent up to 3 homes. Move out of one first.'); return; }
+  setCoins(S.coins - cost, true);
+  ES.payRentTo(T, o.id, cost);
+  d.renter = 'you';
+  S.progress.homes[o.id] = { city: C.id, type: 'rent', name: o.name, rent: cost };
+  S.progress.rentDay = dayNo();
+  saveProgress(); player.say('🏡'); SND.sfx('unlock');
+  toast(`You rented ${o.name}${d.owner !== 'bank' ? ` from ${d.owner}` : ''}. Tap it to go inside.`);
+  checkAchievements();
+  refreshHomeSheet(o);
+}
+// Rent comes out each morning and goes to whoever owns the home; if you can't pay, you move out (gently).
 function chargeRent() {
-  const today2 = Math.floor(S.progress.clock / 1440);
+  const today2 = dayNo();
   const days = Math.max(0, today2 - (S.progress.rentDay || today2));
   S.progress.rentDay = today2;
   if (!days) return;
   for (const [id, x] of Object.entries(S.progress.homes)) {
     if (x.type !== 'rent') continue;
-    const due = (x.rent || 10) * days;
-    if (S.coins >= due) { setCoins(S.coins - due, true); toastQuiet(`Rent paid for ${x.name}: ✦ ${due}`); }
-    else { delete S.progress.homes[id]; toast(`Not enough coins for rent, so you moved out of ${x.name}. You can rent again any time.`); }
+    const due = (x.rent || 10) * days, T = estate().towns[x.city];
+    if (S.coins >= due) { setCoins(S.coins - due, true); if (T?.deeds[id]) ES.payRentTo(T, id, due); toastQuiet(`Rent paid for ${x.name}: ✦ ${due}`); }
+    else { delete S.progress.homes[id]; if (T?.deeds[id]) T.deeds[id].renter = null; toast(`Not enough coins for rent, so you moved out of ${x.name}. You can rent again any time.`); }
   }
   saveProgress();
+}
+// Each morning: tenants pay you, neighbours buy and sell, offers and letters arrive, tax every 7 days.
+function estateMorning() {
+  townFor();
+  const E = estate(), day = dayNo();
+  if (E.lastMorning === day) return;
+  E.lastMorning = day;
+  const you = { coins: S.coins }, lines = [], costs = [], many = Object.keys(E.towns).length > 1;
+  let offers = 0;
+  for (const [cid, T] of Object.entries(E.towns)) {
+    const out = ES.morning(E, T, day, you), at = many ? `${cityMeta(cid).name}: ` : '';
+    if (out.income) lines.push(`${at}Your tenants paid ✦ ${out.income}.`);
+    lines.push(...out.events.map(e => at + e));
+    if (out.letter) lines.push(`${at}Letter: ${out.letter}`);
+    costs.push(...out.costs);
+    offers += out.offers.length;
+  }
+  if (day - (E.taxDay ?? day) >= ES.TAX_EVERY) {
+    E.taxDay = day;
+    const tax = Object.values(E.towns).reduce((a, T) => a + ES.taxDue(T), 0);
+    if (tax) { costs.push({ amount: tax, why: 'tax' }); lines.push(`Weekly property tax: ✦ ${tax}.`); }
+  }
+  const debt = ES.payCosts(E, E.towns, costs, you, day);
+  lines.push(...debt);
+  const fine = ES.payFines(E, you);
+  if (fine) lines.push(`You paid ✦ ${fine} of your Ranger fine.`);
+  if (offers) lines.push(`💌 ${offers} offer${offers > 1 ? 's' : ''} for your homes. See Homes → Market.`);
+  setCoins(you.coins, true); syncHomes();
+  E.post = { day, lines };
+  const caught = debt.find(l => /Ranger/.test(l));
+  if (caught) setTimeout(() => { toast('🚨 ' + caught); player.say('🚨'); }, 2400);
+  else if (lines.length) setTimeout(() => toastQuiet(`📬 ${lines[0]}${lines.length > 1 ? ` (+${lines.length - 1} more in Homes → Market)` : ''}`), 2400);
 }
 
 function visitedToday(id) { return !!S.progress.visits[id + '|' + today()]; }
@@ -3459,4 +3624,4 @@ setTimeout(() => $('loading').remove(), 700);
 window.__willowvale = { state: S, follow: on => toggleFollow(on), leaveHome: () => leaveHome(),camera: () => ({ x: cam.x, y: cam.y, zoom: cam.zoom, lead: [...cam.lead], player: A.P(player.x, player.y, 34) }),quests: () => questState(), news: () => S.progress.news, growth: () => S.progress.growth[C.id], greet: name => { const n = npcs.find(x => x.name === name); if (!n) return null; delete S.progress.daily['greet:' + gameDay() + ':' + n.name]; greetPlayer(n); return n.line; }, townNews: (ev, also) => townNews(ev, also), gossip: (a, b) => TL.gossip(S.progress.news, a, b, () => 0), sprouts: () => things.filter(t => t.o && t.o.sprout).length, step: (i, j, n = 1) => { for (let k = 0; k < n; k++) TL.stepOn(growthOf(C.id), cityWorld, i, j); }, checkQuests: () => checkQuests(), open: k => ({ homes: showHomes, places: showPlaces, friends: showFriends, journal: showJournal, profile: showProfile, shop: showShop, island: showIsland, market: showMarket, craft: showCraft, restore: showRestore, settings: showSettings, wardrobe: showWardrobe, needs: showNeeds, districts: showDistricts, adminLogin: showAdminLogin, venue: () => showVenue(C.venues[0]), home: () => showHome(cityWorld.objects.find(o => o.home)), neighbour: () => showNeighbour(cityNpcs.find(n => !n.generic)), chat: () => showEmojiChat(cityNpcs.find(n => !n.generic)) })[k](),
   birds: () => (C ? birdsFor(C).map(b => ({ x: +b.x.toFixed(2), y: +b.y.toFixed(2), fly: b.fly > 0, gone: b.gone > 0 })) : []), tapBird: () => { const b = C && birdsFor(C).find(x => !x.fly && !x.gone); return b ? tapBirds(b.x, b.y) : false; }, shakeNearestTree: () => { const t = things.filter(x => x.o && x.o.kind === 'tree').sort((a, b) => Math.hypot(a.ax - player.x, a.ay - player.y) - Math.hypot(b.ax - player.x, b.ay - player.y))[0]; if (!t) return false; const d = actionsFor('tree')[0]; queueAction(d, { o: t.o }); return t.o.tree; }, homeCount: () => world.objects.filter(o => o.home).length, treeCount: () => things.filter(t => t.o && t.o.kind === 'tree').length,
   pieList: () => { const out = [], seen = new Set(); for (const t of things) { const o = t.o; if (!t.interactive || !o) continue; const key = o.type || o.kind; if (seen.has(key)) continue; seen.add(key); out.push(key); } for (const n of npcs) if (npcVisible(n) && !seen.has('npc')) { seen.add('npc'); out.push('npc'); } return out; },
-  pieFor: key => { closeSheet(); if (key === 'npc') { const n = npcs.find(n => npcVisible(n)); if (n) showPie({ npc: n }, W / 2, H / 2); return !!n; } const t = things.find(t => t.interactive && t.o && (t.o.type || t.o.kind) === key); if (t) showPie({ o: t.o }, W / 2, H / 2); return !!t; }, cancel: () => cancelActions(), peers: () => shownPeers().map(p => ({ name: p.name, x: +p.x.toFixed(2), y: +p.y.toFixed(2), emote: p.emote || null })), allPeers: () => [...peers.values()].map(p => ({ name: p.name, scene: p.scene })), emoteTo: e => sendEmote(e, [...peers.values()][0]), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, x: n.x, y: n.y, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { const d0 = Math.floor(S.progress.clock / 1440); S.progress.clock = m; if (Math.floor(m / 1440) !== d0 && C) growCity(C); }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); if (!f) return false; const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); if (!t) return false; queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
+  pieFor: key => { closeSheet(); if (key === 'npc') { const n = npcs.find(n => npcVisible(n)); if (n) showPie({ npc: n }, W / 2, H / 2); return !!n; } const t = things.find(t => t.interactive && t.o && (t.o.type || t.o.kind) === key); if (t) showPie({ o: t.o }, W / 2, H / 2); return !!t; }, cancel: () => cancelActions(), peers: () => shownPeers().map(p => ({ name: p.name, x: +p.x.toFixed(2), y: +p.y.toFixed(2), emote: p.emote || null })), allPeers: () => [...peers.values()].map(p => ({ name: p.name, scene: p.scene })), emoteTo: e => sendEmote(e, [...peers.values()][0]), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, x: n.x, y: n.y, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { const d0 = Math.floor(S.progress.clock / 1440); S.progress.clock = m; if (Math.floor(m / 1440) !== d0 && C) growCity(C); }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); if (!f) return false; const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); if (!t) return false; queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), property: () => showProperty(), estate: () => S.progress.estate, morning: () => { estate().lastMorning = -1; estateMorning(); return estate().post; }, chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };

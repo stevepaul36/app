@@ -207,3 +207,11 @@ test('a month of mornings: neighbours buy and sell, coins never go negative, dee
   assert.equal(list.length, 4);
   assert.ok(list[0].worth >= list[3].worth);
 });
+
+test('a crowded town still leaves at least 40% of homes for sale', () => {
+  const many = Array.from({ length: 12 }, (_, k) => ({ name: 'N' + k, home: [homes[k % 7].i, homes[k % 7].j] }));
+  const { T } = fresh(many);
+  const bank = Object.values(T.deeds).filter(d => d.owner === 'bank').length;
+  assert.ok(bank >= Math.ceil(homes.length * 0.4), `bank has ${bank}`);
+  assert.equal(Object.keys(T.npc).length, 12); // everyone still trades, even without a home
+});

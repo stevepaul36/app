@@ -537,3 +537,34 @@ details.danger summary { cursor: pointer; font-weight: 800; color: #B03A48; }
 }
 label.check { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 2px 0 6px; cursor: pointer; }
 label.check input { width: 18px; height: 18px; accent-color: var(--green, #3FA86A); }
+
+/* Paws & Properties */
+.street-sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.street-dots { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: 0; }
+.own-dot { width: 9px; height: 9px; border-radius: 50%; background: #C9D3DE; }
+.own-dot.you { background: #F2B01E; box-shadow: 0 0 0 2px #FFF0C2; }
+.own-dot.npc { background: #8E7CE0; }
+.full-badge { display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 999px; background: #FFF0C2; color: #8A5A00; font: 700 11px/1.3 var(--display); }
+.price-row .warn { color: #C0392B; font-weight: 800; }
+.caught-note { margin: 6px 0 0; color: #C0392B; font-weight: 800; font-size: 13.5px; }
+.notice.caught { background: #FDE8E6; }
+.offer-form { display: flex; gap: 8px; margin-top: 8px; }
+.offer-form input { flex: 1; min-width: 0; height: 38px; border: 2px solid var(--mist); border-radius: 12px; padding: 0 10px; font: 700 15px var(--display); }
+.offer-card { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; margin: 0 0 10px; border-radius: 14px; background: #F3EEFF; font-size: 14px; }
+.market-box { margin: 0 0 14px; padding: 10px 12px; border-radius: 14px; background: var(--mist); }
+.market-box h4 { margin: 0 0 6px; font: 800 15px var(--display); }
+.market-box ul { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.45; }
+.market-box ul small { color: var(--ink-2); font-weight: 800; }
+.rich-list { margin: 0; padding-left: 22px; font-size: 14px; }
+.rich-list li { padding: 3px 0; }
+.rich-list li span { display: inline-block; min-width: 90px; font-weight: 800; }
+.rich-list li small { color: var(--ink-2); margin-right: 8px; }
+.rich-list li.me span { color: #8A5A00; }
+.street-row { display: flex; align-items: center; gap: 4px; width: 100%; padding: 7px 4px; border: 0; border-top: 1px solid #0001; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.street-row > span { flex: 1; min-width: 0; font-weight: 800; font-size: 14px; }
+.street-row small { display: block; font-weight: 600; color: var(--ink-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trade h4 { margin: 12px 0 6px; font: 800 15px var(--display); }
+.trade-row { display: flex; gap: 10px; align-items: center; padding: 8px 10px; margin-bottom: 6px; border-radius: 12px; background: var(--mist); font-weight: 800; font-size: 14px; }
+.trade-row small { display: block; font-weight: 600; color: var(--ink-2); font-size: 12px; }
+.trade-row input { width: 20px; height: 20px; flex: none; }
+.trade .field { margin: 12px 0; }

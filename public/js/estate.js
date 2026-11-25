@@ -87,14 +87,16 @@ export function newTown(homes, streets, neighbours, seed) {
   for (const n of neighbours) {
     const persona = n.traits?.includes('Neat') || n.traits?.includes('Bookworm') ? 'careful' : n.traits?.includes('Social Butterfly') || n.traits?.includes('Music Lover') ? 'trader' : n.traits?.includes('Playful') || n.traits?.includes('Athletic') ? 'bold' : pick(r, ['careful', 'bold', 'trader'])
     npc[n.name] = { coins: Math.round(START_NPC_COINS[0] + r() * (START_NPC_COINS[1] - START_NPC_COINS[0])), persona }
+    // keep at least 40% of homes with the bank so there's always something to buy
+    const keep = Math.ceil(homes.length * 0.4)
     const free = homes.filter(h => !taken.has(h.id))
-    if (!free.length) continue
+    if (free.length <= keep) continue // this neighbour lodges with family and owns nothing yet
     const at = n.home || [free[0].i, free[0].j]
     free.sort((a, b) => Math.hypot(a.i - at[0], a.j - at[1]) - Math.hypot(b.i - at[0], b.j - at[1]))
     const home = free[0]
     taken.add(home.id)
     Object.assign(deeds[home.id], { owner: n.name, lives: n.name })
-    if (r() < 0.45) {
+    if (r() < 0.45 && homes.length - taken.size > keep) {
       const extra = homes.find(h => !taken.has(h.id) && deeds[h.id].st === deeds[home.id].st) || homes.find(h => !taken.has(h.id))
       if (extra) {
         taken.add(extra.id)
@@ -380,17 +382,19 @@ export function morning(E, T, day, you, { letters = true } = {}) {
     n.coins += 30 + Math.floor(r() * 40)
     for (const id of ownedBy(T, name)) if (T.deeds[id].lives !== name) n.coins += rentOf(T, id)
   }
+  let boughtFromBank = false // one bank sale a morning, so homes stay on the market for you
   for (const name of names) {
     const n = T.npc[name]
     const p = PERSONAS[n.persona]
     if (r() > p.buyChance) continue
-    const forSale = Object.keys(T.deeds).filter(id => T.deeds[id].owner === 'bank' && T.deeds[id].renter !== 'you' && buyPrice(T, id) <= n.coins - p.reserve)
+    const forSale = boughtFromBank || ownedBy(T, name).length >= 3 || ownedBy(T, 'bank').length <= Object.keys(T.deeds).length * 0.35 ? [] : Object.keys(T.deeds).filter(id => T.deeds[id].owner === 'bank' && T.deeds[id].renter !== 'you' && buyPrice(T, id) <= n.coins - p.reserve)
     if (forSale.length) {
       // prefer a home on a street they already have a foot in
       forSale.sort((a, b) => score(T, name, b) - score(T, name, a))
       const id = forSale[0]
       n.coins -= buyPrice(T, id)
       T.deeds[id].owner = name
+      boughtFromBank = true
       news(T, day, `${name} bought a home on ${streetOf(T, id).name}.`)
       out.events.push(`${name} bought a home on ${streetOf(T, id).name}.`)
       continue
@@ -402,7 +406,7 @@ export function morning(E, T, day, you, { letters = true } = {}) {
       news(T, day, `${name} renovated a home on ${streetOf(T, fix).name}.`)
       continue
     }
-    if (n.coins < 60) {
+    if (n.coins < 60 || r() < 0.12) { // short of coins, or just fancies a change
       const spare = ownedBy(T, name).find(id => T.deeds[id].lives !== name)
       if (spare) {
         n.coins += sellPrice(T, spare)
