@@ -4,6 +4,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -22,6 +23,18 @@ cpSync(join(src, 'js'), join(out, 'js'), {recursive: true})
 cpSync(join(src, 'app.js'), join(out, 'app.js'))
 cpSync(join(src, 'style.css'), join(out, 'style.css'))
 cpSync(join(src, 'app-icon.svg'), join(out, 'app-icon.svg'))
+
+// Stamp every module import with this build, so a phone never mixes a new app.js with cached old modules.
+const BUILD = Date.now().toString(36)
+const IMPORT = /(from\s*|import\(\s*)(['"])(\.{1,2}\/[^'"?]+\.js)\2/g
+const stamp = file =>
+  writeFileSync(
+    file,
+    readFileSync(file, 'utf8').replace(IMPORT, `$1$2$3?v=${BUILD}$2`),
+  )
+stamp(join(out, 'app.js'))
+for (const f of readdirSync(join(out, 'js')))
+  if (f.endsWith('.js')) stamp(join(out, 'js', f))
 
 // Fonts are bundled: Reddit posts can't load Google Fonts.
 mkdirSync(join(out, 'fonts'), {recursive: true})
@@ -54,9 +67,9 @@ html = html
   )
   .replace(
     /<script type="module" src="app\.js[^"]*"><\/script>/,
-    '<script type="module" src="bridge.js"></script>\n<script type="module" src="app.js"></script>',
+    `<script type="module" src="bridge.js?v=${BUILD}"></script>\n<script type="module" src="app.js?v=${BUILD}"></script>`,
   )
-  .replace(/style\.css\?v=[^"]*/, 'style.css')
+  .replace(/style\.css\?v=[^"]*/, `style.css?v=${BUILD}`)
 if (!html.includes('bridge.js'))
   throw Error('could not add the Reddit bridge to the game page')
 writeFileSync(join(out, 'game.html'), html)
