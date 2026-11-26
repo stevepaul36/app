@@ -656,3 +656,20 @@ body.reduced .go-btn { animation: none; }
 .lucky-note { margin: 6px 0; padding: 8px 12px; border-radius: 12px; background: #E6F6EA; color: #1E6B35; font-weight: 800; font-size: 14px; }
 .guide-steps { padding-left: 20px; margin: 8px 0 12px; line-height: 1.5; }
 .guide-steps li { margin-bottom: 8px; }
+
+
+/* Home designer: theme cards and floor-plan choices */
+.theme-grid, .design-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.theme-card, .design-choice {
+  min-width: 0; display: grid; align-content: start; text-align: left; gap: 3px;
+  padding: 10px; border: 0; border-radius: 15px; background: var(--mist);
+  box-shadow: inset 0 0 0 1.5px var(--line); color: var(--ink); cursor: pointer;
+}
+.theme-card { grid-template-columns: 32px minmax(0, 1fr); }
+.theme-card > span { grid-row: span 2; align-self: center; font-size: 24px; }
+.theme-card b, .design-choice b { font: 800 13px/1.2 var(--display); }
+.theme-card small, .design-choice small { color: var(--ink-2); font-size: 11px; line-height: 1.25; }
+.theme-card:focus-visible, .design-choice:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
+.theme-card:active, .design-choice:active { transform: translateY(1px); }
+.theme-card.on, .design-choice.on { background: #FFF1C9; box-shadow: inset 0 0 0 2px #F2C14E; }
+.exterior-swatches { gap: 10px; }
