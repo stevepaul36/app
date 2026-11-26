@@ -219,6 +219,11 @@ const HOUSE_LOOKS = [
   { wall: '#E2F2DA', roof: '#C9672E', trim: '#FFFFFF', shutter: '#C9672E' },
   { wall: '#FBE0E2', roof: '#5A6FB0', trim: '#FFFFFF', shutter: '#8E7CE0' },
   { wall: '#E3EEF8', roof: '#3FA86A', trim: '#FFFFFF', shutter: '#F0587A' },
+  { wall: '#E6DDFB', roof: '#8E7CE0', trim: '#FFFFFF', shutter: '#5A6FB0' },
+  { wall: '#D6F1EA', roof: '#2E8B8B', trim: '#FFFFFF', shutter: '#2E8B8B' },
+  { wall: '#F5D8B8', roof: '#9B4C3F', trim: '#FFFFFF', shutter: '#C9672E' },
+  { wall: '#D8E5F7', roof: '#445C85', trim: '#FFFFFF', shutter: '#3F5F8F' },
+  { wall: '#F9E3BB', roof: '#A86E2A', trim: '#FFFFFF', shutter: '#E8823A' },
 ];
 const APT_LOOKS = [
   { wall: '#7FC8DD', trim: '#FFFFFF', accent: '#F2A93B' },
@@ -226,6 +231,11 @@ const APT_LOOKS = [
   { wall: '#B9A8EC', trim: '#FFFFFF', accent: '#FFC83D' },
   { wall: '#FFD27A', trim: '#FFFFFF', accent: '#E8665A' },
   { wall: '#93D6A9', trim: '#FFFFFF', accent: '#8E7CE0' },
+  { wall: '#D7CFF6', trim: '#FFFFFF', accent: '#8E7CE0' },
+  { wall: '#BFE8D9', trim: '#FFFFFF', accent: '#2E8B8B' },
+  { wall: '#E6B995', trim: '#FFFFFF', accent: '#9B4C3F' },
+  { wall: '#C8D6ED', trim: '#FFFFFF', accent: '#445C85' },
+  { wall: '#F4D79B', trim: '#FFFFFF', accent: '#A86E2A' },
 ];
 
 function doorFace(o, faces) { return o.door === 'i' ? faces.i : faces.j; }
@@ -303,7 +313,7 @@ export function drawApartment(ctx, o) {
 }
 
 function drawVilla(ctx, o) {
-  const look = HOUSE_LOOKS[(o.look + 2) % HOUSE_LOOKS.length];
+  const look = HOUSE_LOOKS[(o.look || 0) % HOUSE_LOOKS.length];
   const x0 = 0.15, y0 = 0.15, w = o.w - 0.3, d = o.d - 0.3, h = 96;
   poly(ctx, [[0, 0, 0], [o.w, 0, 0], [o.w, o.d, 0], [0, o.d, 0]], '#9AD77D', '#5FA34A66');
   // pool
