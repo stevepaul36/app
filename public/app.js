@@ -2,7 +2,7 @@
 import { N, T, rng, buildWorld, findPath, nearestWalkable, stepOK, DISTRICTS, districtAt, HOMES, VENUES, NEIGHBOURS } from './js/world.js';
 import * as A from './js/art.js';
 import * as F from './js/furniture.js';
-import { buildHome, O as HOME_O, HOME_LAYOUTS, GARDEN_LAYOUTS } from './js/home.js';
+import { buildHome, O as HOME_O, ROOM as HOME_ROOM, HOME_LAYOUTS, GARDEN_LAYOUTS } from './js/home.js';
 import { buildInterior, KIT_OF, STAFF_TITLE, GAMES } from './js/interiors.js';
 import * as SND from './js/audio.js';
 import { STARTER, ACHIEVEMENTS, SIGNATURE, ALL_EMOJIS, replyTo, unlockedSet } from './js/emoji.js';
@@ -17,6 +17,8 @@ import * as D from './js/dice.js';
 import * as FT from './js/fate.js';
 import * as NL from './js/nightlights.js';
 import * as FE from './js/festival.js';
+import * as BK from './js/bank.js';
+import * as HB from './js/habitat.js';
 const { ITEMS, itemName } = L;
 import { NEEDS, freshNeeds, mood, moodLabel, moodColor, needColor, SPEEDS, GAME_MIN_PER_SEC, clockText, dayOf, hourOf, skyTint, isNight, actionsFor, TRAITS, SKILLS, SKILL_MAX, xpForLevel, CAREER, CAREERS, friendLevel } from './js/sim.js';
 
@@ -694,7 +696,7 @@ function showStyle(o) {
     ${chips('walls', 'Wallpaper', walls)}
     ${chips('floor', 'Floor', FLOORS.map(([l, , c], k) => [k, l, c]))}
     ${chips('carpet', 'Bedroom carpet', CARPETS.map(([l, , c], k) => [k, l, c]))}
-    <section class="style-sec"><h4>Furniture shop <small>place them with 🛋️ inside</small></h4><div class="shop-grid">${shop.map(k => `<button class="shop-item" data-buy="${k}"><span>${ITEMS[k].icon}</span><b>${esc(ITEMS[k].one)}</b><small>✦ ${ITEMS[k].price * SHOP_MARKUP} · have ${have(k)}</small></button>`).join('')}</div></section>
+    <section class="style-sec"><h4>Furniture shop <small>place them with 🛋️ · put 🪷 ⛲ 🐝 🌰 🪵 outside and wildlife visits</small></h4><div class="shop-grid">${shop.map(k => `<button class="shop-item" data-buy="${k}"><span>${ITEMS[k].icon}</span><b>${esc(ITEMS[k].one)}</b><small>✦ ${ITEMS[k].price * SHOP_MARKUP} · have ${have(k)}</small></button>`).join('')}</div></section>
     ${own && obj ? `<section class="style-sec"><h4>Outside</h4>
       <div class="swatches">${PAINTS.map((c, n) => `<button class="swatch ${(obj.look || 0) % PAINTS.length === n ? 'on' : ''}" style="background:${c}" data-paint="${n}" aria-label="Paint scheme ${n + 1}"></button>`).join('')}<small class="paint-cost">Repaint ✦ 30</small></div>
       <h4>Name</h4><div class="name-pick"><select data-name="0" aria-label="First word">${NAME_A.map(w => `<option>${w}</option>`).join('')}</select><select data-name="1" aria-label="Second word">${NAME_B.map(w => `<option>${w}</option>`).join('')}</select><button class="btn btn-primary" data-act="rename">Rename</button></div></section>` : ''}
@@ -1460,6 +1462,7 @@ function drawFrame(now) {
     ctx.lineWidth = 4; ctx.strokeStyle = '#FFFFFF'; ctx.strokeText(p.text, sx, sy - 90 * z - rise); ctx.fillStyle = p.color || '#C98A1E'; ctx.fillText(p.text, sx, sy - 90 * z - rise);
     ctx.restore();
   }
+  if (sceneName === 'home') drawVisitors(z);
   drawDaylight(z);
 }
 
@@ -1848,6 +1851,86 @@ async function showFestival() {
     : '<p class="lead">No lanterns yet this week. Be the first!</p>';
 }
 
+// ---------- the bank: savings and plainly explained loans (rules in js/bank.js) ----------
+const wallet = () => S.coins + BK.ensure(S.progress).savings;
+function showBank() {
+  const E = estate(); FT.ensure(E);
+  const B = BK.ensure(S.progress), debt = E.debt || 0, left = FT.creditLeft(E, E.towns), day = dayNo();
+  const per = BK.suggestPerDay(debt), p = debt ? BK.plan(debt, per) : null, q = BK.loanQuote(Math.min(100, left), debt);
+  const el = h(`<div class="bank">
+    <p class="lead">Keep coins safe in savings, or borrow when you’re short. Every number is shown before you agree.</p>
+    <div class="bank-cards">
+      <div class="bank-card save"><small>Savings</small><b>✦ ${B.savings}</b><span>+2% each morning, up to ✦ ${BK.SAVINGS_CAP}</span></div>
+      <div class="bank-card ${debt ? 'owe' : ''}"><small>Loan</small><b>✦ ${debt}</b><span>${debt ? 'grows 5% each morning' : 'nothing owed'}</span></div>
+      <div class="bank-card"><small>Purse</small><b>✦ ${S.coins}</b><span>coins on you</span></div>
+    </div>
+    <section class="style-sec"><h4>Savings</h4><div class="bank-row" data-row="save"></div></section>
+    <section class="style-sec"><h4>Loan</h4>
+      ${debt && p ? `<table class="bank-table"><tr><td>You owe now</td><td>✦ ${debt}</td></tr><tr><td>Plan: pay each morning</td><td>✦ ${per}</td></tr><tr><td>Paid off in</td><td>${p.days} day${p.days === 1 ? '' : 's'}</td></tr><tr><td>Total you’ll repay</td><td>✦ ${p.total}</td></tr><tr><td>The bank can still lend</td><td>✦ ${left}</td></tr></table>`
+        : left > 0 ? `<table class="bank-table"><tr><td>Borrow</td><td>✦ ${q.borrow}</td></tr><tr><td>Pay back each morning</td><td>✦ ${q.perDay}</td></tr><tr><td>Paid off in</td><td>${q.days} days</td></tr><tr><td>Total you’d repay</td><td>✦ ${q.repay}</td></tr><tr><td>Most you can borrow</td><td>✦ ${left}</td></tr></table>` : '<p class="lead">The bank can’t lend you more right now.</p>'}
+      <div class="bank-row" data-row="loan"></div>
+      <p class="fine">Short on rent? The bank lends you the rest automatically, up to your limit. Each morning your savings pay off a loan first.</p></section>
+    ${B.history.length ? `<section class="style-sec"><h4>Recent</h4><ul class="bank-history">${B.history.slice(0, 6).map(x => `<li><small>Day ${x.day + 1}</small> ${esc(x.text)}</li>`).join('')}</ul></section>` : ''}
+  </div>`);
+  const act = fn => { const you = { coins: S.coins }; const r = fn(you); setCoins(you.coins, true); saveProgress(); toast(r.msg); if (r.ok) SND.sfx('coin'); pushWorth(); updateDiceButton(); showBank(); };
+  const btn = (row, label, fn, off, cls = 'btn-ghost') => { const b = h(`<button class="btn ${cls} btn-small" ${off ? 'disabled' : ''}>${label}</button>`); b.onclick = fn; el.querySelector(`[data-row=${row}]`).append(b); };
+  btn('save', 'Save ✦ 50', () => act(you => BK.deposit(S.progress, you, 50, day)), S.coins <= 0, 'btn-sun');
+  btn('save', 'Save it all', () => act(you => BK.deposit(S.progress, you, you.coins, day)), S.coins <= 0);
+  btn('save', 'Take out ✦ 50', () => act(you => BK.withdraw(S.progress, you, 50, day)), B.savings <= 0);
+  btn('save', 'Take out all', () => act(you => BK.withdraw(S.progress, you, B.savings, day)), B.savings <= 0);
+  if (debt) {
+    btn('loan', `Pay today’s ✦ ${Math.min(per, debt)}`, () => act(you => FT.repay(E, you, per)), S.coins <= 0, 'btn-sun');
+    btn('loan', 'Pay it all off', () => act(you => FT.repay(E, you, debt)), S.coins <= 0);
+  }
+  btn('loan', `Borrow ✦ ${Math.min(100, left)}`, () => act(you => FT.borrow(E, E.towns, you, Math.min(100, left))), left <= 0);
+  openSheet('bank', 'Willowvale Bank', '🏦 Savings and loans', el, { tab: 'homes' });
+}
+
+// ---------- habitat garden: what's in your yard decides who visits (rules in js/habitat.js) ----------
+const yardOutdoors = (i, j) => { const a = i - HOME_O[0], b = j - HOME_O[1]; return a < 0 || b < 0 || a >= HOME_ROOM.w || b >= HOME_ROOM.d; };
+let visitorCache = null, visitorAt = 0;
+function gardenVisitors() {
+  if (sceneName !== 'home') return [];
+  if (visitorCache && time - visitorAt < 2) return visitorCache;
+  visitorAt = time;
+  const hab = HB.habitatOf(S.progress.decor, S.progress.plots, { hour: hourOf(S.progress.clock), rain: weatherNow() === 'rain', outdoors: yardOutdoors });
+  const plotTiles = homeWorld.objects.filter(f => f.type === 'plot').sort((a, b) => a.plot - b.plot).filter(f => S.progress.plots[f.plot]?.crop).map(f => [f.i, f.j]);
+  visitorCache = HB.placeVisitors(HB.visitorsToday(hab, gameDay()), S.progress.decor, plotTiles, yardOutdoors);
+  return visitorCache;
+}
+const FLYERS = new Set(['butterfly', 'bee', 'ladybird', 'owl', 'songbird']);
+function drawVisitors(z) {
+  const list = gardenVisitors(); if (!list.length) return;
+  ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  list.forEach((v, n) => {
+    const still = S.settings.reduced, t = still ? 0 : time + n * 1.3, fly = FLYERS.has(v.id);
+    const x = v.x + (fly ? Math.sin(t * 1.1) * 0.35 : Math.sin(t * 0.4) * 0.12), y = v.y + (fly ? Math.cos(t * 0.9) * 0.25 : 0);
+    const hgt = fly ? (v.id === 'owl' || v.id === 'songbird' ? 34 : 18) + Math.sin(t * 3) * 5 : Math.max(0, Math.sin(t * 2.2)) * 6;
+    const [gx, gy] = toScreen(x, y, 0), [sx, sy] = toScreen(x, y, hgt);
+    ctx.fillStyle = 'rgba(0,0,0,.16)'; ctx.beginPath(); ctx.ellipse(gx, gy, 7 * z, 3 * z, 0, 0, 7); ctx.fill();
+    ctx.font = `${Math.max(15, Math.round(24 * z))}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
+    ctx.fillStyle = '#000'; ctx.fillText(v.icon, sx, sy - 8 * z); // emoji take the fill alpha, so reset it after the shadow
+    if (!(S.progress.nature || {})[v.id]) { ctx.font = `${Math.max(9, Math.round(13 * z))}px system-ui, "Segoe UI Emoji", sans-serif`; ctx.fillText('✨', sx + 9 * z, sy - 20 * z + Math.sin(time * 4) * 2); }
+  });
+  ctx.restore();
+}
+let spotTimer = 0;
+function spotVisitors(dt) {
+  spotTimer -= dt; if (spotTimer > 0) return; spotTimer = 0.4;
+  if (sceneName !== 'home' || DECOR.on) return;
+  for (const v of gardenVisitors()) {
+    if ((S.progress.nature || {})[v.id] || Math.hypot(player.x - v.x, player.y - v.y) > 1.8) continue;
+    const r = HB.spot(S.progress, v.id, gameDay()); if (!r) continue;
+    setCoins(S.coins + r.coins, true); toast(r.msg); SND.sfx('unlock'); player.say(v.icon, 2); saveProgress();
+    if (r.done) setTimeout(() => toast(`🌿 Nature Journal complete! All ${HB.VISITORS.length} visitors found. +${HB.COMPLETE_REWARD} ✦`), 2600);
+    break;
+  }
+}
+function natureHtml() {
+  const got = S.progress.nature || {}, n = HB.VISITORS.filter(v => got[v.id]).length;
+  return `<h4 class="group-title">🌿 Nature journal <small>${n} of ${HB.VISITORS.length} · put yard items outside your home to invite visitors</small></h4><div class="nature-list">${HB.VISITORS.map(v => got[v.id] ? `<div class="nature-row ok"><span>${v.icon}</span><b>${esc(v.name)}</b><small>likes ${esc(v.hint)}</small></div>` : `<div class="nature-row"><span>❔</span><b>Not seen yet</b><small>likes ${esc(v.hint)}</small></div>`).join('')}</div>`;
+}
+
 let lastNightTown = '';
 // When night falls in a town, say which floating lights come out there.
 function nightNotice() {
@@ -1859,6 +1942,7 @@ function update(dt) {
   updateBirds(dt);
   nightNotice();
   festTick(dt);
+  spotVisitors(dt);
   trackSteps();
   const onboardingOpen = !$('onboarding').classList.contains('hidden');
   // trees wobble while being shaken, then settle
@@ -2911,6 +2995,7 @@ function estateMorning() {
   lines.push(...debt);
   const fine = ES.payFines(E, you);
   if (fine) lines.push(`You paid ✦ ${fine} of your Ranger fine.`);
+  lines.push(...BK.morning(S.progress, E, day)); // savings pay a loan first, then earn interest
   lines.push(...FT.morningLoans(E, E.towns, you));
   lines.push(`🃏 ${FT.DRAWS_PER_DAY} new fate cards to draw today.`);
   if (offers) lines.push(`💌 ${offers} offer${offers > 1 ? 's' : ''} for your homes. See Homes → Market.`);
@@ -3121,6 +3206,7 @@ function diceBox() {
     if (E.freeCards) btn('draw', 'Use get-out card', 'btn-ghost', () => { toast(D.useFreeCard(E).msg); saveProgress(); showProperty(); });
   }
   const money = fn => { const you = { coins: S.coins }; const r = fn(you); setCoins(you.coins, true); saveProgress(); toast(r.msg); pushWorth(); showProperty(); };
+  btn('bank', '🏦 Bank: savings and loans', 'btn-sun', () => showBank());
   btn('bank', 'Borrow ✦ 100', 'btn-ghost', () => money(you => FT.borrow(E, E.towns, you, 100)), FT.creditLeft(E, E.towns) <= 0);
   if (E.debt) { btn('bank', 'Repay ✦ 100', 'btn-ghost', () => money(you => FT.repay(E, you, 100)), !S.coins); btn('bank', 'Repay all', 'btn-ghost', () => money(you => FT.repay(E, you, E.debt)), !S.coins); }
   btn('bank', '🏆 Leaderboard', 'btn-ghost', () => showLeaderboard());
@@ -3151,7 +3237,7 @@ function drawPendingMarker() {
   ctx.save(); ctx.font = '34px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(T.pending ? '📍' : '🏷️', x, y); ctx.restore();
 }
 // ---------- leaderboards ----------
-function myWorth() { const E = estate(); return FT.leaderboard(E, E.towns, S.coins).find(r => r.you)?.worth || 0; }
+function myWorth() { const E = estate(); return FT.leaderboard(E, E.towns, wallet()).find(r => r.you)?.worth || 0; }
 let lastWorthPush = 0;
 function pushWorth() {
   if (!window.WV_REDDIT || !window.WV_REDDIT.user || Date.now() - lastWorthPush < 20000) return;
@@ -3166,7 +3252,7 @@ function showLeaderboard(tab = 'town') {
   const body = el.querySelector('.leader-body');
   const rowsHtml = rows => `<ol class="rich-list big">${rows.map((r, k) => `<li class="${r.you ? 'me' : ''}"><em>${['🥇', '🥈', '🥉'][k] || k + 1}</em><span>${esc(r.name)}</span><small>${r.homes} home${r.homes === 1 ? '' : 's'}</small><b>✦ ${r.worth}</b></li>`).join('')}</ol>`;
   if (tab === 'town') {
-    const rows = FT.leaderboard(E, E.towns, S.coins);
+    const rows = FT.leaderboard(E, E.towns, wallet());
     const me = rows.findIndex(r => r.you);
     body.append(h(`<p class="lead">${me === 0 ? 'You’re the richest animal on the island! 👑' : `You’re #${me + 1}. ${esc(rows[0].name)} leads by ✦ ${rows[0].worth - rows[me].worth}.`} Worth = coins + homes + bus lines, minus loans and debts, across every town.</p>`));
     body.append(h(rowsHtml(rows)));
@@ -3374,6 +3460,7 @@ function showJournal() {
     ${questState().map(g => { const c = Math.max(0, g.have); return `<div class="goal ${g.done || c >= g.n ? 'met' : ''}"><div class="goal-top"><span>${esc(g.text)}</span><b>${c}/${g.n}</b></div><div class="bar"><i style="width:${c / g.n * 100}%"></i></div></div>`; }).join('')}
     ${requestsHtml()}
     ${collectionHtml()}
+    ${natureHtml()}
     <h4 class="group-title">Skills</h4>
     <div class="skills">${SKILLS.map(sk => { const s2 = S.progress.skills[sk.k]; const pct = s2.lv >= SKILL_MAX ? 100 : Math.round(s2.xp / xpForLevel(s2.lv) * 100); return `<div class="skill" title="${esc(sk.perk)}"><span class="skill-icon">${sk.icon}</span><div class="need-main"><div class="need-top"><b>${esc(sk.label)}</b><span>Level ${s2.lv}</span></div><div class="need-bar"><i style="width:${pct}%;background:var(--sky)"></i></div><small>${esc(sk.perk)}</small></div></div>`; }).join('')}</div>
     <h4 class="group-title">Careers <small>one shift a day, 7 AM–6 PM</small></h4>
@@ -4185,7 +4272,7 @@ $('pause-button').onclick = () => (S.sheet === 'pause' ? closeSheet() : showSett
 $('act-button').onclick = () => (player.boat ? castLine() : interactNearby());
 $('boat-exit').onclick = () => endBoat();
 $('dice-button').onclick = () => rollNow();
-$('debt-pill').onclick = e => { e.stopPropagation(); showProperty(); };
+$('debt-pill').onclick = e => { e.stopPropagation(); showBank(); };
 $('exit-button').onclick = () => { if (sceneName !== 'city') leaveHome(); };
 $('decor-button').onclick = () => (DECOR.on ? endDecor() : startDecor());
 $('speed-button').onclick = cycleSpeed;
@@ -4331,7 +4418,7 @@ $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 700);
 
 // Small read-only hook for automated play-testing.
-window.__willowvale = { state: S, follow: on => toggleFollow(on), leaveHome: () => leaveHome(),camera: () => ({ x: cam.x, y: cam.y, zoom: cam.zoom, lead: [...cam.lead], player: A.P(player.x, player.y, 34) }),quests: () => questState(), news: () => S.progress.news, growth: () => S.progress.growth[C.id], greet: name => { const n = npcs.find(x => x.name === name); if (!n) return null; delete S.progress.daily['greet:' + gameDay() + ':' + n.name]; greetPlayer(n); return n.line; }, townNews: (ev, also) => townNews(ev, also), gossip: (a, b) => TL.gossip(S.progress.news, a, b, () => 0), sprouts: () => things.filter(t => t.o && t.o.sprout).length, step: (i, j, n = 1) => { for (let k = 0; k < n; k++) TL.stepOn(growthOf(C.id), cityWorld, i, j); }, checkQuests: () => checkQuests(), open: k => ({ festival: showFestival, homes: showHomes, places: showPlaces, friends: showFriends, journal: showJournal, profile: showProfile, shop: showShop, island: showIsland, market: showMarket, craft: showCraft, restore: showRestore, settings: showSettings, wardrobe: showWardrobe, needs: showNeeds, districts: showDistricts, adminLogin: showAdminLogin, venue: () => showVenue(C.venues[0]), home: () => showHome(cityWorld.objects.find(o => o.home)), neighbour: () => showNeighbour(cityNpcs.find(n => !n.generic)), chat: () => showEmojiChat(cityNpcs.find(n => !n.generic)) })[k](),
+window.__willowvale = { state: S, follow: on => toggleFollow(on), leaveHome: () => leaveHome(),camera: () => ({ x: cam.x, y: cam.y, zoom: cam.zoom, lead: [...cam.lead], player: A.P(player.x, player.y, 34) }),quests: () => questState(), news: () => S.progress.news, growth: () => S.progress.growth[C.id], greet: name => { const n = npcs.find(x => x.name === name); if (!n) return null; delete S.progress.daily['greet:' + gameDay() + ':' + n.name]; greetPlayer(n); return n.line; }, townNews: (ev, also) => townNews(ev, also), gossip: (a, b) => TL.gossip(S.progress.news, a, b, () => 0), sprouts: () => things.filter(t => t.o && t.o.sprout).length, step: (i, j, n = 1) => { for (let k = 0; k < n; k++) TL.stepOn(growthOf(C.id), cityWorld, i, j); }, checkQuests: () => checkQuests(), open: k => ({ bank: showBank, festival: showFestival, homes: showHomes, places: showPlaces, friends: showFriends, journal: showJournal, profile: showProfile, shop: showShop, island: showIsland, market: showMarket, craft: showCraft, restore: showRestore, settings: showSettings, wardrobe: showWardrobe, needs: showNeeds, districts: showDistricts, adminLogin: showAdminLogin, venue: () => showVenue(C.venues[0]), home: () => showHome(cityWorld.objects.find(o => o.home)), neighbour: () => showNeighbour(cityNpcs.find(n => !n.generic)), chat: () => showEmojiChat(cityNpcs.find(n => !n.generic)) })[k](),
   birds: () => (C ? birdsFor(C).map(b => ({ x: +b.x.toFixed(2), y: +b.y.toFixed(2), fly: b.fly > 0, gone: b.gone > 0 })) : []), tapBird: () => { const b = C && birdsFor(C).find(x => !x.fly && !x.gone); return b ? tapBirds(b.x, b.y) : false; }, shakeNearestTree: () => { const t = things.filter(x => x.o && x.o.kind === 'tree').sort((a, b) => Math.hypot(a.ax - player.x, a.ay - player.y) - Math.hypot(b.ax - player.x, b.ay - player.y))[0]; if (!t) return false; const d = actionsFor('tree')[0]; queueAction(d, { o: t.o }); return t.o.tree; }, homeCount: () => world.objects.filter(o => o.home).length, treeCount: () => things.filter(t => t.o && t.o.kind === 'tree').length,
   pieList: () => { const out = [], seen = new Set(); for (const t of things) { const o = t.o; if (!t.interactive || !o) continue; const key = o.type || o.kind; if (seen.has(key)) continue; seen.add(key); out.push(key); } for (const n of npcs) if (npcVisible(n) && !seen.has('npc')) { seen.add('npc'); out.push('npc'); } return out; },
-  pieFor: key => { closeSheet(); if (key === 'npc') { const n = npcs.find(n => npcVisible(n)); if (n) showPie({ npc: n }, W / 2, H / 2); return !!n; } const t = things.find(t => t.interactive && t.o && (t.o.type || t.o.kind) === key); if (t) showPie({ o: t.o }, W / 2, H / 2); return !!t; }, cancel: () => cancelActions(), peers: () => shownPeers().map(p => ({ name: p.name, x: +p.x.toFixed(2), y: +p.y.toFixed(2), emote: p.emote || null })), allPeers: () => [...peers.values()].map(p => ({ name: p.name, scene: p.scene })), emoteTo: e => sendEmote(e, [...peers.values()][0]), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, x: n.x, y: n.y, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { const d0 = Math.floor(S.progress.clock / 1440); S.progress.clock = m; if (Math.floor(m / 1440) !== d0 && C) growCity(C); }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); if (!f) return false; const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); if (!t) return false; queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), property: () => showProperty(), roll: () => rollNow(), draw: kind => { const E = estate(), T = diceTown(); if (!kind) return drawNow(); const you = { coins: S.coins }; const out = FT.draw(E, T, you, dayNo(), Math.random, C.id, { kind }); if (!out.ok) return out.msg; setCoins(you.coins, true); showDraw(out, settle(out.costs)); return out.card.title; }, leaders: () => showLeaderboard(), debt: () => estate().debt, diceTown: () => diceTown(), popIn: id => popIn(C.venues.find(v => v.id === id)), popping: () => !!popping, goPrompt: () => [...document.querySelectorAll('#go-prompt button')].map(b => b.textContent), auction: () => showAuction(), fest: () => fest, festRelease: (c, s) => releaseLantern(c || 'gold', s || '🌙'), style: () => showStyle(), homeStyle: () => homeStyleOf(homeKey()), homeKey: () => homeKey(), estate: () => S.progress.estate, morning: () => { estate().lastMorning = -1; estateMorning(); return estate().post; }, chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
+  pieFor: key => { closeSheet(); if (key === 'npc') { const n = npcs.find(n => npcVisible(n)); if (n) showPie({ npc: n }, W / 2, H / 2); return !!n; } const t = things.find(t => t.interactive && t.o && (t.o.type || t.o.kind) === key); if (t) showPie({ o: t.o }, W / 2, H / 2); return !!t; }, cancel: () => cancelActions(), peers: () => shownPeers().map(p => ({ name: p.name, x: +p.x.toFixed(2), y: +p.y.toFixed(2), emote: p.emote || null })), allPeers: () => [...peers.values()].map(p => ({ name: p.name, scene: p.scene })), emoteTo: e => sendEmote(e, [...peers.values()][0]), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, x: n.x, y: n.y, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { const d0 = Math.floor(S.progress.clock / 1440); S.progress.clock = m; if (Math.floor(m / 1440) !== d0 && C) growCity(C); }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); if (!f) return false; const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); if (!t) return false; queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), property: () => showProperty(), roll: () => rollNow(), draw: kind => { const E = estate(), T = diceTown(); if (!kind) return drawNow(); const you = { coins: S.coins }; const out = FT.draw(E, T, you, dayNo(), Math.random, C.id, { kind }); if (!out.ok) return out.msg; setCoins(you.coins, true); showDraw(out, settle(out.costs)); return out.card.title; }, leaders: () => showLeaderboard(), debt: () => estate().debt, diceTown: () => diceTown(), popIn: id => popIn(C.venues.find(v => v.id === id)), popping: () => !!popping, goPrompt: () => [...document.querySelectorAll('#go-prompt button')].map(b => b.textContent), auction: () => showAuction(), visitors: () => gardenVisitors().map(v => [v.id, +v.x.toFixed(1), +v.y.toFixed(1)]), nature: () => ({ ...(S.progress.nature || {}) }), bank: () => ({ ...BK.ensure(S.progress) }), fest: () => fest, festRelease: (c, s) => releaseLantern(c || 'gold', s || '🌙'), style: () => showStyle(), homeStyle: () => homeStyleOf(homeKey()), homeKey: () => homeKey(), estate: () => S.progress.estate, morning: () => { estate().lastMorning = -1; estateMorning(); return estate().post; }, chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };

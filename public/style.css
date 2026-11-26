@@ -692,3 +692,25 @@ body.reduced .go-btn { animation: none; }
 .fest-person { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: 999px; background: var(--mist); font: 700 13px/1 var(--display); }
 .fest-person.me { box-shadow: 0 0 0 2px #FFC83D; }
 .fest-person i { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font-style: normal; font-size: 13px; }
+/* Bank */
+.bank-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 12px; }
+.bank-card { padding: 10px; border-radius: 16px; background: var(--mist); text-align: center; }
+.bank-card small { display: block; font-weight: 800; color: var(--ink-2); }
+.bank-card b { display: block; font: 800 22px/1.2 var(--display); }
+.bank-card span { font-size: 11.5px; font-weight: 700; color: var(--ink-2); }
+.bank-card.save { background: #E3F6EA; }
+.bank-card.owe { background: #FFE4DC; }
+.bank-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.bank-table { width: 100%; border-collapse: collapse; font-weight: 700; }
+.bank-table td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.bank-table td:last-child { text-align: right; font-family: var(--display); font-weight: 800; }
+.bank-history { margin: 0; padding: 0; list-style: none; font-weight: 700; }
+.bank-history li { padding: 4px 0; }
+.bank-history small { color: var(--ink-2); margin-right: 6px; }
+/* Nature journal */
+.nature-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.nature-row { display: grid; grid-template-columns: 30px 1fr; align-items: center; padding: 6px 8px; border-radius: 12px; background: var(--mist); }
+.nature-row span { grid-row: span 2; font-size: 22px; }
+.nature-row b { font: 800 13.5px/1.1 var(--display); }
+.nature-row small { font-size: 11.5px; color: var(--ink-2); font-weight: 700; }
+.nature-row.ok { background: #E3F6EA; }
