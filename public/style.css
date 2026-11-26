@@ -714,3 +714,13 @@ body.reduced .go-btn { animation: none; }
 .nature-row b { font: 800 13.5px/1.1 var(--display); }
 .nature-row small { font-size: 11.5px; color: var(--ink-2); font-weight: 700; }
 .nature-row.ok { background: #E3F6EA; }
+
+/* barnyard: farm animals and pets */
+.ctl-barn { display: none; width: 54px; height: 54px; right: 166px; bottom: 14px; font-size: 24px; }
+body.at-home .ctl-barn { display: grid; }
+body.decorating .ctl-barn { display: none; }
+.ctl-barn.has-count::after { content: attr(data-count); position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: #F0587A; color: #fff; font: 700 12px/20px system-ui, sans-serif; }
+.barn .hearts { color: #F0587A; letter-spacing: 1px; }
+.barn .hearts .off { color: #E3D9CF; }
+.barn .trade-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 359px) { body.at-home .ctl-barn { right: 106px; bottom: 204px; } } /* narrow phones: above the camera, clear of the joystick */
