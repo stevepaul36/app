@@ -12,7 +12,7 @@ function spriteFor(w, d, top, draw) {
 // Your home's style: chosen per home in the Style sheet and set on each furniture piece as f.style.
 export const STYLE_DEFAULT = { bed: 'classic', bedding: '#7FB8E6', wood: '#C98A4B', sofa: '#F0587A', chair: '#3F8FB8', rug: '#F2A93B', wardrobe: '#E8B87A', walls: 'classic' };
 export const WALL_PALETTES = {
-  classic: '#FFF1D9', mint: '#DDF3E5', sky: '#D9ECFA', peach: '#FFE1CC',
+  classic: null, mint: '#DDF3E5', sky: '#D9ECFA', peach: '#FFE1CC',
   lavender: '#E6DDFB', sunny: '#FFF0B8', cocoa: '#E3CDB8', rose: '#FBE0E8',
   night: '#3D4A6B', seafoam: '#D5F4EC', ocean: '#D6ECF8', butter: '#FFF3C4',
   blossom: '#FCE4EF', sage: '#E0F1D8', slate: '#E5EAF4', sand: '#F3E3CB',
