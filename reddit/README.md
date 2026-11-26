@@ -39,6 +39,13 @@ Everything in this folder was made during the hackathon:
 - **Daily errands for everyone**, picked by calendar day (UTC) from the game's own quests.
 - **Streaks, finish order, user flair, and a community town counter.**
 - **One-tap sharing** of your result, as a reply to the app's pinned comment on each daily post.
+- **🏮 The Community Night Festival.** Finish the day's three errands and release one lantern into
+  a sky the whole subreddit shares. You pick its colour and symbol from a list, with no typed text.
+  Every lantern released this week floats over every town at night, and yours glows a little
+  brighter. When the week's lanterns reach the goal, the festival is lit and fireworks fill the
+  sky every night until Monday. Next week's goal grows with this week's lanterns, so a busy
+  subreddit gets a bigger sky. Tap 🏮 by the clock to see how close everyone is. On the web, your
+  neighbours release lanterns with you.
 - **A new post every day** at 00:02 UTC (scheduled task), plus a mod menu item to post one now.
 - Fonts bundled locally, and the game's own server features (multiplayer streets, nickname accounts)
   switched off inside Reddit.
