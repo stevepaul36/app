@@ -78,10 +78,14 @@ New in the game itself during the hackathon (so it's on the web too):
   watches a film, then comes back out with the reward.
 - **A green prompt by every door:** walk up to a door and a green button offers to go in, go out,
   do the day's activity, or take the bus.
-- **Make every home your own.** Each home keeps its own furniture. Choose a bed (canopy, bunk beds or
-  a day cot), colours for the bedding, wood, sofa, armchair, rug and wardrobe, plus wallpaper, floors
-  and carpets. A furniture shop sells 20 pieces. Repaint the homes you own and rename them from word
-  lists (no typed text).
+- **Home Designer: make every home your own.** Pick one of eight whole-house themes (Sunny Meadow,
+  Ocean Cottage, Forest Hideaway, Blossom Pastel, Starlight Den, Autumn Hearth, Cloud Modern, Lemon
+  Pop), then one of four floor plans (room by room, open plan, garden studio, loft and nook). Each home
+  keeps its own furniture, theme and six crop beds, laid out as mixed beds, long rows or a side
+  garden, and crops stay with the home they were planted in. Choose a bed (canopy, bunk beds or a day
+  cot), colours for the bedding, wood, sofa, armchair, rug and wardrobe, plus wallpaper, floors and
+  carpets. A furniture shop sells 20 pieces. Repaint the homes you own in ten exterior colour schemes
+  and rename them from word lists (no typed text).
 - **Comfort:** a follow camera with a close-up view, larger text, a battery saver, tooltips on every
   icon button, and a 🚪 button to leave any home in one tap.
 
