@@ -740,3 +740,9 @@ body.decorating .ctl-barn { display: none; }
 .store-item .btn-small { margin-top: 2px; padding: 5px 10px; }
 .stall .trade-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .stall-log { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
+
+/* furniture store button, next to decorate */
+.ctl-store { display: none; width: 54px; height: 54px; right: 166px; bottom: 76px; font-size: 24px; }
+body.at-home .ctl-store { display: grid; }
+body.decorating .ctl-store { display: none; }
+@media (max-width: 359px) { body.at-home .ctl-store { right: 106px; bottom: 266px; } }

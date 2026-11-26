@@ -4580,6 +4580,7 @@ $('dice-button').onclick = () => rollNow();
 $('debt-pill').onclick = e => { e.stopPropagation(); showBank(); };
 $('exit-button').onclick = () => { if (sceneName !== 'city') leaveHome(); };
 $('decor-button').onclick = () => (DECOR.on ? endDecor() : startDecor());
+$('store-button').onclick = () => (S.sheet === 'store' ? closeSheet() : showStore());
 $('barn-button').onclick = () => (S.sheet === 'barn' ? closeSheet() : showBarn());
 $('speed-button').onclick = cycleSpeed;
 $('fest-chip').onclick = () => showFestival();
