@@ -2704,6 +2704,9 @@ function updateDiceButton() {
   b.classList.toggle('ready', left > 0 && !(T && T.auction) && !E.jail);
   b.classList.toggle('jail', !!E.jail);
   if (b.dataset.n !== String(left)) b.dataset.n = left;
+  // what you owe the bank sits next to your coins, in red, so it's never a surprise
+  const dp = $('debt-pill'), owe = E.debt || 0;
+  if (dp && dp.dataset.v !== String(owe)) { dp.dataset.v = owe; dp.textContent = `🏦 −${owe}`; dp.classList.toggle('hidden', !owe); dp.title = `You owe the bank ✦ ${owe}`; }
 }
 // Pay what a card costs through the shared rules (a bank loan first, then selling up), then tidy up.
 function settle(costs) {
@@ -2719,8 +2722,9 @@ function drawNow() {
   if (T.auction) { showAuction(); return; }
   if (E.jail) { showProperty(); toast('You’re at the Ranger’s office. Pay the fine or use a card to draw again.'); return; }
   if (FT.drawsLeft(E, day) <= 0) { showDrawShop(); return; }
+  if (!E.seenGuide) { showGuide(true); return; }
   const you = { coins: S.coins };
-  const out = FT.draw(E, T, you, day, Math.random, C.id);
+  const out = FT.draw(E, T, you, day, Math.random, C.id, { behind: FT.isBehind(E, E.towns, S.coins) });
   if (!out.ok) { toast(out.msg); return; }
   setCoins(you.coins, true);
   const debt = settle(out.costs);
@@ -2728,6 +2732,23 @@ function drawNow() {
   player.say(out.card.icon, 2);
   pushWorth();
   showDraw(out, debt);
+}
+// The rules in one screen. Shown once before your first draw, and any time from ❓ in the Market.
+function showGuide(first = false) {
+  const E = estate();
+  const el = h(`<div class="guide">
+    <p class="lead">Get rich in town by buying homes, collecting rent and riding your luck. Your goal: top the 🏆 leaderboard.</p>
+    <ol class="guide-steps">
+      <li><b>🃏 Draw fate cards.</b> ${FT.DRAWS_PER_DAY} free a day, 2 more for ✦ ${FT.EXTRA_DRAW_COST}. Each card is a surprise: a bargain home, rent you must pay, a tenant who pays you, an auction, a storm, a zoning rule or a golden key.</li>
+      <li><b>🏠 Buy homes.</b> Take a card’s bargain, bid at auctions, or buy from the bank in Homes. Let them to tenants for daily rent.</li>
+      <li><b>🏘️ Own a whole street</b> and its rent doubles. Then you can upgrade its homes evenly, up to a Grand manor.</li>
+      <li><b>📜 Watch the zoning.</b> If the council limits a street, building higher can be fined at an inspection.</li>
+      <li><b>🏦 Short of coins?</b> The bank lends you the rest, up to your credit limit, at 5% a morning. Repay from the Market, or sell or mortgage a home.</li>
+      <li><b>🍀 Behind?</b> While you trail the neighbours or owe the bank, luck leans your way: fewer rent cards, more bargains.</li>
+    </ol>
+    <div class="card-actions"><button class="btn btn-primary" data-act="go">${first ? 'Got it, draw my first card' : 'Got it'}</button></div></div>`);
+  el.querySelector('[data-act=go]').onclick = () => { E.seenGuide = true; saveProgress(); if (first) drawNow(); else showProperty(); };
+  openSheet('guide', 'Paws & Properties', 'How it works', el, { tab: 'homes' });
 }
 function showDrawShop() {
   const E = estate(), day = dayNo();
@@ -2749,7 +2770,8 @@ function showDraw(out, debt = []) {
   const el = h(`<div class="roll">
     <div class="fate-card ${c.tone}"><div class="fate-icon">${c.icon}</div><small>${{ offer: 'Bargain', rent: 'Rent', tenant: 'Tenants', auction: 'Auction', surprise: 'Surprise', zoning: 'Council', key: 'Golden key' }[c.kind]}</small><h3>${esc(c.title)}</h3><p>${esc(c.text)}</p></div>
     ${[...mine, ...debt].length ? `<ul class="roll-log">${[...mine, ...debt].map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
-    ${E.debt ? `<p class="caught-note">🏦 You owe the bank ✦ ${E.debt}.</p>` : ''}
+    ${out.lucky ? '<p class="lucky-note">🍀 You’re behind, so luck is on your side: fewer rent cards, more bargains.</p>' : ''}
+    ${E.debt ? `<p class="caught-note">🏦 You owe the bank ✦ ${E.debt}. Repay it from Homes → Market, or sell or mortgage a home.</p>` : ''}
     <div class="card-actions roll-actions"></div></div>`);
   const acts = el.querySelector('.roll-actions');
   const btn = (label, cls, fn) => { const b = h(`<button class="btn ${cls}">${label}</button>`); b.onclick = fn; acts.append(b); };
@@ -2868,6 +2890,7 @@ function diceBox() {
   btn('bank', 'Borrow ✦ 100', 'btn-ghost', () => money(you => FT.borrow(E, E.towns, you, 100)), FT.creditLeft(E, E.towns) <= 0);
   if (E.debt) { btn('bank', 'Repay ✦ 100', 'btn-ghost', () => money(you => FT.repay(E, you, 100)), !S.coins); btn('bank', 'Repay all', 'btn-ghost', () => money(you => FT.repay(E, you, E.debt)), !S.coins); }
   btn('bank', '🏆 Leaderboard', 'btn-ghost', () => showLeaderboard());
+  btn('bank', '❓ How it works', 'btn-ghost', () => showGuide());
   const lines = h(`<div class="biz-list">${Object.entries(D.BIZ).map(([id, b]) => { const o = T.biz[id]; return `<div class="biz-row"><span>${b.icon} ${esc(b.name)}</span><small>${o.owner === 'bank' ? `for sale ✦ ${D.bizPrice(id)}` : o.owner === 'you' ? `yours${o.mort ? ' · mortgaged' : ''}` : esc(o.owner)}</small>${o.owner === 'you' ? `<button class="btn btn-ghost btn-small" data-biz="${id}">${o.mort ? 'Pay off' : 'Mortgage'}</button>` : o.owner === 'bank' ? `<button class="btn btn-sun btn-small" data-buybiz="${id}">Buy</button>` : ''}</div>`; }).join('')}</div>`);
   lines.querySelectorAll('[data-biz]').forEach(b => b.onclick = () => { deal(you => D.bizMortgage(T, b.dataset.biz, you)); showProperty(); });
   lines.querySelectorAll('[data-buybiz]').forEach(b => b.onclick = () => { deal(you => D.buyBiz(E, T, b.dataset.buybiz, you, dayNo())); pushWorth(); showProperty(); });
@@ -3928,6 +3951,7 @@ $('pause-button').onclick = () => (S.sheet === 'pause' ? closeSheet() : showSett
 $('act-button').onclick = () => (player.boat ? castLine() : interactNearby());
 $('boat-exit').onclick = () => endBoat();
 $('dice-button').onclick = () => rollNow();
+$('debt-pill').onclick = e => { e.stopPropagation(); showProperty(); };
 $('exit-button').onclick = () => { if (sceneName !== 'city') leaveHome(); };
 $('decor-button').onclick = () => (DECOR.on ? endDecor() : startDecor());
 $('speed-button').onclick = cycleSpeed;

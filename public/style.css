@@ -649,3 +649,10 @@ body.reduced .go-btn { animation: none; }
 .pop-bar { height: 10px; border-radius: 5px; background: #E9EEF5; overflow: hidden; }
 .pop-bar i { display: block; height: 100%; width: 0; border-radius: 5px; background: linear-gradient(90deg, #2FAE5B, #8ED65A); transition: width .1s linear; }
 .pop-main .btn { justify-self: start; }
+
+/* debt chip, catch-up note, rules guide */
+.debt-pill { margin-left: 6px; padding: 2px 8px; border: 0; border-radius: 999px; background: #FDE3E0; color: #B3261E; font: 800 13px var(--display); cursor: pointer; }
+.debt-pill.hidden { display: none; }
+.lucky-note { margin: 6px 0; padding: 8px 12px; border-radius: 12px; background: #E6F6EA; color: #1E6B35; font-weight: 800; font-size: 14px; }
+.guide-steps { padding-left: 20px; margin: 8px 0 12px; line-height: 1.5; }
+.guide-steps li { margin-bottom: 8px; }
