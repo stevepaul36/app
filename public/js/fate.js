@@ -118,10 +118,21 @@ export function overZone(T, owner) {
 // ---------- the cards ----------
 
 const WEIGHTS = [['offer', 18], ['rent', 16], ['tenant', 14], ['auction', 9], ['surprise', 25], ['zoning', 11], ['key', 7]]
-function pickKind(r) {
-  let x = r() * WEIGHTS.reduce((a, w) => a + w[1], 0)
-  for (const [k, w] of WEIGHTS) { if ((x -= w) < 0) return k }
+// Catch-up luck: while you trail the neighbours or owe the bank, rent comes up less and bargains,
+// tenants and golden keys more, so a bad run doesn't leave you stuck at the bottom.
+const BEHIND = [['offer', 24], ['rent', 7], ['tenant', 20], ['auction', 9], ['surprise', 22], ['zoning', 6], ['key', 12]]
+export const weightsFor = behind => (behind ? BEHIND : WEIGHTS)
+function pickKind(r, behind) {
+  const W = weightsFor(behind)
+  let x = r() * W.reduce((a, w) => a + w[1], 0)
+  for (const [k, w] of W) { if ((x -= w) < 0) return k }
   return 'surprise'
+}
+/** Are you in the bottom half of the island's rich list, or in debt to the bank? */
+export function isBehind(E, towns, youCoins) {
+  if ((E.debt || 0) > 0) return true
+  const rows = leaderboard(E, towns, youCoins)
+  return rows.length > 2 && rows.findIndex(r => r.you) >= Math.ceil(rows.length / 2)
 }
 const pickOf = (r, list) => list[Math.floor(r() * list.length)]
 const between = (r, a, b) => Math.round(a + r() * (b - a))
@@ -138,8 +149,14 @@ export function draw(E, T, you, day, r = Math.random, town = null, opts = {}) {
   if (drawsLeft(E, day) <= 0) return { ok: false, msg: 'No draws left today. Unlock an extra one, or come back tomorrow.' }
   today(E, day).used++
   const out = { ok: true, card: null, costs: [], events: [] }
-  const kind = opts.kind || pickKind(r)
+  const kind = opts.kind || pickKind(r, opts.behind)
+  out.lucky = !!opts.behind
   CARDS[kind](E, T, you, day, r, town, out)
+  // when you're behind, a surprise that would cost you is softened by half
+  if (opts.behind && kind === 'surprise' && out.costs.length) {
+    for (const c of out.costs) c.amount = Math.ceil(c.amount / 2)
+    out.events.push(`🍀 Catch-up luck: you only pay half (✦ ${out.costs.reduce((a, c) => a + c.amount, 0)}).`)
+  }
   // the neighbours take their turns round town as well
   D.npcTurns(E, T, day, r, out, you, town)
   return out

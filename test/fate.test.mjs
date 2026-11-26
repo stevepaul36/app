@@ -110,6 +110,23 @@ test('zoning: a new rule, then an inspection fines homes built too high (a permi
   assert.equal(out2.costs.length, 0);
 });
 
+test('catch-up luck: behind or in debt, rent is rarer, bargains likelier and surprise costs halve', () => {
+  const share = (behind, k) => { const W = F.weightsFor(behind); return W.find(w => w[0] === k)[1] / W.reduce((a, w) => a + w[1], 0); };
+  assert.ok(share(true, 'rent') < share(false, 'rent') / 2);
+  assert.ok(share(true, 'offer') > share(false, 'offer'));
+  const { T, Est, towns, you } = fresh();
+  assert.equal(F.isBehind(Est, towns, 1e6), false);
+  assert.equal(F.isBehind(Est, towns, 0), true);
+  Est.debt = 10;
+  assert.equal(F.isBehind(Est, towns, 1e6), true);
+  // a burst pipe (the second surprise) costs half
+  const pick = seq(0.15, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5);
+  const out = F.draw(Est, T, you, 1, pick, 't', { kind: 'surprise', behind: true });
+  assert.equal(out.card.title, 'Burst pipe');
+  assert.equal(out.costs[0].amount, Math.ceil(75 / 2));
+  assert.match(out.events.find(e => e.includes('Catch-up')), /half/);
+});
+
 test('the leaderboard counts every town and takes loans off your worth', () => {
   const { T, Est, towns } = fresh();
   const id = Object.keys(T.deeds).find(h => T.deeds[h].owner === 'bank');
