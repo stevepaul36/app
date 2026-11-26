@@ -4580,7 +4580,14 @@ $('dice-button').onclick = () => rollNow();
 $('debt-pill').onclick = e => { e.stopPropagation(); showBank(); };
 $('exit-button').onclick = () => { if (sceneName !== 'city') leaveHome(); };
 $('decor-button').onclick = () => (DECOR.on ? endDecor() : startDecor());
-$('store-button').onclick = () => (S.sheet === 'store' ? closeSheet() : showStore());
+$('store-button').onclick = () => { if (!S.progress.seenStore) { S.progress.seenStore = 1; $('store-button').classList.remove('is-new'); saveProgress(); } S.sheet === 'store' ? closeSheet() : showStore(); };
+$('store-button').classList.toggle('is-new', !S.progress.seenStore);
+for (const [id, tip] of [['cam-button', 'Camera'], ['view-button', 'Follow camera'], ['run-button', 'Run'], ['exit-button', 'Go outside'], ['boat-exit', 'Back to shore'], ['dice-button', 'Fate card']]) $(id)?.setAttribute('data-tip', tip);
+// a little bounce (and a tiny buzz on phones) whenever you tap a toolbar button
+document.querySelectorAll('.tool').forEach(b => b.addEventListener('click', e => {
+  b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');
+  if (e.pointerType === 'touch' || document.body.classList.contains('touch')) navigator.vibrate?.(8);
+}));
 $('barn-button').onclick = () => (S.sheet === 'barn' ? closeSheet() : showBarn());
 $('speed-button').onclick = cycleSpeed;
 $('fest-chip').onclick = () => showFestival();

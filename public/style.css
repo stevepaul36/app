@@ -484,9 +484,6 @@ body.boating .ctl-run { display: none; }
 .slider input { width: 100%; accent-color: var(--leaf); }
 /* decorating */
 .ctl-decor { display: none; width: 54px; height: 54px; right: 104px; bottom: 76px; font-size: 24px; }
-body.at-home .ctl-cam { bottom: 140px; right: 106px; } /* sits above the decorate button instead of under it */
-body.at-home .ctl-decor { display: grid; }
-body.decorating .ctl-decor { background: #FFC83D; }
 .decor-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(90px + env(safe-area-inset-bottom, 0px)); z-index: 40; width: min(560px, calc(100% - 24px)); padding: 10px; border-radius: 22px; background: #FFFFFF; box-shadow: 0 8px 0 rgba(38,57,90,.15), 0 2px 12px rgba(38,57,90,.12); }
 .decor-bar.hidden { display: none; }
 .decor-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
@@ -716,14 +713,10 @@ body.reduced .go-btn { animation: none; }
 .nature-row.ok { background: #E3F6EA; }
 
 /* barnyard: farm animals and pets */
-.ctl-barn { display: none; width: 54px; height: 54px; right: 166px; bottom: 14px; font-size: 24px; }
-body.at-home .ctl-barn { display: grid; }
-body.decorating .ctl-barn { display: none; }
-.ctl-barn.has-count::after { content: attr(data-count); position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: #F0587A; color: #fff; font: 700 12px/20px system-ui, sans-serif; }
+.tool.has-count::after { content: attr(data-count); position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: #F0587A; color: #fff; font: 700 12px/20px system-ui, sans-serif; }
 .barn .hearts { color: #F0587A; letter-spacing: 1px; }
 .barn .hearts .off { color: #E3D9CF; }
 .barn .trade-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-@media (max-width: 359px) { body.at-home .ctl-barn { right: 106px; bottom: 204px; } } /* narrow phones: above the camera, clear of the joystick */
 
 /* furniture store and yard stall */
 .store-tabs, .store-rooms { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
@@ -742,7 +735,60 @@ body.decorating .ctl-barn { display: none; }
 .stall-log { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
 
 /* furniture store button, next to decorate */
-.ctl-store { display: none; width: 54px; height: 54px; right: 166px; bottom: 76px; font-size: 24px; }
-body.at-home .ctl-store { display: grid; }
-body.decorating .ctl-store { display: none; }
-@media (max-width: 359px) { body.at-home .ctl-store { right: 106px; bottom: 266px; } }
+
+/* ---------- your home's toolbar: Decorate, Store, Barnyard ----------
+   Phones (portrait): a column of big round buttons with a label under each, on the right edge.
+   Phones (landscape): a row of round buttons beside the action buttons, so nothing piles up.
+   Tablets and computers: labelled pills that lift when you hover them. */
+.home-tools { position: absolute; right: 10px; bottom: 168px; display: none; flex-direction: column; align-items: center; gap: 10px; }
+body.at-home .home-tools { display: flex; }
+body.decorating .home-tools { display: none; }
+.tool { --accent: #F0587A; --tint: #FFE4EC; position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 0; border: 0; background: none; color: var(--ink); font: 800 11px/1 var(--display); cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.tool-store { --accent: #E3A008; --tint: #FFF3C9; }
+.tool-barn { --accent: #3FA86A; --tint: #DDF3E5; }
+.tool-ico { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: radial-gradient(circle at 50% 38%, #fff 0 52%, var(--tint) 53%); font-size: 25px; line-height: 1; box-shadow: 0 0 0 2.5px var(--accent), 0 4px 0 var(--accent), 0 8px 16px rgba(28,54,92,.22); transition: transform .12s, box-shadow .12s; }
+.tool-txt { padding: 3px 8px; border-radius: 999px; background: #fff; color: var(--ink); box-shadow: 0 2px 6px rgba(28,54,92,.18); white-space: nowrap; }
+.tool:active .tool-ico { transform: translateY(3px) scale(.94); box-shadow: 0 0 0 2.5px var(--accent), 0 1px 0 var(--accent), 0 3px 8px rgba(28,54,92,.2); }
+.tool.pop .tool-ico { animation: tool-pop .35s ease-out; }
+@keyframes tool-pop { 0% { transform: scale(.9); } 55% { transform: scale(1.12); } 100% { transform: scale(1); } }
+.tool:focus-visible { outline: none; }
+.tool:focus-visible .tool-ico { outline: 3px solid var(--sun); outline-offset: 3px; }
+.tool.has-count::after { top: -4px; right: -6px; box-shadow: 0 0 0 2px #fff; }
+/* something new to try: a ribbon and a soft glow until you open it once */
+.tool.is-new .tool-ico { animation: tool-glow 1.8s ease-in-out infinite; }
+.tool.is-new::before { content: 'NEW'; position: absolute; top: -6px; left: -8px; z-index: 1; padding: 2px 5px; border-radius: 6px; background: #E8456A; color: #fff; font: 800 9px/1.2 var(--display); box-shadow: 0 0 0 2px #fff; transform: rotate(-12deg); }
+@keyframes tool-glow { 50% { box-shadow: 0 0 0 2.5px var(--accent), 0 4px 0 var(--accent), 0 0 0 9px color-mix(in srgb, var(--accent) 22%, transparent), 0 8px 16px rgba(28,54,92,.22); } }
+
+/* narrow or short phones in portrait: slightly smaller buttons */
+@media (max-width: 359px), (max-height: 680px) and (orientation: portrait) {
+  .home-tools { gap: 7px; right: 8px; }
+  .tool-ico { width: 46px; height: 46px; font-size: 22px; }
+  .tool-txt { font-size: 10px; padding: 2px 6px; }
+}
+/* phones on their side: a row next to the action buttons, labels as small captions */
+@media (orientation: landscape) and (max-height: 520px) {
+  .home-tools { flex-direction: row; right: 176px; bottom: 6px; gap: 8px; align-items: flex-end; }
+  .tool-ico { width: 46px; height: 46px; font-size: 22px; }
+  .tool-txt { font-size: 10px; padding: 2px 6px; }
+}
+/* tablets and computers: labelled pills */
+@media (min-width: 600px) and (min-height: 521px) {
+  .home-tools { right: 16px; bottom: 176px; align-items: stretch; gap: 8px; }
+  .tool { flex-direction: row; gap: 10px; min-width: 150px; padding: 5px 16px 5px 5px; border-radius: 999px; background: #fff; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent), 0 4px 0 color-mix(in srgb, var(--accent) 55%, #C9D6E3), 0 8px 18px rgba(28,54,92,.18); font-size: 15px; transition: transform .12s, box-shadow .12s, background .12s; }
+  .tool-ico { width: 40px; height: 40px; font-size: 21px; box-shadow: none; background: var(--tint); }
+  .tool-txt { padding: 0; background: none; box-shadow: none; }
+  .tool:active { transform: translateY(3px); }
+  .tool:active .tool-ico { transform: none; box-shadow: none; }
+  .tool.is-new .tool-ico { animation: none; }
+  .tool.is-new { animation: tool-glow-pill 1.8s ease-in-out infinite; }
+  @keyframes tool-glow-pill { 50% { box-shadow: 0 0 0 2px var(--accent), 0 4px 0 var(--accent), 0 0 0 8px color-mix(in srgb, var(--accent) 20%, transparent), 0 8px 18px rgba(28,54,92,.18); } }
+}
+@media (min-width: 600px) and (min-height: 521px) and (hover: hover) {
+  .tool:hover { transform: translateY(-2px); background: var(--tint); }
+  .tool:hover .tool-ico { background: #fff; transform: rotate(-8deg) scale(1.08); }
+}
+/* round buttons on a computer say what they do when you point at them */
+@media (hover: hover) and (pointer: fine) {
+  .ctl[data-tip]:hover::before { content: attr(data-tip); position: absolute; right: calc(100% + 10px); top: 50%; transform: translateY(-50%); padding: 5px 10px; border-radius: 10px; background: var(--ink); color: #fff; font: 700 12px/1.2 var(--display); white-space: nowrap; pointer-events: none; box-shadow: 0 4px 12px rgba(28,54,92,.25); }
+  .ctl:hover:not(:disabled) { transform: translateY(-2px); }
+}
