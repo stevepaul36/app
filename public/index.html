@@ -49,7 +49,7 @@
       <button id="cam-button" class="ctl ctl-cam" aria-label="Camera: centre on me and change zoom"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 016.5 6h1.7l1.3-2h5l1.3 2h1.7A2.5 2.5 0 0120 8.5v8a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 014 16.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12.5" r="3.4" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
       <button id="view-button" class="ctl ctl-view" aria-pressed="false" aria-label="Follow camera"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg></button>
       <button id="decor-button" class="ctl ctl-decor" aria-label="Decorate your home">🛋️</button>
-      <button id="dice-button" class="ctl ctl-dice" aria-label="Roll the dice (Paws &amp; Properties)">🎲</button>
+      <button id="dice-button" class="ctl ctl-dice" aria-label="Draw a fate card (Paws &amp; Properties)" title="Draw a fate card">🃏</button>
       <button id="exit-button" class="ctl ctl-exit" aria-label="Go outside">🚪</button>
       <button id="boat-exit" class="ctl ctl-boat" aria-label="Back to shore">⚓</button>
       <button id="run-button" class="ctl ctl-run" aria-pressed="false" aria-label="Run"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="14.5" cy="4.5" r="2.2" fill="currentColor"/><path d="M9 21l2.5-5.5 3 2.5V22M7 11l3.5-3.5 4 1 2 3.5 3 1M11.5 15.5l1.5-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -82,6 +82,8 @@
   <div id="unlock" class="unlock hidden" role="status" aria-live="polite"><small id="unlock-title">New emojis unlocked!</small><div id="unlock-emojis" class="unlock-emojis"></div><span id="unlock-label"></span></div>
   <div id="ride" class="ride hidden" role="status" aria-live="polite"><div class="ride-card"><small><span id="ride-from"></span> → <span id="ride-to"></span></small><div class="ride-road"><span class="ride-bus">🚌</span><span id="ride-icon" class="ride-dest"></span></div><b>On the island bus…</b></div></div>
   <div id="decor-bar" class="decor-bar hidden" role="toolbar" aria-label="Decorating"></div>
+  <div id="go-prompt" class="go-prompt hidden" aria-live="polite"></div>
+  <div id="pop-card" class="pop-card hidden" role="status" aria-live="polite"></div>
   <div id="fade" class="fade" aria-hidden="true"></div>
   <div id="loading" class="loading" aria-hidden="true"><span>Willowvale</span></div>
 </main>
