@@ -27,7 +27,8 @@ Play it at **https://willowvale-animal-town.onrender.com**. The same game runs a
 **Your animal and your home**
 
 - Choose your animal, eyes (11 styles, 8 colours), brows, expression, cheeks, hair, outfits and hats.
-- Every home keeps its own furniture and colours: beds, bedding, sofas, rugs, wallpaper, floors and paint, with a 20-piece furniture shop. Rename homes you own from word lists, never free text.
+- **Home Designer:** choose whole-house themes, four floor plans, ten exterior colour schemes, wallpaper palettes, floors, carpets and furniture colours. Add, move, rotate and store decorations indoors or in the yard.
+- Every home has its own furniture, style and six garden plots. Choose mixed beds, long rows or a side garden; crops stay with the home they were planted in. Cottages, apartments and villas start with different interior layouts. Rename homes from word lists, never free text.
 
 **Playing together and comfort**
 
