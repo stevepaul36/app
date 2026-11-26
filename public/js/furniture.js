@@ -44,7 +44,7 @@ export function furnitureSprite(f, part) {
   const t = f.type;
   if (t === 'sofa' && part) return spriteFor(f.w, f.d, 60, ctx => couch(ctx, f.w, sty(f).sofa, part));
   if (t === 'bed') return spriteFor(f.w, f.d, { canopy: 140, bunk: 120 }[sty(f).bed] || 60, ctx => DRAW.bed(ctx, f));
-  const tall = { plot: 20, workbench: 80, d_plantpot: 70, d_lamp: 110, d_stool: 40, d_bookstack: 50, d_teddy: 60, d_aquarium: 80, d_vase: 70, d_jackolantern: 50, d_rug: 6, d_shellchime: 120, d_cot: 60, d_beanbag: 40, d_piano: 100, d_fireplace: 110, d_grandclock: 130, d_toybox: 45, d_tallshelf: 120, d_cosychair: 60, d_sidetable: 55, d_easel: 110, d_pond: 16, d_birdbath: 60, d_beehotel: 90, d_feeder: 100, d_logpile: 40, barcounter: 90, pastrycase: 60, menuboard: 130, cafetable: 50, cafechair: 50, shelf: 110, shelf2: 70, till: 70, arcadecab: 110, claw: 120, prizes: 80, stool: 40, exhibit: 110, screen: 130, seat: 50, popcorn: 90, treadmill: 70, weights: 70, mat: 10, officedesk: 80, labbench: 80, crafttable: 60, wardrobe: 120, bed: 60, bookshelf: 110, shower: 110, fridge: 110, sink: 100, tv: 80, sofa: 50, armchair: 50, desk: 80, plant: 80, floorlamp: 110, radio: 50, nightstand: 60, mailbox: 50 }[t] || 50;
+  const tall = { plot: 20, workbench: 80, d_plantpot: 70, d_lamp: 110, d_stool: 40, d_bookstack: 50, d_teddy: 60, d_aquarium: 80, d_vase: 70, d_jackolantern: 50, d_rug: 6, d_shellchime: 120, d_cot: 60, d_beanbag: 40, d_piano: 100, d_fireplace: 110, d_grandclock: 130, d_toybox: 45, d_tallshelf: 120, d_cosychair: 60, d_sidetable: 55, d_easel: 110, d_pond: 16, d_birdbath: 60, d_beehotel: 90, d_feeder: 100, d_logpile: 40, d_coop: 90, d_paddock: 40, barcounter: 90, pastrycase: 60, menuboard: 130, cafetable: 50, cafechair: 50, shelf: 110, shelf2: 70, till: 70, arcadecab: 110, claw: 120, prizes: 80, stool: 40, exhibit: 110, screen: 130, seat: 50, popcorn: 90, treadmill: 70, weights: 70, mat: 10, officedesk: 80, labbench: 80, crafttable: 60, wardrobe: 120, bed: 60, bookshelf: 110, shower: 110, fridge: 110, sink: 100, tv: 80, sofa: 50, armchair: 50, desk: 80, plant: 80, floorlamp: 110, radio: 50, nightstand: 60, mailbox: 50 }[t] || 50;
   return spriteFor(f.w, f.d, tall, ctx => DRAW[t] && DRAW[t](ctx, f));
 }
 
@@ -158,6 +158,25 @@ const DRAW = {
       ctx.strokeStyle = '#A0703E'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(x + a + 13, y + b, 2.2, 3.2, 0, 0, 7); ctx.stroke();
     }
     blob(ctx, x - 14, y - 12, 3, '#4FAE5A');
+  },
+  d_coop(ctx) { // a red wooden henhouse on legs, with a ramp and a little door
+    for (const [x, y] of [[0.22, 0.25], [0.78, 0.25], [0.22, 0.75], [0.78, 0.75]]) box(ctx, x, y, 0, 0.05, 0.05, 22, '#7A5236');
+    const fc = box(ctx, 0.18, 0.2, 22, 0.64, 0.6, 34, '#C8453A', { topColor: '#A8362D' });
+    rectOn(ctx, fc.j, 0.38, 0, 0.62, 0.6, '#3A2420', null); // the door hole
+    for (let k = 1; k < 4; k++) rectOn(ctx, fc.i, 0, k / 4 - 0.02, 1, k / 4 + 0.02, 'rgba(0,0,0,.12)', null);
+    poly(ctx, [[0.12, 0.14, 56], [0.88, 0.14, 56], [0.88, 0.5, 74], [0.12, 0.5, 74]], '#F6EFE4', '#00000022', 1);
+    poly(ctx, [[0.12, 0.86, 56], [0.88, 0.86, 56], [0.88, 0.5, 74], [0.12, 0.5, 74]], '#E8DCCB', '#00000022', 1);
+    poly(ctx, [[0.42, 0.8, 22], [0.58, 0.8, 22], [0.58, 1.05, 0], [0.42, 1.05, 0]], '#B98448', '#7A5236', 1); // ramp
+    for (let k = 1; k < 4; k++) poly(ctx, [[0.42, 0.8 + k * 0.06, 22 - k * 5.5], [0.58, 0.8 + k * 0.06, 22 - k * 5.5]], null, '#7A5236', 1);
+    const [x, y] = P(0.5, 0.5, 0); for (let k = 0; k < 6; k++) blob(ctx, x - 16 + k * 6, y + 10 + (k % 2) * 3, 1.6, '#E8C23A'); // scattered grain
+  },
+  d_paddock(ctx) { // a post-and-rail fence corner with a hay trough
+    const posts = [[0.04, 0.04], [0.5, 0.04], [0.96, 0.04], [0.04, 0.5], [0.04, 0.96]];
+    for (const [x, y] of posts) box(ctx, x - 0.03, y - 0.03, 0, 0.06, 0.06, 30, '#8C5A3C', { topColor: '#A0703E' });
+    for (const h of [12, 24]) { poly(ctx, [[0.04, 0.04, h], [0.96, 0.04, h]], null, '#B98448', 3); poly(ctx, [[0.04, 0.04, h], [0.04, 0.96, h]], null, '#B98448', 3); }
+    box(ctx, 0.4, 0.4, 0, 0.36, 0.2, 12, '#9B6A37', { topColor: '#7A5236' });
+    const [x, y] = P(0.58, 0.5, 12); ctx.fillStyle = '#E8C766'; ctx.beginPath(); ctx.ellipse(x, y - 2, 14, 5, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#C9A23A'; ctx.lineWidth = 1; for (let k = 0; k < 6; k++) { ctx.beginPath(); ctx.moveTo(x - 10 + k * 4, y - 1); ctx.lineTo(x - 8 + k * 4, y - 7); ctx.stroke(); }
   },
   d_easel(ctx) {
     const [x, y] = P(0.5, 0.55, 0); ctx.strokeStyle = '#8C5A3C'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 14, y); ctx.lineTo(x, y - 80); ctx.lineTo(x + 14, y); ctx.moveTo(x, y - 80); ctx.lineTo(x + 4, y + 4); ctx.stroke();

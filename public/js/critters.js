@@ -24,6 +24,8 @@ export function makeCritter(v, rnd = Math.random) {
       break;
     }
     case 'hedgehog': at(0.6, 0.3, 0); break;
+    case 'chicken': case 'cow': case 'sheep': { const r = rnd() * TAU; at(Math.cos(r) * 0.8, Math.sin(r) * 0.8, 0); break; }
+    case 'dog': case 'cat': at(0.6, 0.6, 0); c.mode = 'sit'; break;
   }
   return c;
 }
@@ -154,6 +156,38 @@ export function stepCritter(c, dt, env) {
       const dir = Math.atan2(b[1] - c.y, b[0] - c.x) + (rnd() - 0.5) * 1.4, step = 0.3 + rnd() * 0.15;
       const tx = c.x + Math.cos(dir) * step, ty = c.y + Math.sin(dir) * step;
       if (ok(tx, ty)) go(c, tx, ty, 0, 0.3, 8, 'hop'); else { c.hops = 0; idle(1, 2, 'nibble'); }
+      break;
+    }
+    case 'chicken': { // quick little runs, then pecking and scratching at the ground
+      if (arrived) { if (c.hops > 0) { c.hops--; c.wait = 0.05; } else { idle(1, 3, rnd() < 0.3 ? 'scratch' : 'peck'); break; } }
+      if (c.wait > 0) break;
+      if (c.mode !== 'walk') c.hops = 1 + Math.floor(rnd() * 3);
+      const p = near(c.x, c.y, 0.45, (x, y) => ok(x, y) && Math.hypot(x - c.ax, y - c.ay) < 1.5, rnd, 0.15);
+      if (p) go(c, p[0], p[1], 0, 0.35, 1.5, 'walk'); else { c.hops = 0; idle(1, 2, 'peck'); }
+      break;
+    }
+    case 'cow': case 'sheep': { // graze for a while, then amble a few steps to fresh grass
+      if (arrived) { idle(3, 7, 'graze'); break; }
+      if (c.wait > 0) break;
+      if (rnd() < 0.25) { idle(2, 4, 'look'); break; }
+      const p = near(c.x, c.y, 0.8, (x, y) => ok(x, y) && Math.hypot(x - c.ax, y - c.ay) < 1.8, rnd, 0.3);
+      if (p) go(c, p[0], p[1], 0, Math.max(1.5, dist(c, p[0], p[1]) / (c.id === 'cow' ? 0.22 : 0.3)), 0, 'walk'); else idle(2, 4, 'graze');
+      break;
+    }
+    case 'dog': case 'cat': { // follows you: trots after you, then sits; the dog wags, the cat grooms or naps
+      const tg = env.target; if (!tg) break;
+      const d = Math.hypot(tg[0] - c.x, tg[1] - c.y), far = c.id === 'dog' ? 1.3 : 1.9;
+      if (d > 8) { c.x = tg[0] - 0.6; c.y = tg[1] + 0.4; c.to = null; break; } // somewhere new: they arrive with you
+      if (c.mode === 'run' || d > far) {
+        if (d < 0.8) { c.to = null; c.h = 0; idle(1, 3, c.id === 'cat' && rnd() < 0.3 ? 'nap' : 'sit'); break; }
+        const sp = (c.id === 'dog' ? 3.2 : 2.6) * Math.min(1.4, d / 2 + 0.5), ux = (tg[0] - c.x) / d, uy = (tg[1] - c.y) / d;
+        c.to = null; c.mode = 'run'; c.x += ux * sp * dt; c.y += uy * sp * dt; c.el += dt;
+        c.h = c.id === 'dog' ? Math.abs(Math.sin(c.seed + c.el * 14)) * 2 : 0;
+        const sdx = ux - uy; if (Math.abs(sdx) > 0.05) c.face = sdx > 0 ? 1 : -1;
+        break;
+      }
+      c.h = 0;
+      if (c.wait <= 0) idle(2, 5, c.id === 'dog' ? (rnd() < 0.3 ? 'sniff' : 'sit') : (rnd() < 0.35 ? 'groom' : rnd() < 0.5 ? 'nap' : 'sit'));
       break;
     }
     case 'owl': {
@@ -297,6 +331,92 @@ const DRAW = {
     dot(ctx, 5.2, hy - 0.6, 0.65, '#1A1A1A'); dot(ctx, 7, hy + 0.4, 0.5, '#D99A8A');
     ctx.save(); ctx.translate(3.2, hy - 1.8); ctx.rotate(-0.5 + tw);
     ell(ctx, 0, -4, 1.2, 4.2, '#9A8064'); ell(ctx, 0, -4, 0.6, 3.2, '#D9B8A8'); ctx.rotate(0.35); ell(ctx, 1.2, -4, 1.1, 4, '#8A7058');
+    ctx.restore();
+  },
+  chicken(ctx, c, t) {
+    const walk = c.mode === 'walk', peck = c.mode === 'peck' ? Math.max(0, Math.sin(t * 6)) : 0, scr = c.mode === 'scratch' ? Math.sin(t * 10) : 0;
+    const st = walk ? Math.sin(t * 18) * 1.5 : 0;
+    ctx.strokeStyle = '#E8A23A'; ctx.lineWidth = 1.1; ctx.beginPath(); // legs
+    ctx.moveTo(-0.5, -3); ctx.lineTo(-1 + st, 0); ctx.moveTo(1.5, -3); ctx.lineTo(1.6 - st + scr * 1.5, 0); ctx.stroke();
+    ctx.fillStyle = '#F2EDE2'; ctx.beginPath(); ctx.moveTo(-4, -6); ctx.quadraticCurveTo(-8, -12, -6, -13); ctx.quadraticCurveTo(-4.5, -9, -3, -8); ctx.fill(); // tail
+    ell(ctx, 0, -6.5, 5.4, 4, '#F7F3EA'); ell(ctx, -1, -7, 3.4, 2.2, '#E6DFD0'); // body and wing
+    ctx.save(); ctx.translate(3, -9); ctx.rotate(peck * 1.1);
+    ell(ctx, 0.6, -1.6, 2.4, 2.6, '#F7F3EA');
+    dot(ctx, 0, -4.2, 1, '#D8322E'); dot(ctx, 1.2, -4.4, 1, '#D8322E'); dot(ctx, -1, -3.8, 0.9, '#D8322E'); // comb
+    ell(ctx, 2.6, -0.4, 0.8, 1.2, '#D8322E'); // wattle
+    ctx.fillStyle = '#E8A23A'; ctx.beginPath(); ctx.moveTo(2.6, -2.2); ctx.lineTo(4.6, -1.6); ctx.lineTo(2.6, -1); ctx.fill();
+    dot(ctx, 1.4, -2.2, 0.5, '#111');
+    ctx.restore();
+  },
+  cow(ctx, c, t) {
+    const graze = c.mode === 'graze', swish = Math.sin(t * 2.2) * 0.35, st = c.mode === 'walk' ? Math.sin(t * 6) : 0;
+    ctx.save(); ctx.scale(1.7, 1.7);
+    ctx.fillStyle = '#2A2A2A'; for (const [x, k] of [[-4.6, 1], [-2.6, -1], [3, 1], [5, -1]]) ctx.fillRect(x + st * k * 0.4, -3.6, 1.3, 3.6); // legs
+    ctx.save(); ctx.translate(-6.6, -7); ctx.rotate(0.3 + swish); ctx.strokeStyle = '#2A2A2A'; ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 5); ctx.stroke(); ell(ctx, 0, 5.4, 0.8, 1.2, '#2A2A2A'); ctx.restore(); // swishing tail
+    ell(ctx, 0, -6.5, 7.4, 3.8, '#F7F4EE'); // body
+    ell(ctx, -3, -7.4, 2.6, 2, '#2A2A2A'); ell(ctx, 2.4, -5.6, 2.2, 1.6, '#2A2A2A'); ell(ctx, 4.4, -8, 1.4, 1.1, '#2A2A2A'); // patches
+    ell(ctx, 1.4, -2.8, 1.6, 0.9, '#F2B8B8'); // udder
+    const hy = graze ? -2.6 : -8.6, hx = graze ? 8.4 : 8;
+    ell(ctx, hx - 1, hy, 2.6, 2.2, '#F7F4EE'); ell(ctx, hx - 1.8, hy - 0.6, 1.2, 1.2, '#2A2A2A');
+    ell(ctx, hx + 1, hy + 0.8, 1.6, 1.3, '#F2C2B8'); dot(ctx, hx + 1.6, hy + 0.6, 0.3, '#5A3A30');
+    dot(ctx, hx - 0.4, hy - 0.8, 0.45, '#111');
+    ctx.fillStyle = '#E8DCC0'; ctx.beginPath(); ctx.moveTo(hx - 2.2, hy - 1.8); ctx.lineTo(hx - 2.8, hy - 3.6); ctx.lineTo(hx - 1.4, hy - 2.1); ctx.fill(); // horn
+    ell(ctx, hx - 3.4, hy - 1, 1.3, 0.6, '#2A2A2A', -0.4); // ear
+    if (graze) { ctx.strokeStyle = '#5FA84A'; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.moveTo(hx + 1.6, hy + 2); ctx.lineTo(hx + 2.4, hy + 0.6 + Math.sin(t * 5) * 0.3); ctx.stroke(); } // a mouthful of grass
+    ctx.restore();
+  },
+  sheep(ctx, c, t) {
+    const graze = c.mode === 'graze', st = c.mode === 'walk' ? Math.sin(t * 7) * 0.8 : 0;
+    ctx.save(); ctx.scale(1.35, 1.35);
+    ctx.fillStyle = '#2B2622'; for (const [x, k] of [[-3.6, 1], [-1.8, -1], [2.2, 1], [3.8, -1]]) ctx.fillRect(x + st * k * 0.4, -3.4, 1.1, 3.4);
+    for (const [x, y, r] of [[-4, -6, 3], [-1.5, -7.6, 3.4], [1.6, -7.6, 3.4], [4, -6.2, 3], [0, -5, 3.6], [-2.6, -4.8, 2.6], [2.8, -4.8, 2.6]]) dot(ctx, x, y, r, '#F4F0E6'); // fleece
+    for (const [x, y] of [[-2, -8.4], [1.4, -9], [3.6, -7]]) dot(ctx, x, y, 1.1, '#FFFFFF');
+    const hy = graze ? -2.8 : -8, hx = graze ? 7 : 6.4;
+    ell(ctx, hx, hy, 1.8, 2.4, '#2B2622', graze ? 0.9 : 0.3); dot(ctx, hx + 0.4, hy - 0.8, 0.35, '#EEE');
+    ell(ctx, hx - 1.8, hy - 1.2, 1.4, 0.6, '#2B2622', -0.3); // ear
+    dot(ctx, hx - 1.2, hy - 1.9, 1.2, '#F4F0E6'); // woolly top-knot
+    ctx.restore();
+  },
+  dog(ctx, c, t) {
+    const run = c.mode === 'run', sit = c.mode === 'sit', sniff = c.mode === 'sniff', wag = Math.sin(t * (sit ? 16 : 10)) * 0.6;
+    ctx.save(); ctx.scale(1.3, 1.3);
+    ctx.save(); ctx.translate(-5, sit ? -3 : -6); ctx.rotate(-0.8 + wag); ctx.fillStyle = '#C98A4B'; ctx.beginPath(); ctx.ellipse(0, -2.4, 0.9, 2.6, 0, 0, TAU); ctx.fill(); ctx.restore(); // wagging tail
+    if (sit) { ell(ctx, -1.6, -3.8, 3.6, 3.4, '#D9A060'); ell(ctx, -3, -1, 2.2, 1.2, '#C98A4B'); ctx.fillStyle = '#C98A4B'; ctx.fillRect(0.6, -3.6, 1.2, 3.6); ctx.fillRect(2, -3.6, 1.2, 3.6); }
+    else {
+      const st = run ? Math.sin(t * 20) * 1.6 : 0;
+      ctx.fillStyle = '#C98A4B'; for (const [x, k] of [[-3.6, 1], [-2.2, -1], [2, 1], [3.4, -1]]) { ctx.save(); ctx.translate(x, -3.6); ctx.rotate(st * k * 0.2); ctx.fillRect(-0.6, 0, 1.2, 3.6); ctx.restore(); }
+      ell(ctx, 0, -5.2, 5, 2.8, '#D9A060'); ell(ctx, 0.6, -4, 3, 1.3, '#F2D9B0');
+    }
+    const hx = sit ? 2.6 : sniff ? 5.6 : 4.8, hy = sit ? -8.4 : sniff ? -3.2 : -8;
+    ell(ctx, hx, hy, 2.8, 2.5, '#D9A060'); ell(ctx, hx + 2.2, hy + 0.8, 1.6, 1.1, '#F2D9B0'); dot(ctx, hx + 3.6, hy + 0.4, 0.6, '#2A1E16');
+    dot(ctx, hx + 0.8, hy - 0.6, 0.55, '#1A1A1A'); dot(ctx, hx + 1, hy - 0.8, 0.2, '#FFF');
+    ell(ctx, hx - 1.4, hy + 0.6, 1.1, 2.4, '#8C5A3C', 0.25); // floppy ear
+    if (sit && Math.sin(t * 1.3) > 0.4) ell(ctx, hx + 2.4, hy + 2, 0.7, 1, '#F07090'); // panting
+    ctx.fillStyle = '#E8333B'; ctx.fillRect(hx - 2, hy + 1.8, 2.6, 0.8); // collar
+    ctx.restore();
+  },
+  cat(ctx, c, t) {
+    const run = c.mode === 'run', nap = c.mode === 'nap', groom = c.mode === 'groom', flick = Math.sin(t * 1.8) * 0.4;
+    ctx.save(); ctx.scale(1.2, 1.2);
+    if (nap) { // curled up asleep
+      ell(ctx, 0, -2.6, 5, 2.8, '#8E8A86'); ell(ctx, 3.4, -3, 2.2, 2, '#9C9894');
+      ctx.strokeStyle = '#6A6662'; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.moveTo(3, -3); ctx.lineTo(4, -3); ctx.stroke();
+      ctx.fillStyle = '#9C9894'; ctx.beginPath(); ctx.moveTo(2.4, -4.6); ctx.lineTo(2.8, -6.2); ctx.lineTo(3.6, -4.8); ctx.fill();
+      ctx.strokeStyle = '#8E8A86'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(0, -1.6, 4.6, 0.2, 2.4); ctx.stroke();
+      ctx.restore(); return;
+    }
+    ctx.save(); ctx.translate(-4.4, run ? -5 : -2); ctx.strokeStyle = '#8E8A86'; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(-3, -3 + flick * 3, -1.6, -7 - flick * 2); ctx.stroke(); ctx.restore(); // tail
+    if (run) { const st = Math.sin(t * 18) * 1.4; ctx.fillStyle = '#8E8A86'; for (const [x, k] of [[-3, 1], [-1.8, -1], [2, 1], [3, -1]]) ctx.fillRect(x + st * k * 0.3, -3.4, 1, 3.4); ell(ctx, 0, -4.8, 4.6, 2.2, '#9C9894'); }
+    else { ell(ctx, -1, -3.6, 3.2, 3.4, '#9C9894'); ctx.fillStyle = '#8E8A86'; ctx.fillRect(0.8, -3.4, 1, 3.4); ctx.fillRect(1.9, -3.4, 1, 3.4); }
+    for (let k = 0; k < 3; k++) { ctx.strokeStyle = '#6A6662'; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.moveTo(-2.6 + k * 1.3, run ? -6.6 : -6.4); ctx.lineTo(-2.2 + k * 1.3, run ? -5 : -4.6); ctx.stroke(); } // tabby stripes
+    const hx = run ? 4.6 : 2.4, hy = run ? -6.6 : groom ? -6 : -8;
+    ell(ctx, hx, hy, 2.4, 2.1, '#9C9894');
+    ctx.fillStyle = '#9C9894'; ctx.beginPath(); ctx.moveTo(hx - 1.8, hy - 1); ctx.lineTo(hx - 1.4, hy - 3.6); ctx.lineTo(hx - 0.2, hy - 1.8); ctx.moveTo(hx + 0.4, hy - 1.8); ctx.lineTo(hx + 1.4, hy - 3.6); ctx.lineTo(hx + 1.8, hy - 1); ctx.fill(); // pointy ears
+    ell(ctx, hx - 1.1, hy - 2.2, 0.35, 0.7, '#E8A8A8'); ell(ctx, hx + 1.1, hy - 2.2, 0.35, 0.7, '#E8A8A8');
+    if (groom) { ell(ctx, hx + 1.6, hy + 1.4, 0.9, 1.6, '#8E8A86', -0.5); ell(ctx, hx + 1.9, hy + 0.6, 0.5, 0.6, '#F07090'); } // licking a paw
+    else { ell(ctx, hx + 0.6, hy - 0.2, 0.45, 0.6, '#9ACD32'); ell(ctx, hx + 1.7, hy - 0.2, 0.4, 0.55, '#9ACD32'); dot(ctx, hx + 0.6, hy - 0.2, 0.18, '#111'); dot(ctx, hx + 1.7, hy - 0.2, 0.16, '#111'); }
+    dot(ctx, hx + 2.2, hy + 0.6, 0.35, '#E88A9A');
+    ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 0.3; ctx.beginPath(); ctx.moveTo(hx + 2, hy + 0.8); ctx.lineTo(hx + 4, hy + 0.4); ctx.moveTo(hx + 2, hy + 1); ctx.lineTo(hx + 4, hy + 1.2); ctx.stroke(); // whiskers
     ctx.restore();
   },
   owl(ctx, c, t) {
