@@ -2,7 +2,7 @@
 import { N, T, rng, buildWorld, findPath, nearestWalkable, stepOK, DISTRICTS, districtAt, HOMES, VENUES, NEIGHBOURS } from './js/world.js';
 import * as A from './js/art.js';
 import * as F from './js/furniture.js';
-import { buildHome, O as HOME_O } from './js/home.js';
+import { buildHome, O as HOME_O, HOME_LAYOUTS, GARDEN_LAYOUTS } from './js/home.js';
 import { buildInterior, KIT_OF, STAFF_TITLE, GAMES } from './js/interiors.js';
 import * as SND from './js/audio.js';
 import { STARTER, ACHIEVEMENTS, SIGNATURE, ALL_EMOJIS, replyTo, unlockedSet } from './js/emoji.js';
@@ -39,7 +39,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 // Drop any part that has the wrong type so the setup below fills it with a fresh default.
 const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const SHAPE_LISTS = ['done', 'achievements', 'owned', 'packs', 'decor', 'plots', 'news'];
-const SHAPE_MAPS = ['visits', 'friends', 'daily', 'stats', 'places', 'skills', 'jobs', 'visited', 'unlocked', 'homes', 'found', 'restore', 'picked', 'needs', 'growth'];
+const SHAPE_MAPS = ['visits', 'friends', 'daily', 'stats', 'places', 'skills', 'jobs', 'visited', 'unlocked', 'homes', 'found', 'restore', 'picked', 'needs', 'growth', 'decorByHome', 'homeStyle', 'homeLooks', 'plotsByHome'];
 function fixShape(p) {
   for (const k of SHAPE_LISTS) if (k in p && !Array.isArray(p[k])) delete p[k];
   for (const k of SHAPE_MAPS) if (k in p && !isObj(p[k])) delete p[k];
@@ -92,11 +92,15 @@ S.progress.unlocked = S.progress.unlocked || {};
 S.progress.packs = S.progress.packs || [];
 S.progress.homes = S.progress.homes || {};
 // garden, decorating, collections, the Old Garden
-S.progress.plots = S.progress.plots || Array.from({ length: 6 }, () => ({}));
-S.progress.decor = S.progress.decor || [];
-if (!S.progress.decorByHome) { S.progress.decorByHome = {}; S.progress.decorMigrate = true; }
-S.progress.homeStyle = S.progress.homeStyle || {};
-S.progress.homeLooks = S.progress.homeLooks || {};
+S.progress.plots = Array.isArray(S.progress.plots) ? S.progress.plots : Array.from({ length: 6 }, () => ({}));
+S.progress.decor = Array.isArray(S.progress.decor) ? S.progress.decor : [];
+if (!isObj(S.progress.decorByHome)) { S.progress.decorByHome = {}; S.progress.decorMigrate = true; }
+if (!isObj(S.progress.homeStyle)) S.progress.homeStyle = {};
+if (!isObj(S.progress.homeLooks)) S.progress.homeLooks = {};
+if (!isObj(S.progress.plotsByHome)) S.progress.plotsByHome = {};
+const initialHomeKey = typeof S.progress.homeKey === 'string' ? S.progress.homeKey : 'cottage';
+if (!Array.isArray(S.progress.plotsByHome[initialHomeKey])) S.progress.plotsByHome[initialHomeKey] = S.progress.plots;
+S.progress.plots = S.progress.plotsByHome[initialHomeKey];
 S.progress.found = S.progress.found || {};
 S.progress.restore = S.progress.restore || { stage: 0, given: {} };
 S.progress.picked = S.progress.picked || {};
@@ -110,11 +114,11 @@ SND.setPrefs({ music: S.settings.music, sfx: S.settings.sfx, musicVol: S.setting
 let RESETTING = false;
 // One wallet: coins live in the save, on this device and (when signed in) in the cloud.
 const CLOUD = Object.assign({ version: 0, user: null, dirty: false, state: 'off', savedAt: 0, ready: false }, store.get('willowvale_cloud_v1', {}));
-const saveProgress = () => { if (RESETTING) return; S.progress.coins = S.coins; if (!S.progress.decorMigrate) S.progress.decorByHome[S.progress.homeKey || 'cottage'] = S.progress.decor; store.set('willowvale_progress_v2', S.progress); CLOUD.dirty = true; };
+const saveProgress = () => { if (RESETTING) return; S.progress.coins = S.coins; S.progress.plotsByHome[S.progress.homeKey || 'cottage'] = S.progress.plots; if (!S.progress.decorMigrate) S.progress.decorByHome[S.progress.homeKey || 'cottage'] = S.progress.decor; store.set('willowvale_progress_v2', S.progress); CLOUD.dirty = true; };
 // The clock and needs change every second without anything calling saveProgress, so keep this device's
 // copy fresh: every 15 seconds and whenever the page is hidden or closed. This doesn't count as a cloud
 // change; the next real save carries the time along.
-const saveLocal = () => { if (RESETTING) return; S.progress.coins = S.coins; store.set('willowvale_progress_v2', S.progress); };
+const saveLocal = () => { if (RESETTING) return; S.progress.coins = S.coins; S.progress.plotsByHome[S.progress.homeKey || 'cottage'] = S.progress.plots; store.set('willowvale_progress_v2', S.progress); };
 setInterval(saveLocal, 15000);
 window.addEventListener('pagehide', saveLocal);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveLocal(); });
@@ -154,7 +158,8 @@ const BUILDING_KINDS = ['house', 'apartment', 'villa', 'venue', 'shop', 'myhome'
 function makeThings(wd) {
   const list = [], flatList = [], byId = {};
   for (const o of wd.objects) {
-    if (o.home && S.progress.homeLooks?.[o.id]) Object.assign(o, S.progress.homeLooks[o.id]); // your paint and name
+    const homeLookKey = o.kind === 'myhome' ? 'cottage' : o.id;
+    if ((o.home || o.kind === 'myhome') && S.progress.homeLooks?.[homeLookKey]) Object.assign(o, S.progress.homeLooks[homeLookKey]); // your paint and name
     const t = { o, box: [o.i, o.j, o.i + o.w, o.j + o.d], ax: o.i, ay: o.j, interactive: true };
     if (o.kind === 'venue') byId[o.id] = o;
     if (o.flatArt) { flatList.push({ d: o, obj: o, x: o.i, y: o.j, sprite: CA.flatSprite(o) }); continue; }
@@ -213,25 +218,32 @@ function makeRoomThings(rw) {
   rw.doorObj = rw.objects.find(f => f.door);
   return { things: list, flats: flatList };
 }
-const homeWorld = buildHome();
-const homeThings = [], homeFlats = [];
-for (const w of homeWorld.walls) {
-  const sprite = F.wallSprite(w);
-  const ax = w.axis === 'i' ? HOME_O[0] + w.k : HOME_O[0] + w.at, ay = w.axis === 'i' ? HOME_O[1] + w.at : HOME_O[1] + w.k;
-  homeThings.push({ o: { kind: 'wall' }, wall: w, sprite, ax, ay, box: w.axis === 'i' ? [ax, ay - 0.06, ax + 1, ay + 0.06] : [ax - 0.06, ay, ax + 0.06, ay + 1] });
-}
-for (const f of homeWorld.objects) {
-  if (f.type === 'sofa') {
-    homeThings.push({ o: f, furn: true, part: 'seat', sprite: F.furnitureSprite(f, 'seat'), ax: f.i, ay: f.j, box: [f.i, f.j, f.i + f.w, f.j + 0.7], interactive: true });
-    homeThings.push({ o: f, furn: true, part: 'back', sprite: F.furnitureSprite(f, 'back'), ax: f.i, ay: f.j, box: [f.i, f.j + 0.72, f.i + f.w, f.j + f.d], interactive: true });
-    continue;
+const initialHomeRecord = HOMES.find(h => h.id === initialHomeKey);
+const initialHomeLayout = S.progress.homeStyle[initialHomeKey]?.layout || (initialHomeKey === 'cottage' ? 'classic' : initialHomeRecord?.kind === 'villa' ? 'open' : initialHomeRecord?.kind === 'apartment' ? 'studio' : 'loft');
+let homeWorld = buildHome(initialHomeLayout, S.progress.homeStyle[initialHomeKey]?.garden || 'mixed');
+let homeThings = [], homeFlats = [], homeDoor = null;
+function populateHomeScene() {
+  homeThings = []; homeFlats = [];
+  for (const w of homeWorld.walls) {
+    const sprite = F.wallSprite(w);
+    const ax = w.axis === 'i' ? HOME_O[0] + w.k : HOME_O[0] + w.at, ay = w.axis === 'i' ? HOME_O[1] + w.at : HOME_O[1] + w.k;
+    homeThings.push({ o: { kind: 'wall' }, wall: w, sprite, ax, ay, box: w.axis === 'i' ? [ax, ay - 0.06, ax + 1, ay + 0.06] : [ax - 0.06, ay, ax + 0.06, ay + 1] });
   }
-  const t = { o: f, furn: true, sprite: F.furnitureSprite(f), ax: f.i, ay: f.j, box: [f.i, f.j, f.i + f.w, f.j + f.d], interactive: !f.decor && !f.flat };
-  if (f.flat) homeFlats.push({ d: f, x: f.i, y: f.j, sprite: t.sprite, furn: f }); else homeThings.push(t);
+  for (const f of homeWorld.objects) {
+    if (f.type === 'sofa') {
+      homeThings.push({ o: f, furn: true, part: 'seat', sprite: F.furnitureSprite(f, 'seat'), ax: f.i, ay: f.j, box: [f.i, f.j, f.i + f.w, f.j + 0.7], interactive: true });
+      homeThings.push({ o: f, furn: true, part: 'back', sprite: F.furnitureSprite(f, 'back'), ax: f.i, ay: f.j, box: [f.i, f.j + 0.72, f.i + f.w, f.j + f.d], interactive: true });
+      continue;
+    }
+    const t = { o: f, furn: true, sprite: F.furnitureSprite(f), ax: f.i, ay: f.j, box: [f.i, f.j, f.i + f.w, f.j + f.d], interactive: !f.decor && !f.flat };
+    if (f.flat) homeFlats.push({ d: f, x: f.i, y: f.j, sprite: t.sprite, furn: f }); else homeThings.push(t);
+  }
+  addDecor(homeThings, homeFlats, homeWorld.decor);
+  homeDoor = homeWorld.objects.find(f => f.door);
+  homeWorld.doorObj = homeDoor;
 }
-addDecor(homeThings, homeFlats, homeWorld.decor);
-const homeDoor = homeWorld.objects.find(f => f.door);
-homeWorld.doorObj = homeDoor;
+populateHomeScene();
+
 const roomCenter = () => world.roomSize ? [HOME_O[0] + world.roomSize[0] / 2, HOME_O[1] + world.roomSize[1] / 2] : [HOME_O[0] + 6.5, HOME_O[1] + 6];
 
 // ---------- characters ----------
@@ -588,26 +600,41 @@ function drawDecorGrid(z) {
 const homeKey = () => S.progress.homeKey || 'cottage';
 // Each home keeps its own decor. Entering a home swaps the decor in; your old decor moves into the first home you enter.
 function switchHome(key) {
+  const previous = homeKey();
   const by = S.progress.decorByHome;
+  S.progress.plotsByHome[previous] = S.progress.plots;
   if (S.progress.decorMigrate) { delete S.progress.decorMigrate; by[key] = S.progress.decor; }
-  else { by[homeKey()] = S.progress.decor; S.progress.decor = by[key] ||= []; }
+  else { by[previous] = S.progress.decor; S.progress.decor = by[key] ||= []; }
   S.progress.homeKey = key;
-  refreshDecor(); applyHomeStyle(); saveProgress();
+  S.progress.plots = S.progress.plotsByHome[key] ||= Array.from({ length: 6 }, () => ({}));
+  rebuildHomeScene();
+  saveProgress();
 }
 const STYLE_OPTS = {
   bed: [['classic', 'Cosy bed'], ['canopy', 'Canopy bed'], ['bunk', 'Bunk beds'], ['cot', 'Day cot']],
-  bedding: ['#7FB8E6', '#F7A8C4', '#FFD27A', '#9ED99B', '#B9A8EC', '#F4F1EA', '#E8665A'],
-  wood: ['#C98A4B', '#E3C08F', '#8C5A3C', '#5E3A26', '#F4EDE2', '#7A8798'],
-  sofa: ['#F0587A', '#3F8FB8', '#3FA86A', '#FFC83D', '#8E7CE0', '#7A8798', '#E8823A'],
-  chair: ['#3F8FB8', '#F0587A', '#3FA86A', '#FFC83D', '#8E7CE0', '#7A8798', '#E8823A'],
-  rug: ['#F2A93B', '#F7A8C4', '#7FC8DD', '#9ED99B', '#B9A8EC', '#E8665A'],
-  wardrobe: ['#E8B87A', '#FAF7F2', '#8C5A3C', '#7FC8DD', '#F7A8C4', '#9ED99B'],
+  bedding: ['#7FB8E6', '#F7A8C4', '#FFD27A', '#9ED99B', '#B9A8EC', '#F4F1EA', '#E8665A', '#7FC8DD', '#D7CFF6', '#C8E6C9', '#F4C7A1', '#343D5B'],
+  wood: ['#C98A4B', '#E3C08F', '#8C5A3C', '#5E3A26', '#F4EDE2', '#7A8798', '#A86E2A', '#D8B4A0', '#445C85'],
+  sofa: ['#F0587A', '#3F8FB8', '#3FA86A', '#FFC83D', '#8E7CE0', '#7A8798', '#E8823A', '#2E8B8B', '#B45C79', '#445C85'],
+  chair: ['#3F8FB8', '#F0587A', '#3FA86A', '#FFC83D', '#8E7CE0', '#7A8798', '#E8823A', '#2E8B8B', '#B45C79', '#445C85'],
+  rug: ['#F2A93B', '#F7A8C4', '#7FC8DD', '#9ED99B', '#B9A8EC', '#E8665A', '#343D5B', '#D8B4A0', '#E3EEF8', '#2E8B8B'],
+  wardrobe: ['#E8B87A', '#FAF7F2', '#8C5A3C', '#7FC8DD', '#F7A8C4', '#9ED99B', '#D7CFF6', '#445C85', '#E3C08F', '#2E8B8B'],
 };
-const FLOORS = [['Honey wood', null, '#D9A066'], ['Terracotta', 15, '#E8A87E'], ['Cream tiles', 16, '#F2ECDF'], ['Sandstone', 22, '#F2D7AE'], ['Grey stone', 14, '#D9D4CC']];
-const CARPETS = [['Lilac', null, '#C9BBF0'], ['Moss', 19, '#98CC6E'], ['Coral', 20, '#D98A70'], ['Rose', 17, '#D96A62'], ['Sand', 22, '#F2D7AE']];
-const PAINTS = ['#FBF1DD', '#FFE3A3', '#E2F2DA', '#F7D9E3', '#DDEBF7'];
+const FLOORS = [['Honey wood', null, '#D9A066'], ['Terracotta', 15, '#E8A87E'], ['Cream tiles', 16, '#F2ECDF'], ['Sandstone', 22, '#F2D7AE'], ['Grey stone', 14, '#D9D4CC'], ['Cherry wood', 17, '#D96A62'], ['Slate tiles', 18, '#C8D6ED'], ['Meadow boards', 19, '#98CC6E'], ['Brick warmth', 20, '#D27F64'], ['Soft rose', 21, '#E8D6E8']];
+const CARPETS = [['Lilac', null, '#C9BBF0'], ['Moss', 19, '#98CC6E'], ['Coral', 20, '#D98A70'], ['Rose', 17, '#D96A62'], ['Sand', 22, '#F2D7AE'], ['Stone', 14, '#D9D4CC'], ['Ocean', 18, '#C8D6ED'], ['Cloud', 21, '#E8D6E8'], ['Cherry', 15, '#E8A87E']];
+const PAINTS = ['#FBF1DD', '#FFE3A3', '#E2F2DA', '#F7D9E3', '#DDEBF7', '#E6DDFB', '#D6F1EA', '#F5D8B8', '#D8E5F7', '#F9E3BB'];
+const DESIGN_THEMES = [
+  { id: 'sunny', name: 'Sunny Meadow', icon: '🌼', description: 'Honey wood and golden accents', exterior: 1, layout: 'classic', garden: 'mixed', style: { walls: 'sunny', floor: 0, carpet: 4, bedding: '#FFD27A', wood: '#C98A4B', sofa: '#FFC83D', chair: '#3FA86A', rug: '#F2A93B', wardrobe: '#E8B87A' } },
+  { id: 'ocean', name: 'Ocean Cottage', icon: '🌊', description: 'Cool blues and sea-glass green', exterior: 6, layout: 'open', garden: 'rows', style: { walls: 'ocean', floor: 2, carpet: 6, bedding: '#7FC8DD', wood: '#E3C08F', sofa: '#2E8B8B', chair: '#3F8FB8', rug: '#7FC8DD', wardrobe: '#2E8B8B' } },
+  { id: 'forest', name: 'Forest Hideaway', icon: '🌿', description: 'Leafy greens and natural wood', exterior: 2, layout: 'loft', garden: 'orchard', style: { walls: 'sage', floor: 7, carpet: 1, bedding: '#9ED99B', wood: '#8C5A3C', sofa: '#3FA86A', chair: '#8C5A3C', rug: '#9ED99B', wardrobe: '#8C5A3C' } },
+  { id: 'blossom', name: 'Blossom Pastel', icon: '🌸', description: 'Pink, lilac and soft cream', exterior: 3, layout: 'studio', garden: 'mixed', style: { walls: 'blossom', floor: 9, carpet: 3, bedding: '#F7A8C4', wood: '#F4EDE2', sofa: '#F0587A', chair: '#B9A8EC', rug: '#F7A8C4', wardrobe: '#F7A8C4' } },
+  { id: 'starlight', name: 'Starlight Den', icon: '🌙', description: 'Midnight walls and jewel colours', exterior: 5, layout: 'loft', garden: 'rows', style: { walls: 'midnight', floor: 4, carpet: 0, bedding: '#B9A8EC', wood: '#5E3A26', sofa: '#445C85', chair: '#8E7CE0', rug: '#343D5B', wardrobe: '#445C85' } },
+  { id: 'autumn', name: 'Autumn Hearth', icon: '🍂', description: 'Warm clay, cocoa and amber', exterior: 7, layout: 'classic', garden: 'orchard', style: { walls: 'apricot', floor: 1, carpet: 4, bedding: '#E8823A', wood: '#8C5A3C', sofa: '#E8823A', chair: '#C98A4B', rug: '#D98A70', wardrobe: '#8C5A3C' } },
+  { id: 'cloud', name: 'Cloud Modern', icon: '☁️', description: 'Clean slate, soft blue and white', exterior: 8, layout: 'open', garden: 'rows', style: { walls: 'slate', floor: 4, carpet: 5, bedding: '#F4F1EA', wood: '#7A8798', sofa: '#3F8FB8', chair: '#7A8798', rug: '#E3EEF8', wardrobe: '#7A8798' } },
+  { id: 'lemon', name: 'Lemon Pop', icon: '🍋', description: 'Bright butter, apricot and teal', exterior: 9, layout: 'studio', garden: 'mixed', style: { walls: 'butter', floor: 3, carpet: 2, bedding: '#FFD27A', wood: '#E3C08F', sofa: '#E8823A', chair: '#2E8B8B', rug: '#F2A93B', wardrobe: '#E3C08F' } },
+];
 const STYLED = new Set(['bed', 'table', 'chair', 'sofa', 'armchair', 'rug', 'wardrobe']);
-const homeStyleOf = key => ({ ...F.STYLE_DEFAULT, floor: 0, carpet: 0, ...(S.progress.homeStyle[key] || {}) });
+const defaultLayoutFor = key => { const home = HOMES.find(h => h.id === key); return key === 'cottage' ? 'classic' : home?.kind === 'villa' ? 'open' : home?.kind === 'apartment' ? 'studio' : 'loft'; };
+const homeStyleOf = key => ({ ...F.STYLE_DEFAULT, floor: 0, carpet: 0, layout: defaultLayoutFor(key), garden: 'mixed', theme: null, ...(S.progress.homeStyle[key] || {}) });
 function applyHomeStyle() {
   const st = homeStyleOf(homeKey());
   for (const f of homeWorld.objects) f.style = st;
@@ -617,6 +644,19 @@ function applyHomeStyle() {
   }
   for (const fl of homeFlats) if (fl.furn && STYLED.has(fl.furn.type)) fl.sprite = F.furnitureSprite(fl.furn);
   homeWorld.skin = { 9: FLOORS[st.floor]?.[1] ?? undefined, 11: CARPETS[st.carpet]?.[1] ?? undefined };
+}
+function rebuildHomeScene() {
+  const st = homeStyleOf(homeKey());
+  homeWorld = buildHome(st.layout, st.garden);
+  populateHomeScene();
+  DECOR.things = [];
+  refreshDecor();
+  applyHomeStyle();
+  if (sceneName === 'home') {
+    world = homeWorld; things = homeThings; flats = homeFlats;
+    if (!world.walkable(Math.floor(player.x), Math.floor(player.y))) { player.x = homeWorld.insideDoor[0]; player.y = homeWorld.insideDoor[1]; }
+    radarMap = buildRadarMap();
+  }
 }
 function repaintHome(o) {
   const t = cityThings.find(x => x.o === o);
@@ -628,9 +668,14 @@ const NAME_A = ['Willow', 'Maple', 'Clover', 'Honey', 'Sunny', 'Mossy', 'Acorn',
 const NAME_B = ['Cottage', 'Nook', 'Burrow', 'Den', 'Lodge', 'House', 'Hollow', 'Rest', 'Haven', 'Corner', 'Manor', 'Hideaway'];
 function showStyle(o) {
   const key = o?.home ? o.id : homeKey();
-  const obj = o?.home ? o : cityWorld.objects.find(q => q.id === key);
-  const st = homeStyleOf(key), own = S.progress.homes[key]?.type === 'own';
-  const set = (k, v) => { S.progress.homeStyle[key] = { ...(S.progress.homeStyle[key] || {}), [k]: v }; if (key === homeKey()) applyHomeStyle(); saveProgress(); SND.sfx('pop'); showStyle(o); };
+  const obj = o?.home ? o : key === 'cottage' ? myHome : cityWorld.objects.find(q => q.id === key);
+  const st = homeStyleOf(key), own = key === 'cottage' || S.progress.homes[key]?.type === 'own';
+  const objKey = obj?.id || key;
+  const set = (k, v) => {
+    S.progress.homeStyle[key] = { ...(S.progress.homeStyle[key] || {}), [k]: v };
+    if (key === homeKey()) { if (k === 'layout' || k === 'garden') rebuildHomeScene(); else applyHomeStyle(); }
+    saveProgress(); SND.sfx('pop'); showStyle(o);
+  };
   const sw = (k, label) => `<section class="style-sec"><h4>${label}</h4><div class="swatches">${STYLE_OPTS[k].map(c => `<button class="swatch ${st[k] === c ? 'on' : ''}" style="background:${c}" data-k="${k}" data-v="${c}" aria-label="${label} colour"></button>`).join('')}</div></section>`;
   const chips = (k, label, list) => `<section class="style-sec"><h4>${label}</h4><div class="filter-row">${list.map(([v, l, c]) => `<button class="filter ${String(st[k]) === String(v) ? 'on' : ''}" data-k="${k}" data-v="${v}">${c ? `<i class="dot" style="background:${c}"></i>` : ''}${esc(l)}</button>`).join('')}</div></section>`;
   const walls = Object.entries(F.WALL_PALETTES).map(([k, c]) => [k, k[0].toUpperCase() + k.slice(1), c || '#FFF1D9']);
@@ -649,10 +694,51 @@ function showStyle(o) {
     ${chips('carpet', 'Bedroom carpet', CARPETS.map(([l, , c], k) => [k, l, c]))}
     <section class="style-sec"><h4>Furniture shop <small>place them with 🛋️ inside</small></h4><div class="shop-grid">${shop.map(k => `<button class="shop-item" data-buy="${k}"><span>${ITEMS[k].icon}</span><b>${esc(ITEMS[k].one)}</b><small>✦ ${ITEMS[k].price * SHOP_MARKUP} · have ${have(k)}</small></button>`).join('')}</div></section>
     ${own && obj ? `<section class="style-sec"><h4>Outside</h4>
-      <div class="swatches">${PAINTS.map((c, n) => `<button class="swatch ${(obj.look || 0) % 5 === n ? 'on' : ''}" style="background:${c}" data-paint="${n}" aria-label="Paint scheme ${n + 1}"></button>`).join('')}<small class="paint-cost">Repaint ✦ 30</small></div>
+      <div class="swatches">${PAINTS.map((c, n) => `<button class="swatch ${(obj.look || 0) % PAINTS.length === n ? 'on' : ''}" style="background:${c}" data-paint="${n}" aria-label="Paint scheme ${n + 1}"></button>`).join('')}<small class="paint-cost">Repaint ✦ 30</small></div>
       <h4>Name</h4><div class="name-pick"><select data-name="0" aria-label="First word">${NAME_A.map(w => `<option>${w}</option>`).join('')}</select><select data-name="1" aria-label="Second word">${NAME_B.map(w => `<option>${w}</option>`).join('')}</select><button class="btn btn-primary" data-act="rename">Rename</button></div></section>` : ''}
   </div>`);
+  // Accessible home-design studio: theme presets plus per-home room and garden layouts.
+  const styleRoot = el.querySelector('.style-sheet');
+  const intro = styleRoot.querySelector('.lead');
+  if (intro) intro.textContent = 'Choose a whole-house look, then fine-tune rooms, furniture, paint and crops. Each home keeps its own design.';
+  const themeSection = document.createElement('section'); themeSection.className = 'style-sec';
+  const themeTitle = document.createElement('h4'); themeTitle.textContent = 'Whole-house themes'; themeSection.append(themeTitle);
+  const themeGrid = document.createElement('div'); themeGrid.className = 'theme-grid';
+  DESIGN_THEMES.forEach(theme => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'theme-card' + (st.theme === theme.id ? ' on' : ''); b.dataset.theme = theme.id; b.setAttribute('aria-pressed', String(st.theme === theme.id));
+    const icon = document.createElement('span'); icon.textContent = theme.icon;
+    const name = document.createElement('b'); name.textContent = theme.name;
+    const desc = document.createElement('small'); desc.textContent = theme.description;
+    b.append(icon, name, desc); themeGrid.append(b);
+  });
+  themeSection.append(themeGrid);
+  const addLayoutSection = (title, options, field) => {
+    const section = document.createElement('section'); section.className = 'style-sec';
+    const heading = document.createElement('h4'); heading.textContent = title; section.append(heading);
+    const grid = document.createElement('div'); grid.className = 'design-grid';
+    options.forEach(option => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'design-choice' + (st[field] === option.id ? ' on' : ''); b.dataset[field] = option.id; b.setAttribute('aria-pressed', String(st[field] === option.id));
+      const name = document.createElement('b'); name.textContent = option.name;
+      const desc = document.createElement('small'); desc.textContent = option.description;
+      b.append(name, desc); grid.append(b);
+    });
+    section.append(grid); return section;
+  };
+  const planSection = addLayoutSection('Interior plan', HOME_LAYOUTS, 'layout');
+  const gardenSection = addLayoutSection('Garden and crops', GARDEN_LAYOUTS, 'garden');
+  const firstStyleSection = styleRoot.querySelector('.style-sec');
+  if (firstStyleSection) { styleRoot.insertBefore(themeSection, firstStyleSection); styleRoot.insertBefore(planSection, firstStyleSection); styleRoot.insertBefore(gardenSection, firstStyleSection); }
+  const note = document.createElement('p'); note.className = 'lead'; note.textContent = 'Each home has six crop beds of its own. Changing the garden shape keeps each crop with its bed number.'; gardenSection.append(note);
   el.querySelectorAll('[data-k]').forEach(b => b.onclick = () => set(b.dataset.k, b.dataset.k === 'floor' || b.dataset.k === 'carpet' ? +b.dataset.v : b.dataset.v));
+  el.querySelectorAll('[data-layout]').forEach(b => b.onclick = () => set('layout', b.dataset.layout));
+  el.querySelectorAll('[data-garden]').forEach(b => b.onclick = () => set('garden', b.dataset.garden));
+  el.querySelectorAll('[data-theme]').forEach(b => b.onclick = () => {
+    const theme = DESIGN_THEMES.find(t => t.id === b.dataset.theme); if (!theme) return;
+    S.progress.homeStyle[key] = { ...(S.progress.homeStyle[key] || {}), ...theme.style, layout: theme.layout, garden: theme.garden, theme: theme.id };
+    if (key === homeKey()) rebuildHomeScene();
+    if (own && obj) { obj.look = theme.exterior; S.progress.homeLooks[objKey] = { ...(S.progress.homeLooks[objKey] || {}), look: theme.exterior }; repaintHome(obj); }
+    saveProgress(); SND.sfx('pop'); showStyle(o);
+  });
   el.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => {
     const k = b.dataset.buy, cost = ITEMS[k].price * SHOP_MARKUP;
     if (S.coins < cost) { toast(`You need ✦ ${cost}.`); return; }
@@ -663,7 +749,7 @@ function showStyle(o) {
     const n = +b.dataset.paint;
     if ((obj.look || 0) % 5 === n) return;
     if (S.coins < 30) { toast('You need ✦ 30 to repaint.'); return; }
-    setCoins(S.coins - 30, true); obj.look = n; S.progress.homeLooks[obj.id] = { ...(S.progress.homeLooks[obj.id] || {}), look: n };
+    setCoins(S.coins - 30, true); obj.look = n; S.progress.homeLooks[objKey] = { ...(S.progress.homeLooks[objKey] || {}), look: n };
     repaintHome(obj); saveProgress(); SND.sfx('pop'); toast(`${obj.name} has a fresh coat of paint!`); showStyle(o);
   });
   const rn = el.querySelector('[data-act=rename]');
@@ -671,8 +757,8 @@ function showStyle(o) {
     const [a, b] = [...el.querySelectorAll('[data-name]')].map(x => x.value);
     if (!NAME_A.includes(a) || !NAME_B.includes(b)) return;
     const v = a + ' ' + b;
-    obj.name = v; S.progress.homeLooks[obj.id] = { ...(S.progress.homeLooks[obj.id] || {}), name: v };
-    if (S.progress.homes[obj.id]) S.progress.homes[obj.id].name = v;
+    obj.name = v; S.progress.homeLooks[objKey] = { ...(S.progress.homeLooks[objKey] || {}), name: v };
+    if (obj.id && S.progress.homes[obj.id]) S.progress.homes[obj.id].name = v;
     saveProgress(); toast(`Renamed to ${v}.`); showStyle(o);
   };
   openSheet('style:' + key, 'Style', obj?.name || 'Your cottage', el, { tab: 'homes' });
