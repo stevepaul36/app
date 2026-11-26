@@ -9,12 +9,16 @@ function spriteFor(w, d, top, draw) {
   return new Sprite(Math.min(...pts.map(p => p[0])) - 20, Math.min(...pts.map(p => p[1])) - 20, Math.max(...pts.map(p => p[0])) + 20, Math.max(...pts.map(p => p[1])) + 20, draw);
 }
 
+// Your home's style: chosen per home in the Style sheet and set on each furniture piece as f.style.
+export const STYLE_DEFAULT = { bed: 'classic', bedding: '#7FB8E6', wood: '#C98A4B', sofa: '#F0587A', chair: '#3F8FB8', rug: '#F2A93B', wardrobe: '#E8B87A', walls: 'classic' };
+export const WALL_PALETTES = { classic: null, mint: '#DDF3E5', sky: '#D9ECFA', peach: '#FFE1CC', lavender: '#E6DDFB', sunny: '#FFF0B8', cocoa: '#E3CDB8', rose: '#FBE0E8', night: '#3D4A6B' };
+const sty = f => (f && f.style) || STYLE_DEFAULT;
 const WALLPAPER = { bed: '#E6DDFB', bath: '#D6EEF7', kitchen: '#E3F3E6', living: '#FFF1D9', cafe: '#FBE3C8', shop: '#E3F3E6', arcade: '#3A2F6B', restaurant: '#FFE1C7', library: '#EADCC6', museum: '#ECE6F6', cinema: '#5A2A4A', gym: '#DDEEF8', office: '#E6EEF8', lab: '#E0F4F1', workshop: '#FFF1D9' };
 
 // One tile of wall. Back walls are full height; partitions and front walls are cut down so you can see in.
 export function wallSprite(w) {
   const h = w.kind === 'back' ? 118 : w.kind === 'part' ? 30 : 20;
-  const color = WALLPAPER[w.room] || '#FFF1D9';
+  const color = WALL_PALETTES[w.palette] || WALLPAPER[w.room] || '#FFF1D9';
   return spriteFor(1, 1, h + 10, ctx => {
     const f = w.axis === 'i' ? box(ctx, 0, -0.06, 0, 1, 0.12, h, w.kind === 'back' ? color : '#F6EFE4', { topColor: '#B9A99A' })
       : box(ctx, -0.06, 0, 0, 0.12, 1, h, w.kind === 'back' ? color : '#F6EFE4', { topColor: '#B9A99A' });
@@ -32,8 +36,9 @@ export function wallSprite(w) {
 
 export function furnitureSprite(f, part) {
   const t = f.type;
-  if (t === 'sofa' && part) return spriteFor(f.w, f.d, 60, ctx => couch(ctx, f.w, '#F0587A', part));
-  const tall = { plot: 20, workbench: 80, d_plantpot: 70, d_lamp: 110, d_stool: 40, d_bookstack: 50, d_teddy: 60, d_aquarium: 80, d_vase: 70, d_jackolantern: 50, d_rug: 6, d_shellchime: 120, barcounter: 90, pastrycase: 60, menuboard: 130, cafetable: 50, cafechair: 50, shelf: 110, shelf2: 70, till: 70, arcadecab: 110, claw: 120, prizes: 80, stool: 40, exhibit: 110, screen: 130, seat: 50, popcorn: 90, treadmill: 70, weights: 70, mat: 10, officedesk: 80, labbench: 80, crafttable: 60, wardrobe: 120, bed: 60, bookshelf: 110, shower: 110, fridge: 110, sink: 100, tv: 80, sofa: 50, armchair: 50, desk: 80, plant: 80, floorlamp: 110, radio: 50, nightstand: 60, mailbox: 50 }[t] || 50;
+  if (t === 'sofa' && part) return spriteFor(f.w, f.d, 60, ctx => couch(ctx, f.w, sty(f).sofa, part));
+  if (t === 'bed') return spriteFor(f.w, f.d, { canopy: 140, bunk: 120 }[sty(f).bed] || 60, ctx => DRAW.bed(ctx, f));
+  const tall = { plot: 20, workbench: 80, d_plantpot: 70, d_lamp: 110, d_stool: 40, d_bookstack: 50, d_teddy: 60, d_aquarium: 80, d_vase: 70, d_jackolantern: 50, d_rug: 6, d_shellchime: 120, d_cot: 60, d_beanbag: 40, d_piano: 100, d_fireplace: 110, d_grandclock: 130, d_toybox: 45, d_tallshelf: 120, d_cosychair: 60, d_sidetable: 55, d_easel: 110, barcounter: 90, pastrycase: 60, menuboard: 130, cafetable: 50, cafechair: 50, shelf: 110, shelf2: 70, till: 70, arcadecab: 110, claw: 120, prizes: 80, stool: 40, exhibit: 110, screen: 130, seat: 50, popcorn: 90, treadmill: 70, weights: 70, mat: 10, officedesk: 80, labbench: 80, crafttable: 60, wardrobe: 120, bed: 60, bookshelf: 110, shower: 110, fridge: 110, sink: 100, tv: 80, sofa: 50, armchair: 50, desk: 80, plant: 80, floorlamp: 110, radio: 50, nightstand: 60, mailbox: 50 }[t] || 50;
   return spriteFor(f.w, f.d, tall, ctx => DRAW[t] && DRAW[t](ctx, f));
 }
 
@@ -61,6 +66,60 @@ const DRAW = {
   d_vase(ctx) { const [x, y] = P(0.5, 0.5, 0); ctx.fillStyle = '#5BC0EB'; ctx.beginPath(); ctx.ellipse(x, y - 12, 10, 13, 0, 0, 7); ctx.fill(); ctx.fillRect(x - 5, y - 30, 10, 8); for (let k = 0; k < 5; k++) { ctx.strokeStyle = '#3F9A5C'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, y - 28); ctx.lineTo(x - 12 + k * 6, y - 46 - (k % 2) * 6); ctx.stroke(); blob(ctx, x - 12 + k * 6, y - 47 - (k % 2) * 6, 4, ['#F0587A', '#FFC83D', '#F7A8C4', '#8E7CE0', '#FFFFFF'][k]); } },
   d_jackolantern(ctx) { const [x, y] = P(0.5, 0.5, 0); ctx.fillStyle = '#F28C28'; ctx.beginPath(); ctx.ellipse(x, y - 14, 17, 14, 0, 0, 7); ctx.fill(); ctx.strokeStyle = '#C9672E'; ctx.lineWidth = 1.5; for (const dx of [-7, 0, 7]) { ctx.beginPath(); ctx.ellipse(x + dx, y - 14, 4, 13, 0, 0, 7); ctx.stroke(); } ctx.fillStyle = '#FFE07A'; ctx.beginPath(); ctx.moveTo(x - 9, y - 18); ctx.lineTo(x - 5, y - 23); ctx.lineTo(x - 2, y - 18); ctx.fill(); ctx.beginPath(); ctx.moveTo(x + 2, y - 18); ctx.lineTo(x + 5, y - 23); ctx.lineTo(x + 9, y - 18); ctx.fill(); ctx.fillRect(x - 8, y - 12, 16, 3); ctx.fillStyle = '#3F9A5C'; ctx.fillRect(x - 2, y - 32, 4, 6); },
   d_rug(ctx) { const [x, y] = P(0.5, 0.5, 0.5); ctx.fillStyle = '#F7A8C4'; ctx.beginPath(); ctx.ellipse(x, y, 52, 26, 0, 0, 7); ctx.fill(); ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y, 40, 20, 0, 0, 7); ctx.stroke(); ctx.fillStyle = '#E86A9A'; ctx.beginPath(); ctx.ellipse(x, y, 22, 11, 0, 0, 7); ctx.fill(); },
+  d_cot(ctx) { // a baby cot with rails
+    box(ctx, 0.12, 0.2, 0, 0.76, 0.6, 14, '#F6EFE4');
+    box(ctx, 0.16, 0.24, 14, 0.68, 0.52, 5, '#FFFFFF'); box(ctx, 0.4, 0.3, 19, 0.36, 0.4, 3, '#F7A8C4');
+    for (const y of [0.2, 0.8]) for (let k = 0; k <= 6; k++) box(ctx, 0.12 + k * 0.125, y - 0.015, 14, 0.025, 0.03, 26, '#E8DCCB');
+    for (const x of [0.12, 0.88]) for (let k = 0; k <= 4; k++) box(ctx, x - 0.015, 0.2 + k * 0.15, 14, 0.03, 0.025, 26, '#E8DCCB');
+    for (const y of [0.2, 0.8]) box(ctx, 0.12, y - 0.02, 40, 0.76, 0.04, 3, '#D9C6AE');
+    const [x, y] = P(0.5, 0.2, 52); ctx.strokeStyle = '#A0AEC0'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 8); ctx.stroke(); blob(ctx, x - 6, y + 2, 3.5, '#FFC83D'); blob(ctx, x + 6, y + 2, 3.5, '#8ED0EA');
+  },
+  d_beanbag(ctx) { const [x, y] = P(0.5, 0.5, 0); ctx.fillStyle = '#8E7CE0'; ctx.beginPath(); ctx.ellipse(x, y - 10, 26, 16, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#A493F0'; ctx.beginPath(); ctx.ellipse(x - 4, y - 20, 16, 10, -0.2, 0, 7); ctx.fill(); ctx.strokeStyle = '#6E5CC0'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x + 6, y - 8, 10, 0.3, 2.2); ctx.stroke(); },
+  d_piano(ctx) {
+    const fc = box(ctx, 0.1, 0.15, 0, 0.8, 0.45, 70, '#2A2A35');
+    box(ctx, 0.1, 0.6, 30, 0.8, 0.25, 6, '#2A2A35');
+    for (let k = 0; k < 8; k++) poly(ctx, [[0.13 + k * 0.095, 0.62, 36.2], [0.21 + k * 0.095, 0.62, 36.2], [0.21 + k * 0.095, 0.83, 36.2], [0.13 + k * 0.095, 0.83, 36.2]], '#FFFFFF', '#00000030', 0.6);
+    for (let k = 0; k < 6; k++) if (k !== 2) box(ctx, 0.19 + k * 0.095, 0.62, 36.2, 0.04, 0.12, 2, '#111118');
+    rectOn(ctx, fc.j, 0.3, 0.75, 0.7, 0.92, '#F6EFE4', null);
+    for (const x of [0.12, 0.84]) box(ctx, x, 0.78, 0, 0.05, 0.05, 30, '#2A2A35');
+  },
+  d_fireplace(ctx) {
+    const fc = box(ctx, 0.08, 0.2, 0, 0.84, 0.4, 70, '#C9A88A', { topColor: '#B98A6A' });
+    box(ctx, 0.02, 0.15, 70, 0.96, 0.5, 6, '#8C5A3C');
+    rectOn(ctx, fc.j, 0.22, 0, 0.78, 0.6, '#3A2A24', null);
+    const [x, y] = P(0.5, 0.62, 6); ctx.fillStyle = '#F28C28'; ctx.beginPath(); ctx.moveTo(x - 12, y); ctx.quadraticCurveTo(x - 10, y - 22, x, y - 30); ctx.quadraticCurveTo(x + 10, y - 20, x + 12, y); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#FFD24A'; ctx.beginPath(); ctx.moveTo(x - 6, y); ctx.quadraticCurveTo(x - 4, y - 12, x, y - 18); ctx.quadraticCurveTo(x + 5, y - 10, x + 6, y); ctx.closePath(); ctx.fill();
+    for (let k = 0; k < 3; k++) { const [cx, cy] = P(0.25 + k * 0.25, 0.4, 76); blob(ctx, cx, cy - 5, 4, ['#F0587A', '#FFC83D', '#3FA86A'][k]); }
+  },
+  d_grandclock(ctx) {
+    const fc = box(ctx, 0.3, 0.3, 0, 0.4, 0.35, 112, '#8C5A3C');
+    box(ctx, 0.26, 0.26, 112, 0.48, 0.43, 8, '#6B4026');
+    const [x, y] = P(...fp(fc.j, 0.5, 0.78, 0.01)); blob(ctx, x, y, 11, '#F6EFE4'); ctx.strokeStyle = '#2A2A35'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 7); ctx.moveTo(x, y); ctx.lineTo(x + 5, y + 2); ctx.stroke();
+    rectOn(ctx, fc.j, 0.3, 0.12, 0.7, 0.55, '#C9A84A', null); const [px, py] = P(...fp(fc.j, 0.5, 0.25, 0.01)); blob(ctx, px, py, 5, '#FFD24A');
+  },
+  d_toybox(ctx) {
+    const fc = box(ctx, 0.15, 0.25, 0, 0.7, 0.5, 26, '#3FA86A');
+    rectOn(ctx, fc.j, 0.1, 0.2, 0.9, 0.8, '#5FC07E', null);
+    const [sx, sy] = P(...fp(fc.j, 0.5, 0.5, 0.01)); ctx.fillStyle = '#FFC83D'; ctx.beginPath(); for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, r = k % 2 ? 3 : 7; ctx.lineTo(sx + Math.cos(a) * r, sy + Math.sin(a) * r); } ctx.fill();
+    const [x, y] = P(0.4, 0.45, 26); blob(ctx, x, y - 6, 7, '#F0587A'); box(ctx, 0.55, 0.35, 26, 0.18, 0.18, 12, '#2E9BD6');
+  },
+  d_tallshelf(ctx) { DRAW.bookshelf(ctx); },
+  d_cosychair(ctx) {
+    box(ctx, 0.14, 0.14, 0, 0.72, 0.72, 20, '#E8823A');
+    box(ctx, 0.1, 0.1, 0, 0.16, 0.8, 50, '#C9672E'); box(ctx, 0.2, 0.08, 20, 0.62, 0.14, 14, '#E8823A'); box(ctx, 0.2, 0.78, 20, 0.62, 0.14, 14, '#E8823A');
+    box(ctx, 0.28, 0.24, 20, 0.54, 0.52, 7, '#F2A06A'); box(ctx, 0.32, 0.36, 27, 0.2, 0.3, 10, '#FFF1D9');
+  },
+  d_sidetable(ctx) {
+    box(ctx, 0.46, 0.46, 0, 0.08, 0.08, 30, '#8C5A3C');
+    const [x, y] = P(0.5, 0.5, 30); ctx.fillStyle = '#C98A4B'; ctx.beginPath(); ctx.ellipse(x, y, 20, 10, 0, 0, 7); ctx.fill(); ctx.strokeStyle = '#9B6A37'; ctx.stroke();
+    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(x - 4, y - 10, 8, 9); ctx.fillStyle = '#8C5A3C'; ctx.fillRect(x - 3, y - 9, 6, 3); blob(ctx, x + 10, y - 3, 3, '#F0587A');
+  },
+  d_easel(ctx) {
+    const [x, y] = P(0.5, 0.55, 0); ctx.strokeStyle = '#8C5A3C'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 14, y); ctx.lineTo(x, y - 80); ctx.lineTo(x + 14, y); ctx.moveTo(x, y - 80); ctx.lineTo(x + 4, y + 4); ctx.stroke();
+    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(x - 18, y - 74, 36, 30); ctx.strokeStyle = '#C9A866'; ctx.lineWidth = 2; ctx.strokeRect(x - 18, y - 74, 36, 30);
+    ctx.fillStyle = '#7FC8DD'; ctx.fillRect(x - 16, y - 72, 32, 14); ctx.fillStyle = '#3FA86A'; ctx.fillRect(x - 16, y - 58, 32, 12); blob(ctx, x + 8, y - 66, 4, '#FFC83D');
+    ctx.fillStyle = '#8C5A3C'; ctx.fillRect(x - 20, y - 44, 40, 3);
+  },
   d_shellchime(ctx) { const [x, y] = P(0.5, 0.5, 0); ctx.fillStyle = '#8C5A3C'; ctx.fillRect(x - 1.5, y - 90, 3, 90); ctx.fillRect(x - 14, y - 90, 28, 3); for (let k = 0; k < 4; k++) { ctx.strokeStyle = '#C9B795'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x - 12 + k * 8, y - 87); ctx.lineTo(x - 12 + k * 8, y - 70 + k % 2 * 6); ctx.stroke(); blob(ctx, x - 12 + k * 8, y - 67 + k % 2 * 6, 3.5, ['#F7E3C0', '#F7A8C4', '#FFFFFF', '#F2D3A6'][k]); } },
   barcounter(ctx, f) {
     const fc = box(ctx, 0.02, 0.12, 0, f.w - 0.04, 0.76, 38, '#8C5A3C');
@@ -185,22 +244,50 @@ const DRAW = {
     DRAW.table(ctx, { w: f.w, d: 1 });
     for (let k = 0; k < 5; k++) { const [x, y] = P(0.3 + k * 0.35, 0.45, 34); ctx.fillStyle = ['#F0587A', '#FFC83D', '#3FA86A', '#2E9BD6', '#8E7CE0'][k]; ctx.fillRect(x - 4, y - 3, 8, 3); }
   },
-  wardrobe(ctx) {
-    const fc = box(ctx, 0.05, 0.1, 0, 0.45, 0.8, 104, '#E8B87A');
-    box(ctx, 0.02, 0.07, 104, 0.51, 0.86, 6, WOOD_D);
+  wardrobe(ctx, fo) {
+    const wc = sty(fo).wardrobe;
+    const fc = box(ctx, 0.05, 0.1, 0, 0.45, 0.8, 104, wc);
+    box(ctx, 0.02, 0.07, 104, 0.51, 0.86, 6, darken(wc, 0.3));
     const f = fc.i;
-    rectOn(ctx, f, 0.06, 0.06, 0.48, 0.94, '#F2C98F', '#00000022', 0.01); rectOn(ctx, f, 0.52, 0.06, 0.94, 0.94, '#F2C98F', '#00000022', 0.01);
+    rectOn(ctx, f, 0.06, 0.06, 0.48, 0.94, lighten(wc, 0.12), '#00000022', 0.01); rectOn(ctx, f, 0.52, 0.06, 0.94, 0.94, lighten(wc, 0.12), '#00000022', 0.01);
     rectOn(ctx, f, 0.42, 0.45, 0.46, 0.6, '#8C5A30', null, 0.02); rectOn(ctx, f, 0.54, 0.45, 0.58, 0.6, '#8C5A30', null, 0.02);
     rectOn(ctx, f, 0.15, 0.72, 0.38, 0.86, '#F0587A', null, 0.015); rectOn(ctx, f, 0.62, 0.72, 0.85, 0.86, '#7FC8DD', null, 0.015);
   },
   bed(ctx, f) {
-    box(ctx, 0.08, 0.05, 0, 1.84, 2.85, 14, WOOD);
-    box(ctx, 0.12, 0.08, 14, 1.76, 2.75, 9, WHITE);
-    box(ctx, 0.1, 1.0, 23, 1.8, 1.88, 5, '#7FB8E6', { topColor: '#8EC6F0' });
-    for (let k = 0; k < 4; k++) poly(ctx, [[0.1, 1.2 + k * 0.42, 28.2], [1.9, 1.2 + k * 0.42, 28.2]], null, 'rgba(255,255,255,.55)', 2);
-    box(ctx, 0.3, 0.2, 23, 0.6, 0.45, 9, '#FFFFFF'); box(ctx, 1.1, 0.2, 23, 0.6, 0.45, 9, '#FFFFFF');
-    box(ctx, 0.04, 0.0, 0, 1.92, 0.12, 52, WOOD_D);
-    const fc = faceJ(0.04, 0, 0, 1.92, 0.12, 52); rectOn(ctx, fc, 0.1, 0.55, 0.9, 0.85, lighten(WOOD, 0.2), null);
+    const st = sty(f), wood = st.wood, cover = st.bedding, kind = st.bed;
+    const mattress = (z, x0 = 0.1, x1 = 1.9) => {
+      box(ctx, x0 + 0.02, 0.08, z, x1 - x0 - 0.04, 2.75, 9, WHITE);
+      box(ctx, x0, 1.0, z + 9, x1 - x0, 1.88, 5, cover, { topColor: lighten(cover, 0.1) });
+      for (let k = 0; k < 4; k++) poly(ctx, [[x0, 1.2 + k * 0.42, z + 14.2], [x1, 1.2 + k * 0.42, z + 14.2]], null, 'rgba(255,255,255,.55)', 2);
+      box(ctx, x0 + 0.2, 0.2, z + 9, 0.6, 0.45, 9, '#FFFFFF');
+      if (x1 - x0 > 1.6) box(ctx, x0 + 1.0, 0.2, z + 9, 0.6, 0.45, 9, '#FFFFFF');
+    };
+    if (kind === 'cot') { // a low day cot on a light metal frame
+      for (const [x, y] of [[0.12, 0.1], [1.8, 0.1], [0.12, 2.8], [1.8, 2.8]]) box(ctx, x, y, 0, 0.07, 0.07, 10, '#7A8798');
+      box(ctx, 0.08, 0.05, 10, 1.84, 2.85, 3, '#A0AEC0');
+      mattress(13);
+      return;
+    }
+    if (kind === 'bunk') { // two narrow beds stacked, with a ladder
+      for (const [x, y] of [[0.3, 0.05], [1.62, 0.05], [0.3, 2.82], [1.62, 2.82]]) box(ctx, x, y, 0, 0.08, 0.08, 104, darken(wood, 0.25));
+      box(ctx, 0.3, 0.05, 0, 1.4, 2.85, 12, wood); mattress(12, 0.34, 1.66);
+      box(ctx, 0.3, 0.05, 58, 1.4, 2.85, 8, wood); mattress(66, 0.34, 1.66);
+      box(ctx, 0.3, 0.05, 92, 1.4, 0.08, 12, darken(wood, 0.25));
+      for (let k = 0; k < 5; k++) box(ctx, 1.7, 2.2, 12 + k * 13, 0.04, 0.5, 2.5, darken(wood, 0.3));
+      return;
+    }
+    box(ctx, 0.08, 0.05, 0, 1.84, 2.85, 14, wood);
+    mattress(14);
+    box(ctx, 0.04, 0.0, 0, 1.92, 0.12, 52, darken(wood, 0.22));
+    const fc = faceJ(0.04, 0, 0, 1.92, 0.12, 52); rectOn(ctx, fc, 0.1, 0.55, 0.9, 0.85, lighten(wood, 0.2), null);
+    if (kind === 'canopy') { // four posts and a fabric canopy
+      for (const [x, y] of [[0.04, 0.0], [1.88, 0.0], [0.04, 2.84], [1.88, 2.84]]) box(ctx, x, y, 0, 0.08, 0.08, 128, darken(wood, 0.22));
+      ctx.save(); ctx.globalAlpha = 0.85;
+      poly(ctx, [[0.04, 0, 128], [1.96, 0, 128], [1.96, 2.92, 128], [0.04, 2.92, 128]], lighten(cover, 0.35), darken(cover, 0.1), 2);
+      poly(ctx, [[0.04, 2.92, 128], [1.96, 2.92, 128], [1.96, 2.92, 112], [0.04, 2.92, 112]], cover);
+      poly(ctx, [[1.96, 0, 128], [1.96, 2.92, 128], [1.96, 2.92, 112], [1.96, 0, 112]], darken(cover, 0.08));
+      ctx.restore();
+    }
   },
   nightstand(ctx) {
     box(ctx, 0.2, 0.15, 0, 0.6, 0.6, 24, WOOD);
@@ -272,17 +359,19 @@ const DRAW = {
     for (const [u, v] of [[0.3, 0.35], [0.7, 0.35], [0.3, 0.7], [0.7, 0.7]]) { const [x, y] = P(u, 0.1 + v * 0.8, 37.5); ctx.strokeStyle = '#C9D6E2'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(x, y, 7, 3.5, 0, 0, 7); ctx.stroke(); }
     const [x, y] = P(0.5, 0.35, 37.5); ctx.fillStyle = '#8FA6B8'; ctx.beginPath(); ctx.ellipse(x, y - 4, 11, 5, 0, 0, 7); ctx.fill(); ctx.fillRect(x - 11, y - 9, 22, 5);
   },
-  table(ctx) {
-    for (const [x, y] of [[0.15, 0.2], [1.75, 0.2], [0.15, 0.7], [1.75, 0.7]]) box(ctx, x, y, 0, 0.08, 0.08, 28, WOOD_D);
-    box(ctx, 0.05, 0.1, 28, 1.9, 0.8, 5, WOOD);
+  table(ctx, f) {
+    const wood = sty(f).wood;
+    for (const [x, y] of [[0.15, 0.2], [1.75, 0.2], [0.15, 0.7], [1.75, 0.7]]) box(ctx, x, y, 0, 0.08, 0.08, 28, darken(wood, 0.22));
+    box(ctx, 0.05, 0.1, 28, 1.9, 0.8, 5, wood);
     const [x, y] = P(1, 0.5, 33); ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.ellipse(x - 20, y, 10, 5, 0, 0, 7); ctx.ellipse(x + 20, y, 10, 5, 0, 0, 7); ctx.fill();
     blob(ctx, x, y - 6, 5, '#F7A8C4'); ctx.fillStyle = '#7FC3E8'; ctx.fillRect(x - 2, y - 4, 4, 6);
   },
   chair(ctx, f) {
     const back = f.facing === 'i' ? [0.18, 0.2, 0.1, 0.6] : [0.72, 0.2, 0.1, 0.6];
-    for (const [x, y] of [[0.25, 0.25], [0.7, 0.25], [0.25, 0.7], [0.7, 0.7]]) box(ctx, x, y, 0, 0.06, 0.06, 18, WOOD_D);
-    box(ctx, 0.2, 0.2, 18, 0.6, 0.6, 4, WOOD);
-    box(ctx, back[0], back[1], 22, back[2], back[3], 24, WOOD);
+    const wood = f.style ? f.style.wood : WOOD;
+    for (const [x, y] of [[0.25, 0.25], [0.7, 0.25], [0.25, 0.7], [0.7, 0.7]]) box(ctx, x, y, 0, 0.06, 0.06, 18, darken(wood, 0.22));
+    box(ctx, 0.2, 0.2, 18, 0.6, 0.6, 4, wood);
+    box(ctx, back[0], back[1], 22, back[2], back[3], 24, wood);
   },
   tv(ctx) {
     const fc = box(ctx, 0.1, 0.25, 0, 1.8, 0.5, 22, WOOD);
@@ -291,12 +380,13 @@ const DRAW = {
     const sc = faceJ(0.25, 0.42, 22, 1.5, 0.08, 56); rectOn(ctx, sc, 0.04, 0.08, 0.96, 0.94, '#3B4A6B', null, 0.01);
     rectOn(ctx, sc, 0.1, 0.55, 0.3, 0.9, 'rgba(255,255,255,.12)', null, 0.012);
   },
-  sofa(ctx, f) { couch(ctx, f.w, '#F0587A'); },
-  armchair(ctx) {
-    box(ctx, 0.12, 0.1, 0, 0.78, 0.8, 18, '#3F8FB8');
-    box(ctx, 0.08, 0.06, 0, 0.18, 0.88, 44, '#357DA3');
-    box(ctx, 0.22, 0.04, 18, 0.66, 0.14, 12, '#3F8FB8'); box(ctx, 0.22, 0.82, 18, 0.66, 0.14, 12, '#3F8FB8');
-    box(ctx, 0.28, 0.2, 18, 0.58, 0.6, 7, '#5BA8D0');
+  sofa(ctx, f) { couch(ctx, f.w, sty(f).sofa); },
+  armchair(ctx, f) {
+    const c = sty(f).chair;
+    box(ctx, 0.12, 0.1, 0, 0.78, 0.8, 18, c);
+    box(ctx, 0.08, 0.06, 0, 0.18, 0.88, 44, darken(c, 0.1));
+    box(ctx, 0.22, 0.04, 18, 0.66, 0.14, 12, c); box(ctx, 0.22, 0.82, 18, 0.66, 0.14, 12, c);
+    box(ctx, 0.28, 0.2, 18, 0.58, 0.6, 7, lighten(c, 0.15));
   },
   desk(ctx) {
     for (const [x, y] of [[0.65, 0.1], [0.65, 1.8], [0.15, 0.1], [0.15, 1.8]]) box(ctx, x, y, 0, 0.08, 0.08, 32, '#34476B');
@@ -322,8 +412,9 @@ const DRAW = {
     const [fx, fy] = P(0.7, 0.4, 50); ctx.fillStyle = '#F0587A'; ctx.fillRect(fx, fy - 10, 3, 12); ctx.fillRect(fx, fy - 10, 9, 5);
   },
   rug(ctx, f) {
-    poly(ctx, [[0.1, 0.1, 0.5], [f.w - 0.1, 0.1, 0.5], [f.w - 0.1, f.d - 0.1, 0.5], [0.1, f.d - 0.1, 0.5]], '#F2A93B', '#D98A1E', 2);
-    poly(ctx, [[0.35, 0.35, 0.6], [f.w - 0.35, 0.35, 0.6], [f.w - 0.35, f.d - 0.35, 0.6], [0.35, f.d - 0.35, 0.6]], '#FFD27A', '#FFFFFF', 2);
+    const c = sty(f).rug;
+    poly(ctx, [[0.1, 0.1, 0.5], [f.w - 0.1, 0.1, 0.5], [f.w - 0.1, f.d - 0.1, 0.5], [0.1, f.d - 0.1, 0.5]], c, darken(c, 0.12), 2);
+    poly(ctx, [[0.35, 0.35, 0.6], [f.w - 0.35, 0.35, 0.6], [f.w - 0.35, f.d - 0.35, 0.6], [0.35, f.d - 0.35, 0.6]], lighten(c, 0.3), '#FFFFFF', 2);
     const [x, y] = P(f.w / 2, f.d / 2, 0.7); blob(ctx, x, y, 8, '#F0587A');
   },
   bathrug(ctx, f) { poly(ctx, [[0.15, 0.2, 0.5], [f.w - 0.15, 0.2, 0.5], [f.w - 0.15, f.d - 0.2, 0.5], [0.15, f.d - 0.2, 0.5]], '#8ED0EA', '#FFFFFF', 3); },

@@ -8,6 +8,8 @@ import {redis} from '@devvit/web/server'
 //   wv:user:{userId}          hash: streak, best, last (dayNo)
 //   wv:posts                  hash dayNo -> post id
 //   wv:pin:{postId}           id of the app's pinned comment that shared results reply to
+//   wv:rich:{week}            sorted set userId -> Paws & Properties net worth this week (weeks start on Monday)
+//   wv:rich:{week}:info       hash userId -> JSON {name, homes}
 //
 // Data about a player (save, streak, finish lists with usernames) expires on its own: saves and
 // streaks 30 days after the player last played, finish lists after 3 days. Reddit asks apps to drop
@@ -23,6 +25,65 @@ const K = {
   user: (id: string) => `wv:user:${id}`,
   posts: 'wv:posts',
   pin: (postId: string) => `wv:pin:${postId}`,
+  rich: (w: number) => `wv:rich:${w}`,
+  richInfo: (w: number) => `wv:rich:${w}:info`,
+}
+/** Leaderboards last two weeks, then delete themselves. */
+export const RICH_TTL = 14 * 24 * 60 * 60
+/** Week number (Monday to Sunday) for a day number counted from 1 Jan 1970, a Thursday. */
+export const weekOf = (dayNo: number): number => Math.floor((dayNo + 3) / 7)
+export async function putRich(
+  week: number,
+  id: string,
+  name: string,
+  worth: number,
+  homes: number,
+): Promise<void> {
+  await redis.zAdd(K.rich(week), {member: id, score: worth})
+  await redis.hSet(K.richInfo(week), {[id]: JSON.stringify({name, homes})})
+  await Promise.all([
+    redis.expire(K.rich(week), RICH_TTL),
+    redis.expire(K.richInfo(week), RICH_TTL),
+  ])
+}
+export async function topRich(
+  week: number,
+  n: number,
+): Promise<{id: string; name: string; worth: number; homes: number}[]> {
+  const count = await redis.zCard(K.rich(week))
+  if (!count) return []
+  const rows = await redis.zRange(
+    K.rich(week),
+    Math.max(0, count - n),
+    count - 1,
+    {by: 'rank'},
+  )
+  const out = []
+  for (const {member, score} of rows.reverse()) {
+    const info = JSON.parse(
+      (await redis.hGet(K.richInfo(week), member)) ?? '{}',
+    ) as {name?: string; homes?: number}
+    out.push({
+      id: member,
+      name: info.name ?? 'someone',
+      worth: score,
+      homes: info.homes ?? 0,
+    })
+  }
+  return out
+}
+/** 1 = richest. */
+export async function richRank(
+  week: number,
+  id: string,
+): Promise<{rank: number | null; count: number}> {
+  const count = await redis.zCard(K.rich(week))
+  const r = await redis.zRank(K.rich(week), id)
+  return {rank: r == null ? null : count - r, count}
+}
+export async function removeRich(week: number, id: string): Promise<void> {
+  await redis.zRem(K.rich(week), [id])
+  await redis.hDel(K.richInfo(week), [id])
 }
 /** Keep a player's data for another 30 days because they're still playing. */
 async function touch(id: string): Promise<void> {

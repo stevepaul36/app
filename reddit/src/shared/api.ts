@@ -31,6 +31,15 @@ export type DailyRsp = {
 }
 export type BoardRsp = {dayNo: number; names: string[]; me: number | null}
 export type ShareRsp = {ok: true; url: string}
+/** Paws & Properties: this week's richest players. */
+export type RichReq = {worth: number; homes: number}
+export type RichRow = {name: string; worth: number; homes: number}
+export type RichRsp = {
+  week: number
+  top: RichRow[]
+  me: number | null
+  count: number
+}
 
 /** Willowvale's own save API, same shape as the web version's server. */
 export type MeRsp = {user: {username: string}}
@@ -45,6 +54,7 @@ export const Endpoint = {
   Me: 'api/me',
   Save: 'api/save',
   Properties: 'api/properties',
+  Rich: 'api/rich',
   OnAppInstall: 'internal/on/app/install',
   OnMenuNewPost: 'internal/on/menu/new-post',
   OnDailyPost: 'internal/scheduler/daily-post',

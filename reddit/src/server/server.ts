@@ -7,6 +7,8 @@ import type {
   DailyReq,
   DailyRsp,
   MeRsp,
+  RichReq,
+  RichRsp,
   SaveGetRsp,
   SavePutRsp,
   ShareRsp,
@@ -30,12 +32,17 @@ import {
   getSave,
   getStreak,
   markDone,
+  putRich,
   putSave,
   rankOf,
   releasePost,
+  removeRich,
+  richRank,
   saveStreak,
   setPin,
   setPost,
+  topRich,
+  weekOf,
 } from './db.ts'
 import {cleanSave, MAX_SAVE_BYTES} from './save.ts'
 
@@ -86,6 +93,9 @@ async function route(req: IncomingMessage): Promise<PartialJsonValue> {
     return routeDaily(await readJson<DailyReq>(req))
   if (path === 'api/board' && m === 'GET') return routeBoard()
   if (path === 'api/share' && m === 'POST') return routeShare()
+  if (path === 'api/rich' && m === 'GET') return routeRichGet()
+  if (path === 'api/rich' && m === 'POST')
+    return routeRichPost(await readJson<RichReq>(req))
   // Willowvale's own endpoints
   if (path === 'api/me' && m === 'GET') return routeMe()
   if (path === 'api/save' && m === 'GET') return routeSaveGet()
@@ -301,10 +311,50 @@ async function routeSavePut(req: IncomingMessage): Promise<SavePutRsp> {
   return {ok: true, version: r.version, updatedAt: r.updatedAt}
 }
 
-/** The player deletes their Willowvale data: save and streak. */
+/** The player deletes their Willowvale data: save, streak and leaderboard entries. */
 async function routeSaveDelete(): Promise<{ok: true}> {
-  await deletePlayer(needUser())
+  const id = needUser()
+  await deletePlayer(id)
+  const week = weekOf(dayNoOf())
+  await Promise.all([removeRich(week, id), removeRich(week - 1, id)])
   return {ok: true}
+}
+
+// ---------- Paws & Properties: the weekly leaderboard ----------
+
+async function routeRichPost(req: RichReq): Promise<{ok: true}> {
+  const id = needUser()
+  const worth = Math.floor(Number(req.worth))
+  const homes = Math.floor(Number(req.homes))
+  if (
+    !Number.isFinite(worth) ||
+    worth < 0 ||
+    worth > 10_000_000 ||
+    !Number.isFinite(homes) ||
+    homes < 0 ||
+    homes > 1000
+  )
+    throw new HttpError(400, 'That score doesn’t look right.')
+  await putRich(
+    weekOf(dayNoOf()),
+    id,
+    context.username ?? 'player',
+    worth,
+    homes,
+  )
+  return {ok: true}
+}
+async function routeRichGet(): Promise<RichRsp> {
+  const week = weekOf(dayNoOf())
+  const top = await topRich(week, 10)
+  const id = context.userId
+  const {rank, count} = id ? await richRank(week, id) : {rank: null, count: 0}
+  return {
+    week,
+    top: top.map(r => ({name: r.name, worth: r.worth, homes: r.homes})),
+    me: rank,
+    count: id ? count : top.length,
+  }
 }
 
 // ---------- one post a day ----------

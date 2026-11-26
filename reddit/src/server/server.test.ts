@@ -60,6 +60,10 @@ const fake: {[k: string]: unknown} = {
     return ms.length
   },
   zCard: async (k: string) => Z(k).size,
+  zRem: async (k: string, ms: string[]) => {
+    for (const m of ms) Z(k).delete(m)
+    return ms.length
+  },
   zRank: async (k: string, m: string) => {
     const i = sorted(k).findIndex(([x]) => x === m)
     return i < 0 ? undefined : i
@@ -285,6 +289,41 @@ test('player data expires on its own and can be deleted', async () => {
   assert.equal(hashes.has('wv:user:t2_a'), false)
   user = {}
   assert.equal((await call('api/save', 'DELETE')).status, 401)
+})
+
+test('the weekly property leaderboard ranks players and forgets deleted ones', async () => {
+  await call('api/rich', 'POST', {worth: 900, homes: 2})
+  user = {userId: 't2_b', username: 'bob'}
+  await call('api/rich', 'POST', {worth: 2500, homes: 5})
+  assert.equal(
+    (await call('api/rich', 'POST', {worth: -5, homes: 0})).status,
+    400,
+  )
+  const board = (await call('api/rich')).json as {
+    top: {name: string; worth: number}[]
+    me: number
+    count: number
+  }
+  assert.deepEqual(
+    board.top.map(r => [r.name, r.worth]),
+    [
+      ['bob', 2500],
+      ['alice', 900],
+    ],
+  )
+  assert.equal(board.me, 1)
+  assert.equal(board.count, 2)
+  const week = Math.floor((dayNoOf() + 3) / 7)
+  assert.equal(ttl.get(`wv:rich:${week}`), 14 * 24 * 60 * 60)
+  user = {userId: 't2_a', username: 'alice'}
+  assert.equal(((await call('api/rich')).json as {me: number}).me, 2)
+  await call('api/save', 'DELETE')
+  assert.equal(((await call('api/rich')).json as {me: number | null}).me, null)
+  user = {}
+  assert.equal(
+    (await call('api/rich', 'POST', {worth: 1, homes: 0})).status,
+    401,
+  )
 })
 
 test('sharing replies to the app’s pinned comment, as the player', async () => {
