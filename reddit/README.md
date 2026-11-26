@@ -100,6 +100,10 @@ New in the game itself during the hackathon (so it's on the web too):
   a kitten and it follows you all over town: the puppy trots after you and sits with its tail
   wagging, the kitten grooms itself or curls up for a nap. Every animal is drawn in code and moves
   like the real thing.
+- **🛒 Furniture store and home design.** The store sorts 45 pieces into six rooms (living room, bedroom & bath, plants & decor, lights & fun, garden, wildlife & farm). Three pieces are 30% off each day, each piece has a small daily stock that refills every morning, and spare furniture sells back for half price. New pieces include a bathtub, record player, telescope, standing mirror, chest of drawers, bonsai and fairy lights, plus garden builds: fences, hedges, stepping stones, a swing, a gazebo, a garden shed, a wishing well and a market stall. Many of them do something: take a bubble bath, play a record, stargaze, swing or relax in the gazebo.
+- **Rearrange everything.** In 🛋️ decorate mode, tap any piece, even the bed, sofa or fridge, and move it. A move is refused if it would cross a wall, leave the house or block the way to something. Small pieces can be turned, every placed piece can be recoloured with 🎨 Colour (eight shades), and Undo and Reset layout put things back.
+- **🏪 Your yard stall.** Place a market stall outside and set out up to four things at a bargain, fair or steep price. Neighbours shop overnight: fair prices sell fast and steep ones may wait. Collect the coins from the till.
+- **🪣 Wishing well.** Once a day, one bucket waters every crop bed in your garden.
 - **Style your animal:** pick eyes (11 styles and 8 colours), brows, expression and cheeks, plus new
   hair, tops (jacket, smart suit, sports top), jeans and hats (top hat, wizard hat, halo,
   sunglasses, bandana, flower).
