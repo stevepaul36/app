@@ -362,7 +362,7 @@ function finish(T, A, who, price, you, day) {
 
 // ---------- neighbours stroll too ----------
 
-function npcTurns(E, T, day, r, out, you, town) {
+export function npcTurns(E, T, day, r, out, you, town) {
   const R = ring(T)
   for (const [name, n] of Object.entries(T.npc)) {
     if (n.jail) { n.jail--; continue }
@@ -429,6 +429,18 @@ export function npcPay(T, name, amount, to, you, day, out = { events: [] }) {
   n.coins -= paid
   if (to === 'you') you.coins += paid
   else if (T.npc[to]) T.npc[to].coins += paid
+  // with IOUs on (the daily draw), a small shortfall becomes a debt they pay back from their earnings
+  const short = amount - paid
+  if (short > 0 && T.ious) {
+    const owed = T.ious[name] ||= {}
+    const total = Object.values(owed).reduce((a, b) => a + b, 0)
+    if (total + short <= 300) {
+      owed[to] = (owed[to] || 0) + short
+      if (to === 'you') out.events.push(`${name} couldn’t pay all of it and owes you ✦ ${short}. They’ll pay it back from their earnings.`)
+      return paid
+    }
+    delete T.ious[name]
+  }
   if (paid < amount) {
     // bankrupt: their homes and lines go to the creditor (or back to the bank)
     for (const id of ES.ownedBy(T, name)) {

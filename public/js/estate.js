@@ -523,6 +523,17 @@ export function payCosts(E, towns, costs, you, day) {
   const total = costs.reduce((a, c) => a + c.amount, 0)
   if (total <= 0) return msgs
   const all = () => Object.entries(towns).flatMap(([cid, T]) => ownedBy(T, 'you').map(id => [cid, T, id]))
+  // with loans on (the daily draw), the bank lends you the difference up to your credit limit first
+  if (E.creditOn && you.coins < total) {
+    const worthAll = Object.values(towns).reduce((a, T) => a + worth(T, 'you', 0), 0)
+    const left = Math.max(0, Math.round(200 + worthAll * 0.3) - (E.debt || 0))
+    const lend = Math.min(left, total - you.coins)
+    if (lend > 0) {
+      E.debt = (E.debt || 0) + lend
+      you.coins += lend
+      msgs.push(`You were short, so the bank lent you ✦ ${lend}. You owe the bank ✦ ${E.debt} (5% interest each morning).`)
+    }
+  }
   // Monopoly order: sell upgrades for half, then mortgage, then the bank takes homes back
   while (you.coins < total) {
     const top = all().filter(([, T, id]) => T.deeds[id].level > 0).sort((a, b) => b[1].deeds[b[2]].level - a[1].deeds[a[2]].level)[0]
