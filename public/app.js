@@ -698,7 +698,7 @@ function showStyle(o) {
       <h4>Name</h4><div class="name-pick"><select data-name="0" aria-label="First word">${NAME_A.map(w => `<option>${w}</option>`).join('')}</select><select data-name="1" aria-label="Second word">${NAME_B.map(w => `<option>${w}</option>`).join('')}</select><button class="btn btn-primary" data-act="rename">Rename</button></div></section>` : ''}
   </div>`);
   // Accessible home-design studio: theme presets plus per-home room and garden layouts.
-  const styleRoot = el.querySelector('.style-sheet');
+  const styleRoot = el; // h() returns the .style-sheet element itself
   const intro = styleRoot.querySelector('.lead');
   if (intro) intro.textContent = 'Choose a whole-house look, then fine-tune rooms, furniture, paint and crops. Each home keeps its own design.';
   const themeSection = document.createElement('section'); themeSection.className = 'style-sec';
