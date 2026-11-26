@@ -32,5 +32,9 @@
   "engines": {
     "node": ">=22.6.0"
   },
-  "description": "Willowvale: Animal Town as a daily game on Reddit (Devvit Web)"
+  "description": "Willowvale: Animal Town as a daily game on Reddit (Devvit Web)",
+  "overrides": {
+    "isomorphic-git": "^1.44.19",
+    "tmp": "^0.2.6"
+  }
 }
