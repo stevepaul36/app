@@ -15,6 +15,7 @@ import * as FC from './js/followcam.js';
 import * as ES from './js/estate.js';
 import * as D from './js/dice.js';
 import * as FT from './js/fate.js';
+import * as NL from './js/nightlights.js';
 const { ITEMS, itemName } = L;
 import { NEEDS, freshNeeds, mood, moodLabel, moodColor, needColor, SPEEDS, GAME_MIN_PER_SEC, clockText, dayOf, hourOf, skyTint, isNight, actionsFor, TRAITS, SKILLS, SKILL_MAX, xpForLevel, CAREER, CAREERS, friendLevel } from './js/sim.js';
 
@@ -1477,15 +1478,33 @@ function drawDaylight(z) {
   if (a > 0.15) {
     ctx.globalCompositeOperation = 'lighter';
     const k = Math.min(1, (a - 0.15) / 0.25);
+    const outdoors = !world.interior, fancy = !S.settings.saver;
     for (const t of things) {
-      const lamp = t.o && (t.o.kind === 'lamp' || t.o.lamp);
-      if (!lamp) continue;
-      const [sx, sy] = t.o.lamp ? toScreen(t.ax + 0.5, t.ay + 0.5, 70) : toScreen(t.ax, t.ay, 78);
-      if (sx < -200 || sx > W + 200 || sy < -200 || sy > H + 200) continue;
-      F.lampGlow(ctx, sx, sy, 150 * z, 0.32 * k);
+      const o = t.o; if (!o) continue;
+      const lamp = o.kind === 'lamp' || o.lamp;
+      if (lamp) {
+        const [sx, sy] = o.lamp ? toScreen(t.ax + 0.5, t.ay + 0.5, 70) : toScreen(t.ax, t.ay, 78);
+        if (sx < -220 || sx > W + 220 || sy < -220 || sy > H + 220) continue;
+        F.lampGlow(ctx, sx, sy, 190 * z, 0.42 * k);
+        if (outdoors) { const [gx, gy] = toScreen(t.ax, t.ay, 0); F.lampGlow(ctx, gx, gy, 120 * z, 0.22 * k); } // a pool of light on the ground
+        continue;
+      }
+      // lit windows: homes and shops glow warmly from the inside after dark
+      if (outdoors && o.w >= 2 && o.d >= 2 && o.i != null && (o.home || o.kind === 'house' || o.kind === 'building' || o.style || o.type)) {
+        const [sx, sy] = toScreen(o.i + o.w * 0.5, o.j + o.d, 22), [ex, ey] = toScreen(o.i + o.w, o.j + o.d * 0.5, 22);
+        if (sx < -200 || sx > W + 200 || sy < -200 || sy > H + 200) continue;
+        F.lampGlow(ctx, sx, sy, 60 * z, 0.2 * k); F.lampGlow(ctx, ex, ey, 60 * z, 0.15 * k);
+      }
+    }
+    if (outdoors) {
+      // your animal carries a soft little light, so you never lose them in the dark
+      const [px, py] = toScreen(player.x, player.y, 30);
+      F.lampGlow(ctx, px, py, 110 * z, 0.28 * k);
+      if (fancy && sceneName === 'city' && C) NL.drawFloaterGlow(ctx, toScreen, C.id, time, z, k, [player.x, player.y], W, H, S.settings.reduced);
     }
     if (world.interior) for (const w of world.walls) if (w.win) { const [sx, sy] = w.axis === 'i' ? toScreen(HOME_O[0] + w.k + 0.5, HOME_O[1] + w.at, 70) : toScreen(HOME_O[0] + w.at, HOME_O[1] + w.k + 0.5, 70); F.lampGlow(ctx, sx, sy, 90 * z, 0.12 * k); }
     ctx.globalCompositeOperation = 'source-over';
+    if (!world.interior && !S.settings.saver && sceneName === 'city' && C) NL.drawFloaters(ctx, toScreen, C.id, time, z, k, [player.x, player.y], W, H, S.settings.reduced);
   }
   ctx.restore();
 }
@@ -1709,8 +1728,16 @@ function drawGroundBird(b, z) {
   ctx.restore();
 }
 const shakingTrees = new Set();
+let lastNightTown = '';
+// When night falls in a town, say which floating lights come out there.
+function nightNotice() {
+  if (sceneName !== 'city' || !C) return;
+  const hr = hourOf(S.progress.clock), key = isNight(hr) ? C.id + ':' + dayNo() : '';
+  if (key && key !== lastNightTown) { lastNightTown = key; const fl = NL.floaterFor(C.id); toast(fl.icon + ' ' + fl.line); }
+}
 function update(dt) {
   updateBirds(dt);
+  nightNotice();
   trackSteps();
   const onboardingOpen = !$('onboarding').classList.contains('hidden');
   // trees wobble while being shaken, then settle
