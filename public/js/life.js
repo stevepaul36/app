@@ -67,6 +67,17 @@ export const ITEMS = {
   beehotel: { icon: '🐝', one: 'bee hotel', many: 'bee hotels', cat: 'decor', price: 22, yard: true },
   feeder: { icon: '🌰', one: 'nut feeder', many: 'nut feeders', cat: 'decor', price: 18, yard: true },
   logpile: { icon: '🪵', one: 'log pile', many: 'log piles', cat: 'decor', price: 12, yard: true },
+  // farm animals live in these (see farm.js)
+  coop: { icon: '🐔', one: 'chicken coop', many: 'chicken coops', cat: 'decor', price: 50, yard: true },
+  paddock: { icon: '🐄', one: 'paddock', many: 'paddocks', cat: 'decor', price: 80, yard: true },
+  // what your animals give you, and what they eat
+  egg: { icon: '🥚', one: 'egg', many: 'eggs', cat: 'food', price: 5 },
+  milk: { icon: '🥛', one: 'bottle of milk', many: 'bottles of milk', cat: 'food', price: 8 },
+  wool: { icon: '🧶', one: 'ball of wool', many: 'balls of wool', cat: 'material', price: 10 },
+  hay: { icon: '🌾', one: 'bundle of hay', many: 'bundles of hay', cat: 'material', price: 1 },
+  omelette: { icon: '🍳', one: 'omelette', many: 'omelettes', cat: 'made', price: 24 },
+  pancakes: { icon: '🥞', one: 'stack of pancakes', many: 'stacks of pancakes', cat: 'made', price: 30 },
+  scarf: { icon: '🧣', one: 'woolly scarf', many: 'woolly scarves', cat: 'made', price: 34 },
 };
 export const itemName = (k, n) => (n === 1 ? ITEMS[k].one : ITEMS[k].many);
 export const CATS = { crop: 'Crops', bug: 'Bugs', fish: 'Fish', material: 'Materials', nature: 'Nature', made: 'Made by you', decor: 'Furniture', food: 'Food', seed: 'Seeds' };
@@ -116,6 +127,9 @@ export const RECIPES = [
   { id: 'aquarium', needs: { stone: 4, fish: 2, shell: 2 }, skill: 'logic', teach: 'Sable' },
   { id: 'jackolantern', needs: { pumpkin: 1, firefly: 1 }, skill: 'creativity', teach: 'Bramble' },
   { id: 'rug', needs: { flowers: 2, crafts: 1, wood: 1 }, skill: 'creativity', teach: 'Pip' },
+  { id: 'omelette', needs: { egg: 2, tomato: 1 }, skill: 'cooking' },
+  { id: 'pancakes', needs: { egg: 1, milk: 1, berries: 2 }, skill: 'cooking' },
+  { id: 'scarf', needs: { wool: 3 }, skill: 'creativity' },
 ];
 export const canCraft = (r, inv) => Object.entries(r.needs).every(([k, n]) => (inv[k] || 0) >= n);
 export function craft(r, inv) { if (!canCraft(r, inv)) return false; for (const [k, n] of Object.entries(r.needs)) inv[k] -= n; inv[r.id] = (inv[r.id] || 0) + 1; return true; }
