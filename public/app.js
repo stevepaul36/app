@@ -737,7 +737,11 @@ function showStyle(o) {
     const theme = DESIGN_THEMES.find(t => t.id === b.dataset.theme); if (!theme) return;
     S.progress.homeStyle[key] = { ...(S.progress.homeStyle[key] || {}), ...theme.style, layout: theme.layout, garden: theme.garden, theme: theme.id };
     if (key === homeKey()) rebuildHomeScene();
-    if (own && obj) { obj.look = theme.exterior; S.progress.homeLooks[objKey] = { ...(S.progress.homeLooks[objKey] || {}), look: theme.exterior }; repaintHome(obj); }
+    // The inside is free; repainting the outside costs the same ✦ 30 as picking a paint by hand.
+    if (own && obj && (obj.look || 0) % PAINTS.length !== theme.exterior % PAINTS.length) {
+      if (S.coins >= 30) { setCoins(S.coins - 30, true); obj.look = theme.exterior; S.progress.homeLooks[objKey] = { ...(S.progress.homeLooks[objKey] || {}), look: theme.exterior }; repaintHome(obj); toast(`${theme.name}: inside restyled, outside repainted for ✦ 30.`); }
+      else toast(`${theme.name}: inside restyled. Repainting the outside needs ✦ 30.`);
+    }
     saveProgress(); SND.sfx('pop'); showStyle(o);
   });
   el.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => {
