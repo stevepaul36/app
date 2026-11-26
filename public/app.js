@@ -747,7 +747,7 @@ function showStyle(o) {
   });
   el.querySelectorAll('[data-paint]').forEach(b => b.onclick = () => {
     const n = +b.dataset.paint;
-    if ((obj.look || 0) % 5 === n) return;
+    if ((obj.look || 0) % PAINTS.length === n) return;
     if (S.coins < 30) { toast('You need ✦ 30 to repaint.'); return; }
     setCoins(S.coins - 30, true); obj.look = n; S.progress.homeLooks[objKey] = { ...(S.progress.homeLooks[objKey] || {}), look: n };
     repaintHome(obj); saveProgress(); SND.sfx('pop'); toast(`${obj.name} has a fresh coat of paint!`); showStyle(o);
