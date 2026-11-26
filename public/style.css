@@ -673,3 +673,22 @@ body.reduced .go-btn { animation: none; }
 .theme-card:active, .design-choice:active { transform: translateY(1px); }
 .theme-card.on, .design-choice.on { background: #FFF1C9; box-shadow: inset 0 0 0 2px #F2C14E; }
 .exterior-swatches { gap: 10px; }
+/* Community Night Festival */
+.fest-chip { height: 28px; padding: 0 9px; border: 0; border-radius: 999px; background: #2B2F5E; color: #FFE7A8; font: 800 12.5px/1 var(--display); cursor: pointer; }
+.fest-chip.ready { background: #FFC83D; color: #5A3A00; animation: ready 1.6s ease-in-out infinite; }
+.fest-meter { margin: 10px 0 14px; padding: 14px; border-radius: 18px; background: linear-gradient(160deg, #1D2350, #3A2E6E); color: #FFF3D6; }
+.fest-meter.lit { background: linear-gradient(160deg, #3A2E6E, #8A3E7A); }
+.fest-count { font: 800 15px/1.2 var(--display); }
+.fest-count b { font-size: 30px; color: #FFC83D; }
+.fest-bar { height: 12px; margin: 8px 0 6px; border-radius: 999px; background: #ffffff26; overflow: hidden; }
+.fest-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #FFC83D, #FF7A59); }
+.fest-meter small { font-weight: 700; opacity: .9; }
+.fest-symbols { margin: 10px 0; flex-wrap: wrap; }
+.fest-symbols .filter { font-size: 18px; padding: 0 10px; }
+.fest-errands { margin: 6px 0 0; padding: 0; list-style: none; }
+.fest-errands li { padding: 7px 10px; margin: 4px 0; border-radius: 12px; background: var(--mist); font-weight: 700; }
+.fest-errands li.ok { color: #2E7D4F; }
+.fest-people { display: flex; flex-wrap: wrap; gap: 6px; }
+.fest-person { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: 999px; background: var(--mist); font: 700 13px/1 var(--display); }
+.fest-person.me { box-shadow: 0 0 0 2px #FFC83D; }
+.fest-person i { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font-style: normal; font-size: 13px; }
