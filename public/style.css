@@ -724,3 +724,19 @@ body.decorating .ctl-barn { display: none; }
 .barn .hearts .off { color: #E3D9CF; }
 .barn .trade-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 @media (max-width: 359px) { body.at-home .ctl-barn { right: 106px; bottom: 204px; } } /* narrow phones: above the camera, clear of the joystick */
+
+/* furniture store and yard stall */
+.store-tabs, .store-rooms { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.store-tabs .chip, .store-rooms .chip { border: 0; cursor: pointer; padding: 7px 11px; font-size: 13px; }
+.store-tabs .chip.on, .store-rooms .chip.on { background: var(--leaf-d, #3F8A48); color: #fff; }
+.store-purse { margin-left: auto; font: 800 15px var(--display); }
+.store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.store-item { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 9px 6px; border-radius: 14px; background: var(--mist, #F2F5F8); text-align: center; }
+.store-item.deal { background: #FFF4D6; box-shadow: inset 0 0 0 2px #FFC83D; }
+.store-item.deal::before { content: 'SALE'; position: absolute; top: 4px; right: 6px; font: 800 9px system-ui; color: #D94468; }
+.store-item .si-icon { font-size: 26px; }
+.store-item b { font-size: 12px; line-height: 1.15; }
+.store-item small { font-size: 11px; opacity: .75; }
+.store-item .btn-small { margin-top: 2px; padding: 5px 10px; }
+.stall .trade-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.stall-log { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }

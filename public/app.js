@@ -21,6 +21,8 @@ import * as BK from './js/bank.js';
 import * as HB from './js/habitat.js';
 import * as CR from './js/critters.js';
 import * as FM from './js/farm.js';
+import * as ST from './js/store.js';
+import * as AR from './js/arrange.js';
 const { ITEMS, itemName } = L;
 import { NEEDS, freshNeeds, mood, moodLabel, moodColor, needColor, SPEEDS, GAME_MIN_PER_SEC, clockText, dayOf, hourOf, skyTint, isNight, actionsFor, TRAITS, SKILLS, SKILL_MAX, xpForLevel, CAREER, CAREERS, friendLevel } from './js/sim.js';
 
@@ -217,7 +219,7 @@ function makeRoomThings(rw) {
     list.push({ o: { kind: 'wall' }, wall: w, sprite, ax, ay, box: w.axis === 'i' ? [ax, ay - 0.06, ax + 1, ay + 0.06] : [ax - 0.06, ay, ax + 0.06, ay + 1] });
   }
   for (const f of rw.objects) {
-    const t = { o: f, furn: true, sprite: F.furnitureSprite(f), ax: f.i, ay: f.j, box: [f.i, f.j, f.i + f.w, f.j + f.d], interactive: !f.decor && !f.flat };
+    const t = { o: f, furn: true, sprite: F.furnitureSprite(f), ax: f.i, ay: f.j, box: [f.i, f.j, f.i + f.w, f.j + f.d], interactive: !f.decor && !f.flat, flipX: !!f.flip };
     if (f.flat) flatList.push({ d: f, x: f.i, y: f.j, sprite: t.sprite, furn: f, tap: !f.decor }); else list.push(t);
   }
   addDecor(list, flatList, rw.decor);
@@ -227,6 +229,7 @@ function makeRoomThings(rw) {
 const initialHomeRecord = HOMES.find(h => h.id === initialHomeKey);
 const initialHomeLayout = S.progress.homeStyle[initialHomeKey]?.layout || (initialHomeKey === 'cottage' ? 'classic' : initialHomeRecord?.kind === 'villa' ? 'open' : initialHomeRecord?.kind === 'apartment' ? 'studio' : 'loft');
 let homeWorld = buildHome(initialHomeLayout, S.progress.homeStyle[initialHomeKey]?.garden || 'mixed');
+AR.applyMoves(homeWorld, S.progress.homeStyle[initialHomeKey]?.moves?.[initialHomeLayout]);
 let homeThings = [], homeFlats = [], homeDoor = null;
 function populateHomeScene() {
   homeThings = []; homeFlats = [];
@@ -531,16 +534,16 @@ function decorTileOK(i, j, ignore = -1) {
   return hi >= -3 && hj >= -3 && hi <= 15 && hj <= 14;
 }
 function refreshDecor() {
-  for (const t of DECOR.things) { if (t.o.type !== 'd_rug') homeWorld.blocked[homeWorld.idx(t.o.i, t.o.j)] = 0; }
+  for (const t of DECOR.things) { if (!t.flat) homeWorld.blocked[homeWorld.idx(t.o.i, t.o.j)] = 0; }
   for (const arr of [homeThings, homeFlats]) for (let k = arr.length - 1; k >= 0; k--) if (arr[k].o?.decorIdx !== undefined || arr[k].d?.decorIdx !== undefined) arr.splice(k, 1);
   DECOR.things = [];
   S.progress.decor.forEach((d, k) => {
     if (!ITEMS[d.item]) return;
-    const f = { kind: 'furn', type: 'd_' + d.item, i: d.i, j: d.j, w: 1, d: 1, name: ITEMS[d.item].one[0].toUpperCase() + ITEMS[d.item].one.slice(1), decorIdx: k, decor: !actionsFor('d_' + d.item).length };
+    const f = { kind: 'furn', type: 'd_' + d.item, i: d.i, j: d.j, w: 1, d: 1, name: ITEMS[d.item].one[0].toUpperCase() + ITEMS[d.item].one.slice(1), decorIdx: k, decor: !actionsFor('d_' + d.item).length, tint: d.tint || 0 };
     const nb = [[0.5, 1.5], [1.5, 0.5], [-0.5, 0.5], [0.5, -0.5]].map(([a, b]) => [d.i + a, d.j + b]).find(([x, y]) => homeWorld.walkable(Math.floor(x), Math.floor(y)));
     f.stand = nb || [d.i + 0.5, d.j + 1.5]; f.look = [d.i + 0.5, d.j + 0.5];
     const t = { o: f, furn: true, sprite: F.furnitureSprite(f), ax: f.i, ay: f.j, box: [f.i, f.j, f.i + 1, f.j + 1], interactive: true, flipX: !!d.rot };
-    if (d.item === 'rug') { homeFlats.unshift({ d: f, x: f.i, y: f.j, sprite: t.sprite, furn: f }); t.flat = true; }
+    if (d.item === 'rug' || ITEMS[d.item].flat) { homeFlats.unshift({ d: f, x: f.i, y: f.j, sprite: t.sprite, furn: f }); t.flat = true; }
     else { homeThings.push(t); homeWorld.blocked[homeWorld.idx(d.i, d.j)] = 1; }
     if (d.item === 'lamp') f.lamp = true;
     DECOR.things.push(t);
@@ -549,22 +552,30 @@ function refreshDecor() {
 function startDecor() {
   if (sceneName !== 'home') return;
   cancelActions(); closePie(); closeSheet();
-  DECOR.on = true; DECOR.sel = null; DECOR.pick = -1; DECOR.undo = [];
+  DECOR.on = true; DECOR.sel = null; DECOR.pick = -1; DECOR.undo = []; DECOR.built = null; DECOR.movingBuilt = null;
   document.body.classList.add('decorating'); renderDecorBar();
-  toast('Pick something below, then tap where it should go.');
+  toast('Pick something below to place it, or tap any furniture to move it.');
 }
-function endDecor() { DECOR.on = false; DECOR.sel = null; DECOR.pick = -1; document.body.classList.remove('decorating'); $('decor-bar').classList.add('hidden'); saveProgress(); checkAchievements(); }
+function endDecor() { DECOR.on = false; DECOR.sel = null; DECOR.pick = -1; DECOR.built = null; DECOR.movingBuilt = null; document.body.classList.remove('decorating'); $('decor-bar').classList.add('hidden'); saveProgress(); checkAchievements(); }
 function renderDecorBar() {
   const bar = $('decor-bar'); bar.classList.remove('hidden');
   const items = Object.keys(ITEMS).filter(k => ITEMS[k].cat === 'decor' && have(k) > 0);
-  const picked = DECOR.pick >= 0 ? S.progress.decor[DECOR.pick] : null;
-  bar.innerHTML = `<div class="decor-top"><b>${picked ? `${ITEMS[picked.item].icon} ${esc(itemName(picked.item, 1))}` : DECOR.sel ? `Tap a spot for your ${esc(itemName(DECOR.sel, 1))}` : 'Decorate'}</b>
-    ${picked ? '<button class="btn btn-ghost btn-small" data-a="rot">↻ Turn</button><button class="btn btn-ghost btn-small" data-a="move">✥ Move</button><button class="btn btn-ghost btn-small" data-a="store">📦 Put away</button>' : ''}
+  const picked = DECOR.pick >= 0 ? S.progress.decor[DECOR.pick] : null, built = !picked && DECOR.built ? builtByKey(DECOR.built) : null;
+  const anyMoved = Object.keys(homeMoves() || {}).length > 0;
+  bar.innerHTML = `<div class="decor-top"><b>${picked ? `${ITEMS[picked.item].icon} ${esc(itemName(picked.item, 1))}` : DECOR.movingBuilt ? 'Tap where its corner should go' : built ? `✥ ${esc(built.name)}` : DECOR.sel ? `Tap a spot for your ${esc(itemName(DECOR.sel, 1))}` : 'Decorate'}</b>
+    ${picked ? '<button class="btn btn-ghost btn-small" data-a="rot">↻ Turn</button><button class="btn btn-ghost btn-small" data-a="move">✥ Move</button><button class="btn btn-ghost btn-small" data-a="tint">🎨 Colour</button><button class="btn btn-ghost btn-small" data-a="store">📦 Put away</button>' : ''}
+    ${built ? `<button class="btn btn-ghost btn-small" data-a="bmove">✥ Move</button>${built.w === 1 && built.d === 1 && !built.use ? '<button class="btn btn-ghost btn-small" data-a="bturn">↻ Turn</button>' : ''}` : ''}
+    ${!picked && !built && anyMoved ? '<button class="btn btn-ghost btn-small" data-a="reset">⟲ Reset layout</button>' : ''}<button class="btn btn-ghost btn-small" data-a="shop">🛒 Store</button>
     <button class="btn btn-ghost btn-small" data-a="style">🎨 Style</button><button class="btn btn-ghost btn-small" data-a="undo" ${DECOR.undo.length ? '' : 'disabled'}>↶ Undo</button><button class="btn btn-primary btn-small" data-a="done">Done</button></div>
     <div class="decor-tray">${items.length ? items.map(k => `<button class="decor-item ${DECOR.sel === k ? 'on' : ''}" data-k="${k}" ${freeDecor(k) > 0 ? '' : 'disabled'}><span>${ITEMS[k].icon}</span><small>${freeDecor(k)} left</small></button>`).join('') : '<p class="lead">Make furniture at your workbench (🪑 stool: 4 sticks) and it will show up here.</p>'}</div>`;
-  bar.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { DECOR.sel = DECOR.sel === b.dataset.k ? null : b.dataset.k; DECOR.pick = -1; renderDecorBar(); });
+  bar.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { DECOR.sel = DECOR.sel === b.dataset.k ? null : b.dataset.k; DECOR.pick = -1; DECOR.built = null; renderDecorBar(); });
   const act2 = { done: endDecor, style: () => { endDecor(); showStyle(); },
-    undo: () => { const u = DECOR.undo.pop(); if (!u) return; S.progress.decor = u; refreshDecor(); DECOR.pick = -1; renderDecorBar(); },
+    undo: () => { const u = DECOR.undo.pop(); if (!u) return; if (Array.isArray(u)) { S.progress.decor = u; refreshDecor(); } else { setMoves(u.moves); rebuildHomeScene(); } DECOR.pick = -1; renderDecorBar(); },
+    shop: () => { endDecor(); showStore(); },
+    tint: () => { DECOR.undo.push(JSON.parse(JSON.stringify(S.progress.decor))); picked.tint = ((picked.tint || 0) + 1) % F.TINTS; refreshDecor(); SND.sfx('pop'); renderDecorBar(); },
+    bmove: () => { DECOR.movingBuilt = DECOR.built; toast('Tap where its corner should go.'); renderDecorBar(); },
+    bturn: () => { const m = homeMoves(true), k = DECOR.built, cur = m[k] || [0, 0, 0]; DECOR.undo.push({ moves: JSON.parse(JSON.stringify(m)) }); m[k] = [cur[0], cur[1], cur[2] ? 0 : 1]; rebuildHomeScene(); SND.sfx('pop'); renderDecorBar(); },
+    reset: () => { DECOR.undo.push({ moves: JSON.parse(JSON.stringify(homeMoves() || {})) }); setMoves({}); rebuildHomeScene(); toast('Furniture back where it started.'); renderDecorBar(); },
     rot: () => { DECOR.undo.push(JSON.parse(JSON.stringify(S.progress.decor))); picked.rot = picked.rot ? 0 : 1; refreshDecor(); renderDecorBar(); },
     move: () => { DECOR.moving = DECOR.pick; toast('Tap where it should go.'); },
     store: () => { DECOR.undo.push(JSON.parse(JSON.stringify(S.progress.decor))); S.progress.decor.splice(DECOR.pick, 1); DECOR.pick = -1; refreshDecor(); renderDecorBar(); SND.sfx('close'); } };
@@ -573,13 +584,14 @@ function renderDecorBar() {
 function decorTap(sx, sy) {
   const [wx, wy] = toWorld(sx, sy), i = Math.floor(wx), j = Math.floor(wy);
   const at = S.progress.decor.findIndex(d => d.i === i && d.j === j);
+  if (DECOR.movingBuilt) { const f = builtByKey(DECOR.movingBuilt); DECOR.movingBuilt = null; if (f) moveBuilt(f, i, j); renderDecorBar(); return; }
   if (DECOR.moving !== undefined && DECOR.moving >= 0) {
     const k = DECOR.moving; DECOR.moving = -1;
     if (!decorTileOK(i, j, k)) { toast('It won’t fit there. Try an empty spot.'); return; }
     DECOR.undo.push(JSON.parse(JSON.stringify(S.progress.decor))); S.progress.decor[k].i = i; S.progress.decor[k].j = j; refreshDecor(); SND.sfx('pop'); renderDecorBar(); return;
   }
-  if (at >= 0 && !DECOR.sel) { DECOR.pick = at; renderDecorBar(); return; }
-  if (!DECOR.sel) { DECOR.pick = -1; renderDecorBar(); return; }
+  if (at >= 0 && !DECOR.sel) { DECOR.pick = at; DECOR.built = null; renderDecorBar(); return; }
+  if (!DECOR.sel) { const f = builtAt(i, j); DECOR.pick = -1; DECOR.built = f ? AR.keyOf(homeWorld.objects, f) : null; renderDecorBar(); return; }
   if (freeDecor(DECOR.sel) < 1) { toast('You’ve placed all of those.'); return; }
   if (!decorTileOK(i, j)) { toast('It won’t fit there. Try an empty spot.'); return; }
   DECOR.undo.push(JSON.parse(JSON.stringify(S.progress.decor)));
@@ -598,6 +610,12 @@ function drawDecorGrid(z) {
     ctx.beginPath(); pts.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath();
     ctx.fillStyle = own === DECOR.pick && own >= 0 ? 'rgba(255,200,61,.45)' : own >= 0 ? 'rgba(63,168,106,.25)' : 'rgba(255,255,255,.18)'; ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.stroke();
+  }
+  const bf = DECOR.built && builtByKey(DECOR.built);
+  if (bf) {
+    const pts = [[bf.i, bf.j], [bf.i + bf.w, bf.j], [bf.i + bf.w, bf.j + bf.d], [bf.i, bf.j + bf.d]].map(([a, b]) => toScreen(a, b, 1));
+    ctx.beginPath(); pts.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath();
+    ctx.fillStyle = 'rgba(255,200,61,.4)'; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = '#FFC83D'; ctx.stroke();
   }
   ctx.restore();
 }
@@ -654,6 +672,7 @@ function applyHomeStyle() {
 function rebuildHomeScene() {
   const st = homeStyleOf(homeKey());
   homeWorld = buildHome(st.layout, st.garden);
+  AR.applyMoves(homeWorld, st.moves?.[st.layout]);
   populateHomeScene();
   DECOR.things = [];
   refreshDecor();
@@ -698,7 +717,7 @@ function showStyle(o) {
     ${chips('walls', 'Wallpaper', walls)}
     ${chips('floor', 'Floor', FLOORS.map(([l, , c], k) => [k, l, c]))}
     ${chips('carpet', 'Bedroom carpet', CARPETS.map(([l, , c], k) => [k, l, c]))}
-    <section class="style-sec"><h4>Furniture shop <small>place them with 🛋️ · put 🪷 ⛲ 🐝 🌰 🪵 outside and wildlife visits</small></h4><div class="shop-grid">${shop.map(k => `<button class="shop-item" data-buy="${k}"><span>${ITEMS[k].icon}</span><b>${esc(ITEMS[k].one)}</b><small>✦ ${ITEMS[k].price * SHOP_MARKUP} · have ${have(k)}</small></button>`).join('')}</div></section>
+    <section class="style-sec"><h4>Furniture <small>${shop.length} pieces in six rooms · daily deals · sell back what you don’t need</small></h4><button class="btn btn-sun" data-open-store>🛒 Open the furniture store</button><p class="fine">Tip: in 🛋️ decorate mode you can tap any furniture, even the bed or the sofa, and move it.</p></section>
     ${own && obj ? `<section class="style-sec"><h4>Outside</h4>
       <div class="swatches">${PAINTS.map((c, n) => `<button class="swatch ${(obj.look || 0) % PAINTS.length === n ? 'on' : ''}" style="background:${c}" data-paint="${n}" aria-label="Paint scheme ${n + 1}"></button>`).join('')}<small class="paint-cost">Repaint ✦ 30</small></div>
       <h4>Name</h4><div class="name-pick"><select data-name="0" aria-label="First word">${NAME_A.map(w => `<option>${w}</option>`).join('')}</select><select data-name="1" aria-label="Second word">${NAME_B.map(w => `<option>${w}</option>`).join('')}</select><button class="btn btn-primary" data-act="rename">Rename</button></div></section>` : ''}
@@ -749,6 +768,7 @@ function showStyle(o) {
     }
     saveProgress(); SND.sfx('pop'); showStyle(o);
   });
+  el.querySelector('[data-open-store]')?.addEventListener('click', () => showStore());
   el.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => {
     const k = b.dataset.buy, cost = ITEMS[k].price * SHOP_MARKUP;
     if (S.coins < cost) { toast(`You need ✦ ${cost}.`); return; }
@@ -2088,6 +2108,129 @@ function showBarn() {
   openSheet('barn', 'Barnyard', '🐔 Your animals', el, { tab: 'homes' });
 }
 
+// ---------- the furniture store, your yard stall and the wishing well ----------
+let storeRoom = 'all';
+function showStore(tab = 'buy') {
+  const day = gameDay(), deals = ST.dealsFor(day, ITEMS);
+  const el = h(`<div class="store">
+    <div class="store-tabs"><button class="chip ${tab === 'buy' ? 'on' : ''}" data-tab="buy">🛒 Shop</button><button class="chip ${tab === 'sell' ? 'on' : ''}" data-tab="sell">💰 Sell back</button><span class="store-purse">✦ ${S.coins}</span></div>
+    <div data-body></div>
+  </div>`);
+  el.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => showStore(b.dataset.tab));
+  const body = el.querySelector('[data-body]');
+  const card = (k, extra, btn) => `<div class="store-item ${deals.includes(k) && tab === 'buy' ? 'deal' : ''}"><span class="si-icon">${ITEMS[k].icon}</span><b>${esc(ITEMS[k].one)}</b><small>${extra}</small>${btn}</div>`;
+  if (tab === 'buy') {
+    body.append(h(`<section class="style-sec"><h4>Today’s deals <small>30% off · new deals every morning</small></h4><div class="store-grid">${deals.map(k => card(k, `<s>✦ ${ITEMS[k].price * ST.MARKUP}</s> · ${ST.stockLeft(S.progress, k, day)} left`, `<button class="btn btn-sun btn-small" data-buy="${k}" ${ST.stockLeft(S.progress, k, day) ? '' : 'disabled'}>✦ ${ST.priceOf(k, day, ITEMS)}</button>`)).join('')}</div></section>`));
+    body.append(h(`<div class="store-rooms"><button class="chip ${storeRoom === 'all' ? 'on' : ''}" data-room="all">All</button>${ST.ROOMS.map(r => `<button class="chip ${storeRoom === r.id ? 'on' : ''}" data-room="${r.id}">${r.icon} ${r.name}</button>`).join('')}</div>`));
+    const rooms = ST.ROOMS.filter(r => storeRoom === 'all' || r.id === storeRoom);
+    for (const r of rooms) {
+      body.append(h(`<section class="style-sec"><h4>${r.icon} ${r.name}${r.id === 'garden' || r.id === 'wild' ? ' <small>place these outside</small>' : ''}</h4><div class="store-grid">${r.items.filter(k => ITEMS[k]).map(k => { const left = ST.stockLeft(S.progress, k, day), p = ST.priceOf(k, day, ITEMS); return card(k, `have ${have(k)} · ${left ? `${left} in stock` : 'sold out'}`, `<button class="btn ${p <= S.coins && left ? 'btn-sun' : 'btn-ghost'} btn-small" data-buy="${k}" ${left ? '' : 'disabled'}>✦ ${p}</button>`); }).join('')}</div></section>`));
+    }
+    body.append(h(`<p class="fine">The store keeps ${ST.DAILY_STOCK} of each piece and restocks every morning. Place what you buy with 🛋️ in your home.</p>`));
+    body.querySelectorAll('[data-room]').forEach(b => b.onclick = () => { storeRoom = b.dataset.room; showStore('buy'); });
+    body.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => {
+      const k = b.dataset.buy, you = { coins: S.coins }, r = ST.buy(S.progress, k, day, you, ITEMS);
+      if (!r.ok) { toast(r.msg); return; }
+      setCoins(you.coins, true); addItem(k, 1); SND.sfx('coin'); bumpStat('shopped'); saveProgress();
+      toast(`${ITEMS[k].icon} ${r.msg} Tap 🛋️ at home to place it.`); showStore('buy');
+    });
+  } else {
+    const spare = Object.keys(ITEMS).filter(k => ITEMS[k].cat === 'decor' && freeDecor(k) > 0);
+    body.append(h(`<section class="style-sec"><h4>Furniture you haven’t placed <small>sells back for half price</small></h4>${spare.length ? `<div class="store-grid">${spare.map(k => card(k, `${freeDecor(k)} spare`, `<button class="btn btn-ghost btn-small" data-sell="${k}">+✦ ${ST.sellBackPrice(k, ITEMS)}</button>`)).join('')}</div>` : '<p class="fine">Nothing spare. Put a piece away with 📦 while decorating to sell it.</p>'}</section>`));
+    body.querySelectorAll('[data-sell]').forEach(b => b.onclick = () => {
+      const k = b.dataset.sell; if (freeDecor(k) < 1) return;
+      S.progress.inventory[k]--; setCoins(S.coins + ST.sellBackPrice(k, ITEMS), true); SND.sfx('coin'); saveProgress();
+      toast(`Sold a ${itemName(k, 1)} for ✦ ${ST.sellBackPrice(k, ITEMS)}.`); showStore('sell');
+    });
+  }
+  openSheet('store', 'Furniture store', '🛒 Willowvale Home & Garden', el, { tab: 'homes' });
+}
+
+const hasPlaced = k => S.progress.decor.some(d => d.item === k);
+const neighbourNames = () => NEIGHBOURS.map(n => n.name);
+function showStall() {
+  const st = ST.stallOf(S.progress), inv = S.progress.inventory;
+  const sellable = Object.keys(ITEMS).filter(k => ITEMS[k].price && ITEMS[k].cat !== 'seed' && (ITEMS[k].cat === 'decor' ? freeDecor(k) : have(k)) > 0);
+  const el = h(`<div class="stall">
+    <p class="lead">Set things out on your stall and neighbours shop at it overnight. Fair prices sell fast; steep ones may wait a few days.</p>
+    <div class="bank-cards">
+      <div class="bank-card"><small>Till</small><b>✦ ${st.till}</b><span>${st.till ? 'ready to collect' : 'coins from sales land here'}</span></div>
+      <div class="bank-card"><small>On the table</small><b>${st.slots.length} / ${ST.STALL_SLOTS}</b><span>things for sale</span></div>
+    </div>
+    <div class="bank-row" data-row="till"></div>
+    <section class="style-sec"><h4>On your stall</h4><div data-list="slots"></div></section>
+    <section class="style-sec"><h4>Put something out</h4><div data-list="bag"></div></section>
+    <section class="style-sec"><h4>Recent sales</h4><div data-list="log"></div></section>
+  </div>`);
+  const redo = () => { saveProgress(); showStall(); };
+  const button = (parent, label, fn, off, cls = 'btn-ghost') => { const b = h(`<button class="btn ${cls} btn-small" ${off ? 'disabled' : ''}>${label}</button>`); b.onclick = fn; parent.append(b); };
+  button(el.querySelector('[data-row=till]'), `Collect ✦ ${st.till}`, () => { const n = ST.emptyTill(S.progress); setCoins(S.coins + n, true); SND.sfx('coin'); toast(`+✦ ${n} from your stall`); redo(); }, !st.till, 'btn-sun');
+  const slots = el.querySelector('[data-list=slots]');
+  if (!st.slots.length) slots.append(h('<p class="fine">Your stall is empty.</p>'));
+  st.slots.forEach((s, n) => {
+    const chance = Math.round(ST.saleChance(s.price, ITEMS[s.item].price) * 100);
+    const row = h(`<div class="trade-row"><span class="trade-icon">${ITEMS[s.item].icon}</span><div class="trade-main"><b>${esc(ITEMS[s.item].one)} · ✦ ${s.price}</b><small>about ${chance}% chance it sells each night</small></div><div class="trade-btns"></div></div>`);
+    button(row.querySelector('.trade-btns'), 'Take back', () => { ST.unlist(S.progress, n, inv); redo(); });
+    slots.append(row);
+  });
+  const bag = el.querySelector('[data-list=bag]');
+  if (!sellable.length) bag.append(h('<p class="fine">Nothing to sell. Grow crops, collect eggs or craft something first.</p>'));
+  for (const k of sellable.slice(0, 24)) {
+    const v = ITEMS[k].price, fair = ST.fairPrice(k, ITEMS);
+    const row = h(`<div class="trade-row"><span class="trade-icon">${ITEMS[k].icon}</span><div class="trade-main"><b>${esc(itemName(k, 2))}</b><small>you have ${ITEMS[k].cat === 'decor' ? freeDecor(k) : have(k)} · worth about ✦ ${v}</small></div><div class="trade-btns"></div></div>`);
+    for (const [label, p, cls] of [['Bargain', Math.max(1, Math.round(v * 0.8)), 'btn-ghost'], ['Fair', fair, 'btn-sun'], ['Steep', Math.round(v * 2), 'btn-ghost']]) {
+      button(row.querySelector('.trade-btns'), `${label} ✦ ${p}`, () => {
+        const r = ST.list(S.progress, k, p, inv, ITEMS); if (!r.ok) { toast(r.msg); return; }
+        if (st.lastDay == null) st.lastDay = gameDay();
+        SND.sfx('pop'); toast(`${ITEMS[k].icon} On the stall for ✦ ${p}.`); redo();
+      }, st.slots.length >= ST.STALL_SLOTS, cls);
+    }
+    bag.append(row);
+  }
+  const log = el.querySelector('[data-list=log]');
+  log.append(h(st.log.length ? `<ul class="stall-log">${st.log.map(s => `<li>${esc(s.who)} bought your ${esc(ITEMS[s.item]?.one || s.item)} for ✦ ${s.price}</li>`).join('')}</ul>` : '<p class="fine">No sales yet.</p>'));
+  openSheet('stall', 'Your stall', '🏪 Yard sale', el, { tab: 'homes' });
+}
+let stallClock = 0;
+function stallTick(dt) {
+  if ((stallClock += dt) < 2) return; stallClock = 0;
+  const st = S.progress.stall; if (!st || st.lastDay == null) return;
+  const sales = ST.settle(S.progress, gameDay(), ITEMS, neighbourNames());
+  if (!sales.length) return;
+  const sum = sales.reduce((a, s) => a + s.price, 0);
+  toast(`🏪 ${sales.length === 1 ? `${sales[0].who} bought your ${ITEMS[sales[0].item].one}` : `${sales.length} things sold at your stall`}: ✦ ${sum} in the till.`);
+  SND.sfx('coin'); saveProgress();
+}
+function useWell() {
+  const day = gameDay();
+  if (S.progress.wellDay === day) { toast('The well has given its water today. Come back tomorrow.'); return; }
+  const plots = S.progress.plots.filter(p => p && p.crop);
+  if (!plots.length) { toast('Nothing planted to water yet.'); return; }
+  for (const p of plots) { p.wetUntil = S.progress.clock + 1440; L.growPlot(p, S.progress.clock); }
+  S.progress.wellDay = day; player.say('💧', 1.6); SND.sfx('splash'); bumpStat('waters');
+  toast(`🪣 You watered all ${plots.length} crop bed${plots.length === 1 ? '' : 's'} with one bucket.`); saveProgress(); checkQuests();
+}
+
+// ---------- moving the furniture your home came with ----------
+const homeZone = (i, j) => { const a = i - HOME_O[0], b = j - HOME_O[1]; return a >= 0 && b >= 0 && a < HOME_ROOM.w && b < HOME_ROOM.d ? 'in' : 'out'; };
+function homeMoves(make) {
+  const key = homeKey(), lay = homeStyleOf(key).layout;
+  if (!make) return S.progress.homeStyle[key]?.moves?.[lay];
+  const hs = (S.progress.homeStyle[key] ||= {}); hs.moves ||= {}; return (hs.moves[lay] ||= {});
+}
+const builtAt = (i, j) => homeWorld.objects.find(f => AR.movable(f) && i >= f.i && j >= f.j && i < f.i + f.w && j < f.j + f.d);
+const builtByKey = key => homeWorld.objects.find(f => AR.keyOf(homeWorld.objects, f) === key);
+function moveBuilt(f, i, j) {
+  const busy = (a, b) => S.progress.decor.some(d => d.i === a && d.j === b) || homeWorld.get(a, b) === T.PATH || homeWorld.objects.some(o => o.flat && o.type === 'plot' && o.i === a && o.j === b) || Math.abs(a - homeDoor.i) + Math.abs(b - homeDoor.j) <= 1;
+  const key = AR.keyOf(homeWorld.objects, f), before = JSON.parse(JSON.stringify(homeMoves() || {}));
+  const r = AR.tryMove(homeWorld, f, i, j, { zone: homeZone, busy });
+  if (!r.ok) { toast(r.msg); return false; }
+  DECOR.undo.push({ moves: before });
+  homeMoves(true)[key] = [r.offset[0], r.offset[1], f.flip ? 1 : 0];
+  rebuildHomeScene(); SND.sfx('pop'); return true;
+}
+function setMoves(m) { const key = homeKey(), lay = homeStyleOf(key).layout, hs = (S.progress.homeStyle[key] ||= {}); hs.moves ||= {}; hs.moves[lay] = m; }
+
 let lastNightTown = '';
 // When night falls in a town, say which floating lights come out there.
 function nightNotice() {
@@ -2103,6 +2246,7 @@ function update(dt) {
   spotVisitors(dt);
   stepFarm(dt);
   tendFarm(dt);
+  stallTick(dt);
   trackSteps();
   const onboardingOpen = !$('onboarding').classList.contains('hidden');
   // trees wobble while being shaken, then settle
@@ -2480,6 +2624,7 @@ function queueAction(def, target) {
     def = { ...def, pose: def.pose === 'inside' || def.pose === 'stand' ? (sitting ? 'sit' : 'stand') : def.pose, arms, prop };
   }
   if (def.special === 'market' || def.special === 'craft' || def.special === 'restore') { const d = approachOf(target.o); const go = () => (def.special === 'market' ? showMarket() : def.special === 'craft' ? showCraft() : showRestore()); if (near(...d, 1.6)) go(); else walkTo(...d, go); return; }
+  if (def.special === 'barn' || def.special === 'stall' || def.special === 'well') { const d = approachOf(target.o); const go = () => { player.face(...(target.o.look || d)); (def.special === 'barn' ? showBarn : def.special === 'stall' ? showStall : useWell)(); }; if (near(...d, 1.6)) go(); else walkTo(...d, go); return; }
   if (def.special === 'boat') { const d = approachOf(target.o); const go = () => startBoat(); if (near(...d, 1.6)) go(); else walkTo(...d, go); return; }
   if (def.special === 'travel') { const go = () => showIsland(); const d = approachOf(target.o); if (near(...d, 1.3)) go(); else walkTo(...d, go); return; }
   if (def.coins < 0 && S.coins < -def.coins) { toast('Not enough coins for that.'); return; }
@@ -4579,7 +4724,7 @@ $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 700);
 
 // Small read-only hook for automated play-testing.
-window.__willowvale = { state: S, follow: on => toggleFollow(on), leaveHome: () => leaveHome(),camera: () => ({ x: cam.x, y: cam.y, zoom: cam.zoom, lead: [...cam.lead], player: A.P(player.x, player.y, 34) }),quests: () => questState(), news: () => S.progress.news, growth: () => S.progress.growth[C.id], greet: name => { const n = npcs.find(x => x.name === name); if (!n) return null; delete S.progress.daily['greet:' + gameDay() + ':' + n.name]; greetPlayer(n); return n.line; }, townNews: (ev, also) => townNews(ev, also), gossip: (a, b) => TL.gossip(S.progress.news, a, b, () => 0), sprouts: () => things.filter(t => t.o && t.o.sprout).length, step: (i, j, n = 1) => { for (let k = 0; k < n; k++) TL.stepOn(growthOf(C.id), cityWorld, i, j); }, checkQuests: () => checkQuests(), open: k => ({ barn: showBarn, bank: showBank, festival: showFestival, homes: showHomes, places: showPlaces, friends: showFriends, journal: showJournal, profile: showProfile, shop: showShop, island: showIsland, market: showMarket, craft: showCraft, restore: showRestore, settings: showSettings, wardrobe: showWardrobe, needs: showNeeds, districts: showDistricts, adminLogin: showAdminLogin, venue: () => showVenue(C.venues[0]), home: () => showHome(cityWorld.objects.find(o => o.home)), neighbour: () => showNeighbour(cityNpcs.find(n => !n.generic)), chat: () => showEmojiChat(cityNpcs.find(n => !n.generic)) })[k](),
+window.__willowvale = { state: S, follow: on => toggleFollow(on), leaveHome: () => leaveHome(),camera: () => ({ x: cam.x, y: cam.y, zoom: cam.zoom, lead: [...cam.lead], player: A.P(player.x, player.y, 34) }),quests: () => questState(), news: () => S.progress.news, growth: () => S.progress.growth[C.id], greet: name => { const n = npcs.find(x => x.name === name); if (!n) return null; delete S.progress.daily['greet:' + gameDay() + ':' + n.name]; greetPlayer(n); return n.line; }, townNews: (ev, also) => townNews(ev, also), gossip: (a, b) => TL.gossip(S.progress.news, a, b, () => 0), sprouts: () => things.filter(t => t.o && t.o.sprout).length, step: (i, j, n = 1) => { for (let k = 0; k < n; k++) TL.stepOn(growthOf(C.id), cityWorld, i, j); }, checkQuests: () => checkQuests(), open: k => ({ store: showStore, stall: showStall, barn: showBarn, bank: showBank, festival: showFestival, homes: showHomes, places: showPlaces, friends: showFriends, journal: showJournal, profile: showProfile, shop: showShop, island: showIsland, market: showMarket, craft: showCraft, restore: showRestore, settings: showSettings, wardrobe: showWardrobe, needs: showNeeds, districts: showDistricts, adminLogin: showAdminLogin, venue: () => showVenue(C.venues[0]), home: () => showHome(cityWorld.objects.find(o => o.home)), neighbour: () => showNeighbour(cityNpcs.find(n => !n.generic)), chat: () => showEmojiChat(cityNpcs.find(n => !n.generic)) })[k](),
   birds: () => (C ? birdsFor(C).map(b => ({ x: +b.x.toFixed(2), y: +b.y.toFixed(2), fly: b.fly > 0, gone: b.gone > 0 })) : []), tapBird: () => { const b = C && birdsFor(C).find(x => !x.fly && !x.gone); return b ? tapBirds(b.x, b.y) : false; }, shakeNearestTree: () => { const t = things.filter(x => x.o && x.o.kind === 'tree').sort((a, b) => Math.hypot(a.ax - player.x, a.ay - player.y) - Math.hypot(b.ax - player.x, b.ay - player.y))[0]; if (!t) return false; const d = actionsFor('tree')[0]; queueAction(d, { o: t.o }); return t.o.tree; }, homeCount: () => world.objects.filter(o => o.home).length, treeCount: () => things.filter(t => t.o && t.o.kind === 'tree').length,
   pieList: () => { const out = [], seen = new Set(); for (const t of things) { const o = t.o; if (!t.interactive || !o) continue; const key = o.type || o.kind; if (seen.has(key)) continue; seen.add(key); out.push(key); } for (const n of npcs) if (npcVisible(n) && !seen.has('npc')) { seen.add('npc'); out.push('npc'); } return out; },
   pieFor: key => { closeSheet(); if (key === 'npc') { const n = npcs.find(n => npcVisible(n)); if (n) showPie({ npc: n }, W / 2, H / 2); return !!n; } const t = things.find(t => t.interactive && t.o && (t.o.type || t.o.kind) === key); if (t) showPie({ o: t.o }, W / 2, H / 2); return !!t; }, cancel: () => cancelActions(), peers: () => shownPeers().map(p => ({ name: p.name, x: +p.x.toFixed(2), y: +p.y.toFixed(2), emote: p.emote || null })), allPeers: () => [...peers.values()].map(p => ({ name: p.name, scene: p.scene })), emoteTo: e => sendEmote(e, [...peers.values()][0]), screenOf: (x, y, z = 0) => toScreen(x, y, z), scene: () => sceneName, current: () => (act ? act.item.label + ':' + act.phase : null), player: () => ({ x: player.x, y: player.y, pose: player.pose, dir: player.dir }), furniture: type => { const t = things.find(x => x.o && x.o.type === type); return t ? t.o : null; }, run: (type, label) => { const t = things.find(x => x.o && (x.o.type === type || x.o.kind === type || x.o.id === type)) || flats.map(f => ({ o: f.obj })).find(x => x.o && x.o.id === type); const def = t && actionsFor(kindKey(t.o)).find(d => d.label === label); if (def) queueAction(def, { o: t.o }); return !!def; }, npcNear: () => { const n = npcs.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; return n ? n.name : null; }, leave: () => leaveHome(), npcs: () => cityNpcs.map(n => ({ name: n.name, x: n.x, y: n.y, doing: n.doing, task: n.task && n.task.kind, inside: n.pose === 'inside', mood: Math.round(mood(n.needs)) })), skills: () => JSON.stringify(S.progress.skills), job: () => JSON.stringify(S.progress.jobs), setClock: m => { const d0 = Math.floor(S.progress.clock / 1440); S.progress.clock = m; if (Math.floor(m / 1440) !== d0 && C) growCity(C); }, showNeighbour: name => showNeighbour(cityNpcs.find(x => x.name === name)), city: () => C.id, enterVenue: id => enterVenue(C.venues.find(v => v.id === id)), npcs2: () => npcs.map(n => n.name + (n.pose ? ':' + n.pose : '')).join(','), runFurn: type => { const t = things.find(x => x.o && x.o.type === type); if (!t) return false; const d = actionsFor(kindKey(t.o))[0]; queueAction(d, { o: t.o }); return d.label; }, boat: () => startBoat(), profile: () => showProfile(), zoomAt: (x, y, zz) => { cam.manual = true; cam.free = true; const q = A.P(x, y, 0); cam.x = q[0]; cam.y = q[1]; cam.zoom = zz; }, plot: (k, opt) => { const f = flats.find(x => x.furn && x.furn.type === 'plot' && x.furn.plot === k); if (!f) return false; const o2 = plotOptions(f.furn)[opt]; if (o2 && !o2.disabled) { o2.run(); return o2.label; } return o2 && o2.label + ' (disabled)'; }, pickups: () => livePickups().length, grabNearest: () => { const p2 = nearestPickup(player.x, player.y, 40); if (p2) collectPickup(p2); return p2 && p2.item; }, sheet: k => ({ market: showMarket, craft: showCraft, restore: showRestore, journal: showJournal })[k](), closeSheet: () => closeSheet(), goGarden: () => { const g = CITIES.willowvale.garden; setScene('city', g.stand[0], g.stand[1] + 1); }, noSprite: () => things.filter(t => !t.sprite && !t.live).map(t => t.o.kind + ':' + (t.o.style || t.o.lm || t.o.type || '')), homesList: () => world.objects.filter(o => o.home).map(o => [o.name, o.i, o.j, o.style || o.kind]), cab: g => { const t = things.find(x => x.o && x.o.type === 'arcadecab' && x.o.game === g); queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, runCab: () => { const t = things.find(x => x.o && x.o.type === 'arcadecab'); if (!t) return false; queueAction({ id: 'play', special: 'game', coins: -1, label: 'Play' }, { o: t.o }); }, teleport: (x, y) => setScene('city', x, y), walk: (x, y) => walkTo(x, y), walkable: (i, j) => !!world.walkable(i, j), yardOk: (x, y) => critterOk(x, y), venues: () => C.venues.map(v => [v.id, v.i, v.j]), travel: id => travelTo(id), island: () => showIsland(), shop: () => showShop(), unlockAll: () => { for (const c of CITY_LIST) S.progress.unlocked[c.id] = 1; }, coins: n => setCoins(n), homes: () => showHomes(), property: () => showProperty(), roll: () => rollNow(), draw: kind => { const E = estate(), T = diceTown(); if (!kind) return drawNow(); const you = { coins: S.coins }; const out = FT.draw(E, T, you, dayNo(), Math.random, C.id, { kind }); if (!out.ok) return out.msg; setCoins(you.coins, true); showDraw(out, settle(out.costs)); return out.card.title; }, leaders: () => showLeaderboard(), debt: () => estate().debt, diceTown: () => diceTown(), popIn: id => popIn(C.venues.find(v => v.id === id)), popping: () => !!popping, goPrompt: () => [...document.querySelectorAll('#go-prompt button')].map(b => b.textContent), auction: () => showAuction(), farm: () => ({ animals: FM.ensure(S.progress).animals, pet: S.progress.farm.pet, critters: farmCritters().map(c => [c.animal.name, c.id, +c.x.toFixed(1), +c.y.toFixed(1), c.mode]), petAt: petCritter && [+petCritter.x.toFixed(1), +petCritter.y.toFixed(1), petCritter.mode] }), visitors: () => gardenCritters().map(v => [v.id, +v.x.toFixed(1), +v.y.toFixed(1)]), nature: () => ({ ...(S.progress.nature || {}) }), bank: () => ({ ...BK.ensure(S.progress) }), fest: () => fest, festRelease: (c, s) => releaseLantern(c || 'gold', s || '🌙'), style: () => showStyle(), homeStyle: () => homeStyleOf(homeKey()), homeKey: () => homeKey(), estate: () => S.progress.estate, morning: () => { estate().lastMorning = -1; estateMorning(); return estate().post; }, chat: name => { const n = npcs.find(x => x.name === name); if (n) meetThen(n, () => showEmojiChat(n)); } };
