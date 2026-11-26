@@ -2,10 +2,18 @@ import {once} from 'node:events'
 import type {IncomingMessage, ServerResponse} from 'node:http'
 import {context, reddit} from '@devvit/web/server'
 import type {PartialJsonValue, UiResponse} from '@devvit/web/shared'
+import {
+  daysLeft,
+  goalAfter,
+  okColor,
+  okSymbol,
+} from '../../../public/js/festival.js'
 import type {
   BoardRsp,
   DailyReq,
   DailyRsp,
+  FestReq,
+  FestRsp,
   MeRsp,
   RichReq,
   RichRsp,
@@ -25,6 +33,9 @@ import {
 import {
   claimPost,
   deletePlayer,
+  doneOn,
+  festGoal,
+  festState,
   finishedCount,
   firstFinishers,
   getHomes,
@@ -35,7 +46,9 @@ import {
   putRich,
   putSave,
   rankOf,
+  releaseLantern,
   releasePost,
+  removeFest,
   removeRich,
   richRank,
   saveStreak,
@@ -93,6 +106,9 @@ async function route(req: IncomingMessage): Promise<PartialJsonValue> {
     return routeDaily(await readJson<DailyReq>(req))
   if (path === 'api/board' && m === 'GET') return routeBoard()
   if (path === 'api/share' && m === 'POST') return routeShare()
+  if (path === 'api/festival' && m === 'GET') return routeFestGet()
+  if (path === 'api/festival' && m === 'POST')
+    return routeFestPost(await readJson<FestReq>(req))
   if (path === 'api/rich' && m === 'GET') return routeRichGet()
   if (path === 'api/rich' && m === 'POST')
     return routeRichPost(await readJson<RichReq>(req))
@@ -316,8 +332,61 @@ async function routeSaveDelete(): Promise<{ok: true}> {
   const id = needUser()
   await deletePlayer(id)
   const week = weekOf(dayNoOf())
-  await Promise.all([removeRich(week, id), removeRich(week - 1, id)])
+  await Promise.all([
+    removeRich(week, id),
+    removeRich(week - 1, id),
+    removeFest(week, id),
+  ])
   return {ok: true}
+}
+
+// ---------- the Community Night Festival ----------
+
+async function routeFestGet(): Promise<FestRsp> {
+  const dayNo = dayNoOf()
+  const week = weekOf(dayNo)
+  const id = context.userId
+  const [goal, st, done] = await Promise.all([
+    festGoal(week, goalAfter),
+    festState(week, dayNo, id, 60),
+    id ? doneOn(dayNo, id) : Promise.resolve(false),
+  ])
+  return {
+    week,
+    total: st.total,
+    goal,
+    lit: st.total >= goal,
+    daysLeft: daysLeft(dayNo),
+    mine: st.mine,
+    released: st.released,
+    canRelease: !!id && done && !st.released,
+    lanterns: st.lanterns,
+  }
+}
+async function routeFestPost(req: FestReq): Promise<FestRsp> {
+  const id = needUser()
+  const dayNo = dayNoOf()
+  if (!okColor(String(req?.color)) || !okSymbol(String(req?.symbol)))
+    throw new HttpError(400, 'Pick a lantern colour and symbol.')
+  if (!(await doneOn(dayNo, id)))
+    throw new HttpError(
+      403,
+      'Finish today’s three errands first, then release your lantern.',
+    )
+  const fresh = await releaseLantern(
+    weekOf(dayNo),
+    dayNo,
+    id,
+    context.username ?? 'someone',
+    req.color,
+    req.symbol,
+  )
+  if (!fresh)
+    throw new HttpError(
+      409,
+      'You’ve released today’s lantern. Come back tomorrow for another.',
+    )
+  return routeFestGet()
 }
 
 // ---------- Paws & Properties: the weekly leaderboard ----------

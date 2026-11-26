@@ -60,6 +60,12 @@ const fake: {[k: string]: unknown} = {
     return ms.length
   },
   zCard: async (k: string) => Z(k).size,
+  zIncrBy: async (k: string, m: string, n: number) => {
+    const v = (Z(k).get(m) ?? 0) + n
+    Z(k).set(m, v)
+    return v
+  },
+  zScore: async (k: string, m: string) => Z(k).get(m),
   zRem: async (k: string, ms: string[]) => {
     for (const m of ms) Z(k).delete(m)
     return ms.length
@@ -324,6 +330,48 @@ test('the weekly property leaderboard ranks players and forgets deleted ones', a
     (await call('api/rich', 'POST', {worth: 1, homes: 0})).status,
     401,
   )
+})
+
+test('the night festival: one lantern a day after the errands, counted for everyone', async () => {
+  const lantern = {color: 'rose', symbol: '🌸'}
+  // errands not done yet: no lantern
+  assert.equal((await call('api/festival', 'POST', lantern)).status, 403)
+  await call('api/daily', 'POST', {
+    dayNo: dayNoOf(),
+    done: errandsFor(dayNoOf()).map(e => e.id),
+  })
+  assert.equal(
+    (await call('api/festival', 'POST', {color: 'x', symbol: '🌸'})).status,
+    400,
+  )
+  const r = (await call('api/festival', 'POST', lantern)).json as {
+    total: number
+    goal: number
+    mine: number
+    released: boolean
+    canRelease: boolean
+    lanterns: {name: string; color: string}[]
+  }
+  assert.equal(r.total, 1)
+  assert.equal(r.goal, 20)
+  assert.equal(r.mine, 1)
+  assert.ok(r.released && !r.canRelease)
+  assert.deepEqual(
+    r.lanterns.map(l => [l.name, l.color]),
+    [['alice', 'rose']],
+  )
+  // only one a day
+  assert.equal((await call('api/festival', 'POST', lantern)).status, 409)
+  // someone else sees the shared count
+  user = {userId: 't2_b', username: 'bob'}
+  const b = (await call('api/festival')).json as {
+    total: number
+    canRelease: boolean
+  }
+  assert.equal(b.total, 1)
+  assert.equal(b.canRelease, false)
+  user = {}
+  assert.equal((await call('api/festival', 'POST', lantern)).status, 401)
 })
 
 test('sharing replies to the app’s pinned comment, as the player', async () => {

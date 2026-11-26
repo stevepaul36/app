@@ -10,6 +10,11 @@ import {redis} from '@devvit/web/server'
 //   wv:pin:{postId}           id of the app's pinned comment that shared results reply to
 //   wv:rich:{week}            sorted set userId -> Paws & Properties net worth this week (weeks start on Monday)
 //   wv:rich:{week}:info       hash userId -> JSON {name, homes}
+//   wv:fest:{week}            sorted set userId -> lanterns they released this week (Night Festival)
+//   wv:fest:{week}:info       hash userId -> JSON {name, color, symbol} of their latest lantern
+//   wv:fest:{week}:days       hash "{userId}:{dayNo}" -> 1, so a player releases one lantern a day
+//   wv:fest:{week}:total      lanterns released this week by everyone
+//   wv:fest:{week}:goal       lanterns needed this week, set from last week's total
 //
 // Data about a player (save, streak, finish lists with usernames) expires on its own: saves and
 // streaks 30 days after the player last played, finish lists after 3 days. Reddit asks apps to drop
@@ -27,6 +32,94 @@ const K = {
   pin: (postId: string) => `wv:pin:${postId}`,
   rich: (w: number) => `wv:rich:${w}`,
   richInfo: (w: number) => `wv:rich:${w}:info`,
+  fest: (w: number) => `wv:fest:${w}`,
+  festInfo: (w: number) => `wv:fest:${w}:info`,
+  festDays: (w: number) => `wv:fest:${w}:days`,
+  festTotal: (w: number) => `wv:fest:${w}:total`,
+  festGoal: (w: number) => `wv:fest:${w}:goal`,
+}
+/** Festival data lasts three weeks, so next week's goal can read this week's total. */
+export const FEST_TTL = 21 * 24 * 60 * 60
+/** Lanterns needed this week: fixed the first time anyone asks, from last week's total. */
+export async function festGoal(
+  week: number,
+  goalAfter: (prev: number) => number,
+): Promise<number> {
+  const have = await redis.get(K.festGoal(week))
+  if (have) return Number(have)
+  const prev = Number((await redis.get(K.festTotal(week - 1))) ?? 0)
+  const goal = goalAfter(prev)
+  await redis.set(K.festGoal(week), `${goal}`)
+  await redis.expire(K.festGoal(week), FEST_TTL)
+  return goal
+}
+/** Did this player finish the day's errands? */
+export async function doneOn(dayNo: number, id: string): Promise<boolean> {
+  return (await redis.hGet(K.names(dayNo), id)) != null
+}
+/** Release today's lantern. False if this player already released one today. */
+export async function releaseLantern(
+  week: number,
+  dayNo: number,
+  id: string,
+  name: string,
+  color: string,
+  symbol: string,
+): Promise<boolean> {
+  const fresh = await redis.hSetNX(K.festDays(week), `${id}:${dayNo}`, '1')
+  if (fresh !== 1) return false
+  await redis.zIncrBy(K.fest(week), id, 1)
+  await redis.hSet(K.festInfo(week), {
+    [id]: JSON.stringify({name, color, symbol}),
+  })
+  await redis.incrBy(K.festTotal(week), 1)
+  await Promise.all(
+    [K.fest, K.festInfo, K.festDays, K.festTotal].map(k =>
+      redis.expire(k(week), FEST_TTL),
+    ),
+  )
+  return true
+}
+export async function festState(
+  week: number,
+  dayNo: number,
+  id: string | undefined,
+  n: number,
+): Promise<{
+  total: number
+  mine: number
+  released: boolean
+  lanterns: {name: string; color: string; symbol: string}[]
+}> {
+  const total = Number((await redis.get(K.festTotal(week))) ?? 0)
+  const mine = id ? ((await redis.zScore(K.fest(week), id)) ?? 0) : 0
+  const released = id
+    ? (await redis.hGet(K.festDays(week), `${id}:${dayNo}`)) != null
+    : false
+  const count = await redis.zCard(K.fest(week))
+  const rows = count
+    ? await redis.zRange(K.fest(week), Math.max(0, count - n), count - 1, {
+        by: 'rank',
+      })
+    : []
+  const lanterns = []
+  for (const {member, score} of rows.reverse()) {
+    const info = JSON.parse(
+      (await redis.hGet(K.festInfo(week), member)) ?? '{}',
+    ) as {name?: string; color?: string; symbol?: string}
+    // one lantern in the sky for each one this player released, up to 7 a week
+    for (let k = 0; k < Math.min(7, score); k++)
+      lanterns.push({
+        name: info.name ?? 'someone',
+        color: info.color ?? 'gold',
+        symbol: info.symbol ?? '🌙',
+      })
+  }
+  return {total, mine, released, lanterns: lanterns.slice(0, n)}
+}
+export async function removeFest(week: number, id: string): Promise<void> {
+  await redis.zRem(K.fest(week), [id])
+  await redis.hDel(K.festInfo(week), [id])
 }
 /** Leaderboards last two weeks, then delete themselves. */
 export const RICH_TTL = 14 * 24 * 60 * 60

@@ -41,6 +41,21 @@ export type RichRsp = {
   count: number
 }
 
+/** The Community Night Festival: lanterns everyone releases this week. */
+export type FestLantern = {name: string; color: string; symbol: string}
+export type FestReq = {color: string; symbol: string}
+export type FestRsp = {
+  week: number
+  total: number
+  goal: number
+  lit: boolean
+  daysLeft: number
+  mine: number
+  released: boolean
+  canRelease: boolean
+  lanterns: FestLantern[]
+}
+
 /** Willowvale's own save API, same shape as the web version's server. */
 export type MeRsp = {user: {username: string}}
 export type SaveGetRsp = {data: unknown; version: number; updatedAt?: string}
@@ -55,6 +70,7 @@ export const Endpoint = {
   Save: 'api/save',
   Properties: 'api/properties',
   Rich: 'api/rich',
+  Festival: 'api/festival',
   OnAppInstall: 'internal/on/app/install',
   OnMenuNewPost: 'internal/on/menu/new-post',
   OnDailyPost: 'internal/scheduler/daily-post',

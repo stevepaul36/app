@@ -165,6 +165,7 @@ function showDone(d: DailyRsp | null): void {
       <p class="rd-note">You planted something in the town everyone here shares. Look around for it! New errands tomorrow.</p>
       <button class="rd-go rd-share" type="button">💬 Comment as u/${esc(user?.username ?? 'you')}</button>
       <p class="rd-note">Posts your result from your Reddit account, as a reply to the pinned comment on this post.</p>
+      <button class="rd-go rd-fest" type="button">🏮 Release a lantern for the Night Festival</button>
       <button class="rd-soft rd-close" type="button">Keep playing</button>`)
     : el(`<h2>All of today’s errands done! 🏡</h2>
       <p class="rd-note">Log in to Reddit to count your streak and add your home to the town.</p>
@@ -172,6 +173,10 @@ function showDone(d: DailyRsp | null): void {
       <button class="rd-soft rd-close" type="button">Keep playing</button>`)
   inner.querySelector('.rd-close')?.addEventListener('click', () => {
     card.hidden = true
+  })
+  inner.querySelector('.rd-fest')?.addEventListener('click', () => {
+    card.hidden = true
+    window.__willowvale?.open('festival')
   })
   inner
     .querySelector('.rd-login')
