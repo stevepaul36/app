@@ -44,7 +44,7 @@ export function furnitureSprite(f, part) {
   const t = f.type;
   if (t === 'sofa' && part) return spriteFor(f.w, f.d, 60, ctx => couch(ctx, f.w, sty(f).sofa, part));
   if (t === 'bed') return spriteFor(f.w, f.d, { canopy: 140, bunk: 120 }[sty(f).bed] || 60, ctx => DRAW.bed(ctx, f));
-  const tall = { plot: 20, workbench: 80, d_plantpot: 70, d_lamp: 110, d_stool: 40, d_bookstack: 50, d_teddy: 60, d_aquarium: 80, d_vase: 70, d_jackolantern: 50, d_rug: 6, d_shellchime: 120, d_cot: 60, d_beanbag: 40, d_piano: 100, d_fireplace: 110, d_grandclock: 130, d_toybox: 45, d_tallshelf: 120, d_cosychair: 60, d_sidetable: 55, d_easel: 110, barcounter: 90, pastrycase: 60, menuboard: 130, cafetable: 50, cafechair: 50, shelf: 110, shelf2: 70, till: 70, arcadecab: 110, claw: 120, prizes: 80, stool: 40, exhibit: 110, screen: 130, seat: 50, popcorn: 90, treadmill: 70, weights: 70, mat: 10, officedesk: 80, labbench: 80, crafttable: 60, wardrobe: 120, bed: 60, bookshelf: 110, shower: 110, fridge: 110, sink: 100, tv: 80, sofa: 50, armchair: 50, desk: 80, plant: 80, floorlamp: 110, radio: 50, nightstand: 60, mailbox: 50 }[t] || 50;
+  const tall = { plot: 20, workbench: 80, d_plantpot: 70, d_lamp: 110, d_stool: 40, d_bookstack: 50, d_teddy: 60, d_aquarium: 80, d_vase: 70, d_jackolantern: 50, d_rug: 6, d_shellchime: 120, d_cot: 60, d_beanbag: 40, d_piano: 100, d_fireplace: 110, d_grandclock: 130, d_toybox: 45, d_tallshelf: 120, d_cosychair: 60, d_sidetable: 55, d_easel: 110, d_pond: 16, d_birdbath: 60, d_beehotel: 90, d_feeder: 100, d_logpile: 40, barcounter: 90, pastrycase: 60, menuboard: 130, cafetable: 50, cafechair: 50, shelf: 110, shelf2: 70, till: 70, arcadecab: 110, claw: 120, prizes: 80, stool: 40, exhibit: 110, screen: 130, seat: 50, popcorn: 90, treadmill: 70, weights: 70, mat: 10, officedesk: 80, labbench: 80, crafttable: 60, wardrobe: 120, bed: 60, bookshelf: 110, shower: 110, fridge: 110, sink: 100, tv: 80, sofa: 50, armchair: 50, desk: 80, plant: 80, floorlamp: 110, radio: 50, nightstand: 60, mailbox: 50 }[t] || 50;
   return spriteFor(f.w, f.d, tall, ctx => DRAW[t] && DRAW[t](ctx, f));
 }
 
@@ -119,6 +119,45 @@ const DRAW = {
     box(ctx, 0.46, 0.46, 0, 0.08, 0.08, 30, '#8C5A3C');
     const [x, y] = P(0.5, 0.5, 30); ctx.fillStyle = '#C98A4B'; ctx.beginPath(); ctx.ellipse(x, y, 20, 10, 0, 0, 7); ctx.fill(); ctx.strokeStyle = '#9B6A37'; ctx.stroke();
     ctx.fillStyle = '#FFFFFF'; ctx.fillRect(x - 4, y - 10, 8, 9); ctx.fillStyle = '#8C5A3C'; ctx.fillRect(x - 3, y - 9, 6, 3); blob(ctx, x + 10, y - 3, 3, '#F0587A');
+  },
+  d_pond(ctx) {
+    const [x, y] = P(0.5, 0.5, 0);
+    ctx.fillStyle = '#9AA6A2'; ctx.beginPath(); ctx.ellipse(x, y, 30, 15, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#4FA9DE'; ctx.beginPath(); ctx.ellipse(x, y, 26, 12, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#86CDF2'; ctx.beginPath(); ctx.ellipse(x - 6, y - 3, 10, 4, 0, 0, 7); ctx.fill();
+    for (const [a, b] of [[-12, 3], [10, -2], [4, 6]]) { ctx.fillStyle = '#4FAE5A'; ctx.beginPath(); ctx.ellipse(x + a, y + b, 5, 2.6, 0, 0.3, 6.1); ctx.lineTo(x + a, y + b); ctx.fill(); }
+    blob(ctx, x + 10, y - 4, 2.6, '#FF8FB8'); blob(ctx, x + 10, y - 4, 1.2, '#FFE38A');
+    for (const [a, b] of [[-26, 4], [24, -5], [-14, -11], [16, 10]]) blob(ctx, x + a, y + b, 3.2, '#B5BFBB');
+  },
+  d_birdbath(ctx) {
+    const [x, y] = P(0.5, 0.5, 0);
+    ctx.fillStyle = '#B9C2C6'; ctx.beginPath(); ctx.ellipse(x, y, 9, 4, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#C9D1D4'; ctx.fillRect(x - 4, y - 36, 8, 36);
+    ctx.fillStyle = '#DCE3E6'; ctx.beginPath(); ctx.ellipse(x, y - 38, 18, 7, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#6CC4FF'; ctx.beginPath(); ctx.ellipse(x, y - 39, 14, 5, 0, 0, 7); ctx.fill();
+  },
+  d_beehotel(ctx) {
+    const [x, y] = P(0.5, 0.5, 0);
+    ctx.fillStyle = '#8C5A3C'; ctx.fillRect(x - 2.5, y - 40, 5, 40);
+    ctx.fillStyle = '#C98A4B'; ctx.fillRect(x - 15, y - 76, 30, 36);
+    ctx.fillStyle = '#A0703E'; ctx.beginPath(); ctx.moveTo(x - 19, y - 76); ctx.lineTo(x, y - 90); ctx.lineTo(x + 19, y - 76); ctx.closePath(); ctx.fill();
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) blob(ctx, x - 9 + c * 9, y - 68 + r * 10, 3, '#5A3A22');
+  },
+  d_feeder(ctx) {
+    const [x, y] = P(0.5, 0.5, 0);
+    ctx.fillStyle = '#8C5A3C'; ctx.fillRect(x - 2.5, y - 62, 5, 62);
+    ctx.fillStyle = '#D9A066'; ctx.fillRect(x - 13, y - 84, 26, 22);
+    ctx.fillStyle = '#E8823A'; ctx.beginPath(); ctx.moveTo(x - 17, y - 84); ctx.lineTo(x, y - 96); ctx.lineTo(x + 17, y - 84); ctx.closePath(); ctx.fill();
+    for (let k = 0; k < 5; k++) blob(ctx, x - 8 + k * 4, y - 66 - (k % 2) * 3, 2.4, '#7A4A2A');
+  },
+  d_logpile(ctx) {
+    const [x, y] = P(0.5, 0.5, 0);
+    for (const [a, b] of [[-10, -6], [10, -6], [0, -18]]) {
+      ctx.fillStyle = '#8C5A3C'; ctx.beginPath(); ctx.ellipse(x + a, y + b, 16, 7, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#E3C08F'; ctx.beginPath(); ctx.ellipse(x + a + 13, y + b, 4.5, 6, 0, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#A0703E'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(x + a + 13, y + b, 2.2, 3.2, 0, 0, 7); ctx.stroke();
+    }
+    blob(ctx, x - 14, y - 12, 3, '#4FAE5A');
   },
   d_easel(ctx) {
     const [x, y] = P(0.5, 0.55, 0); ctx.strokeStyle = '#8C5A3C'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 14, y); ctx.lineTo(x, y - 80); ctx.lineTo(x + 14, y); ctx.moveTo(x, y - 80); ctx.lineTo(x + 4, y + 4); ctx.stroke();

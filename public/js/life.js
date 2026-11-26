@@ -61,6 +61,12 @@ export const ITEMS = {
   cosychair: { icon: '🛋️', one: 'cosy chair', many: 'cosy chairs', cat: 'decor', price: 20 },
   sidetable: { icon: '☕', one: 'side table', many: 'side tables', cat: 'decor', price: 12 },
   easel: { icon: '🎨', one: 'painting easel', many: 'painting easels', cat: 'decor', price: 18 },
+  // yard items: place them outside and wildlife comes to visit (see habitat.js)
+  pond: { icon: '🪷', one: 'lily pond', many: 'lily ponds', cat: 'decor', price: 40, yard: true },
+  birdbath: { icon: '⛲', one: 'bird bath', many: 'bird baths', cat: 'decor', price: 26, yard: true },
+  beehotel: { icon: '🐝', one: 'bee hotel', many: 'bee hotels', cat: 'decor', price: 22, yard: true },
+  feeder: { icon: '🌰', one: 'nut feeder', many: 'nut feeders', cat: 'decor', price: 18, yard: true },
+  logpile: { icon: '🪵', one: 'log pile', many: 'log piles', cat: 'decor', price: 12, yard: true },
 };
 export const itemName = (k, n) => (n === 1 ? ITEMS[k].one : ITEMS[k].many);
 export const CATS = { crop: 'Crops', bug: 'Bugs', fish: 'Fish', material: 'Materials', nature: 'Nature', made: 'Made by you', decor: 'Furniture', food: 'Food', seed: 'Seeds' };
