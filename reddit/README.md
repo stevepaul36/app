@@ -76,6 +76,11 @@ New in the game itself during the hackathon (so it's on the web too):
   sunglasses, bandana, flower).
 - **Pop in to places:** tap a café, library or cinema and your animal walks in, has a drink, reads or
   watches a film, then comes back out with the reward.
+- **Proper nights, with each town's own floating lights:** nights are darker, and street lamps cast
+  pools of light, windows glow and your animal carries a soft light of their own. Each town fills
+  the sky with something different after dark: fireflies in Willowvale, leaf lanterns in Maple Row,
+  neon drones in Skyhaven, star orbs in Lumen Labs, sky lanterns in the Lantern Quarter, petal
+  wisps on Sakura Hill and floating diyas in Marigold Bazaar.
 - **A green prompt by every door:** walk up to a door and a green button offers to go in, go out,
   do the day's activity, or take the bus.
 - **Home Designer: make every home your own.** Pick one of eight whole-house themes (Sunny Meadow,
