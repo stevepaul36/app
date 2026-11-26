@@ -83,10 +83,15 @@ New in the game itself during the hackathon (so it's on the web too):
   and the total you'd repay. Each morning your savings pay off a loan first. Tap the debt chip or
   Paws & Properties → Bank.
 - **🌿 Habitat garden and Nature Journal:** put a lily pond, bird bath, bee hotel, nut feeder or log
-  pile outside your home and grow crops, and wildlife comes to visit: frogs, ducks, snails in the
-  rain, songbirds, bumblebees, butterflies, ladybirds, squirrels, hedgehogs, wild rabbits and owls
-  after dark. Walk up to a new visitor to add it to your Nature Journal (+✦ 20). The journal shows
-  what each one likes, and finding all 11 pays a ✦ 150 bonus.
+  pile outside your home and grow crops, and wildlife comes to visit, each one drawn in code and
+  behaving like the real animal, at the times it's really about. Frogs sit by the pond and hop along
+  its edge or dive in; mallards glide and dabble on the water by day; robins drink at the bird bath
+  and hop on the lawn; red squirrels nibble at the feeder and dash about in bursts; mason bees and
+  butterflies visit your flower beds on dry days; ladybirds crawl over crops; snails come out in the
+  rain or at night and leave a silvery trail; wild rabbits hop and nibble your vegetables at dawn and
+  dusk; hedgehogs shuffle and snuffle from the log pile at dusk; and tawny owls watch from it after
+  dark. Walk up to a new visitor to add it to your Nature Journal (+✦ 20). The journal shows what each
+  one likes, and finding all 11 pays a ✦ 150 bonus.
 - **Style your animal:** pick eyes (11 styles and 8 colours), brows, expression and cheeks, plus new
   hair, tops (jacket, smart suit, sports top), jeans and hats (top hat, wizard hat, halo,
   sunglasses, bandana, flower).
