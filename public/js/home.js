@@ -6,7 +6,21 @@ export const HT = { WOOD: 9, TILE: 10, CARPET: 11, BATH: 12 };
 export const O = [16, 16];
 export const ROOM = { w: 12, d: 10 };
 
-export function buildHome() {
+export const HOME_LAYOUTS = [
+  { id: 'classic', name: 'Room by room', description: 'Cosy rooms with clear boundaries' },
+  { id: 'open', name: 'Open plan', description: 'One bright shared living space' },
+  { id: 'studio', name: 'Garden studio', description: 'Open living space with a private bathroom' },
+  { id: 'loft', name: 'Loft and nook', description: 'A tucked-away bedroom and connected lounge' },
+];
+export const GARDEN_LAYOUTS = [
+  { id: 'mixed', name: 'Mixed beds', description: 'Six beds in two small rows' },
+  { id: 'rows', name: 'Long rows', description: 'Six beds lined along the front garden' },
+  { id: 'orchard', name: 'Side garden', description: 'A curved group of beds along the side yard' },
+];
+
+export function buildHome(layout = 'classic', garden = 'mixed') {
+  if (!HOME_LAYOUTS.some(x => x.id === layout)) layout = 'classic';
+  if (!GARDEN_LAYOUTS.some(x => x.id === garden)) garden = 'mixed';
   const tiles = new Uint8Array(N * N), blocked = new Uint8Array(N * N);
   const idx = (i, j) => j * N + i, inb = (i, j) => i >= 0 && j >= 0 && i < N && j < N;
   const get = (i, j) => (inb(i, j) ? tiles[idx(i, j)] : T.SEA);
@@ -32,9 +46,16 @@ export function buildHome() {
   run('j', 0, 0, ROOM.d, 'back', { windows: [2, 7], room: k => roomOf(0, k) });
   run('i', ROOM.d, 0, ROOM.w, 'front', { gaps: [9] });
   run('j', ROOM.w, 0, ROOM.d, 'front');
-  run('j', 5, 0, 5, 'part', { gaps: [3] });       // bedroom | living
-  run('i', 5, 0, 5, 'part');                      // bedroom / bathroom + living
-  run('j', 4, 5, ROOM.d, 'part', { gaps: [6] });  // bathroom | living
+  if (layout === 'classic') {
+    run('j', 5, 0, 5, 'part', { gaps: [3] });       // bedroom | living
+    run('i', 5, 0, 5, 'part');                      // bedroom / bathroom + living
+    run('j', 4, 5, ROOM.d, 'part', { gaps: [6] });  // bathroom | living
+  } else if (layout === 'studio') {
+    run('j', 4, 5, ROOM.d, 'part', { gaps: [6] });  // keep the bathroom private
+  } else if (layout === 'loft') {
+    run('j', 5, 0, 5, 'part', { gaps: [3] });       // bedroom nook
+    run('i', 5, 0, 5, 'part');
+  }
   const edgeSet = new Set();
   const block = (a, b, c, d) => { edgeSet.add(`${a},${b},${c},${d}`); edgeSet.add(`${c},${d},${a},${b}`); };
   for (const w of walls) {
@@ -72,8 +93,13 @@ export function buildHome() {
   add('bathrug', 1, 8, 2, 1, 'Bath mat', { flat: true });
   add('doormat', 9, 9, 1, 1, 'Front door', { flat: true, stand: [9.5, 9.5], door: true });
   add('mailbox', 11, 12, 1, 1, 'Mailbox', { stand: [10.5, 12.5], look: [11.5, 12.5] });
-  // the vegetable garden in front of the cottage, and a workbench
-  for (let k = 0; k < 6; k++) add('plot', 1 + (k % 3) * 2, 11 + Math.floor(k / 3) * 2, 1, 1, 'Garden plot', { flat: true, plot: k, stand: [1.5 + (k % 3) * 2, 11.5 + Math.floor(k / 3) * 2] });
+  // Every home has six separate crop beds. The chosen layout changes their positions, not their crops.
+  const plotPositions = garden === 'rows'
+    ? [[1, 11], [3, 11], [5, 11], [7, 11], [9, 11], [11, 11]]
+    : garden === 'orchard'
+      ? [[13, 10], [14, 10], [14, 11], [14, 12], [12, 12], [12, 11]]
+      : [[1, 11], [3, 11], [5, 11], [1, 13], [3, 13], [5, 13]];
+  plotPositions.forEach(([i, j], k) => add('plot', i, j, 1, 1, 'Garden plot', { flat: true, plot: k, stand: [i + 0.5, j + 0.5] }));
   add('workbench', 11, 10, 1, 1, 'Workbench', { stand: [11.5, 11.5], look: [11.5, 10.3] });
   for (const f of F) {
     if (f.flat || f.walkIn) continue;
