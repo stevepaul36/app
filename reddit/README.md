@@ -92,6 +92,14 @@ New in the game itself during the hackathon (so it's on the web too):
   dusk; hedgehogs shuffle and snuffle from the log pile at dusk; and tawny owls watch from it after
   dark. Walk up to a new visitor to add it to your Nature Journal (+✦ 20). The journal shows what each
   one likes, and finding all 11 pays a ✦ 150 bonus.
+- **🐔 Barnyard: farm animals and a pet.** Place a chicken coop or a paddock outside your home and buy
+  chickens, a cow or sheep. Feed them hay today and tomorrow there's an egg, milk, or wool (every
+  other day). Just walk past your animals to collect, feed and pat them. Care fills five hearts, and
+  at five hearts they give double. A hungry animal is never lost; it simply has nothing that day.
+  Eggs, milk and wool cook into omelettes and pancakes or knit into a woolly scarf. Adopt a puppy or
+  a kitten and it follows you all over town: the puppy trots after you and sits with its tail
+  wagging, the kitten grooms itself or curls up for a nap. Every animal is drawn in code and moves
+  like the real thing.
 - **Style your animal:** pick eyes (11 styles and 8 colours), brows, expression and cheeks, plus new
   hair, tops (jacket, smart suit, sports top), jeans and hats (top hat, wizard hat, halo,
   sunglasses, bandana, flower).
