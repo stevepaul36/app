@@ -18,9 +18,9 @@ export const GARDEN_LAYOUTS = [
   { id: 'orchard', name: 'Side garden', description: 'A curved group of beds along the side yard' },
 ];
 
-export function buildHome(layout = 'classic', garden = 'mixed') {
+export function buildHome(layout = 'classic', gardenLayout = 'mixed') {
   if (!HOME_LAYOUTS.some(x => x.id === layout)) layout = 'classic';
-  if (!GARDEN_LAYOUTS.some(x => x.id === garden)) garden = 'mixed';
+  if (!GARDEN_LAYOUTS.some(x => x.id === gardenLayout)) gardenLayout = 'mixed';
   const tiles = new Uint8Array(N * N), blocked = new Uint8Array(N * N);
   const idx = (i, j) => j * N + i, inb = (i, j) => i >= 0 && j >= 0 && i < N && j < N;
   const get = (i, j) => (inb(i, j) ? tiles[idx(i, j)] : T.SEA);
@@ -94,9 +94,9 @@ export function buildHome(layout = 'classic', garden = 'mixed') {
   add('doormat', 9, 9, 1, 1, 'Front door', { flat: true, stand: [9.5, 9.5], door: true });
   add('mailbox', 11, 12, 1, 1, 'Mailbox', { stand: [10.5, 12.5], look: [11.5, 12.5] });
   // Every home has six separate crop beds. The chosen layout changes their positions, not their crops.
-  const plotPositions = garden === 'rows'
+  const plotPositions = gardenLayout === 'rows'
     ? [[1, 11], [3, 11], [5, 11], [7, 11], [9, 11], [11, 11]]
-    : garden === 'orchard'
+    : gardenLayout === 'orchard'
       ? [[13, 10], [14, 10], [14, 11], [14, 12], [12, 12], [12, 11]]
       : [[1, 11], [3, 11], [5, 11], [1, 13], [3, 13], [5, 13]];
   plotPositions.forEach(([i, j], k) => add('plot', i, j, 1, 1, 'Garden plot', { flat: true, plot: k, stand: [i + 0.5, j + 0.5] }));
