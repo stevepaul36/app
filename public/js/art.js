@@ -313,7 +313,7 @@ export function drawApartment(ctx, o) {
 }
 
 function drawVilla(ctx, o) {
-  const look = HOUSE_LOOKS[(o.look + 2) % HOUSE_LOOKS.length];
+  const look = HOUSE_LOOKS[(o.look || 0) % HOUSE_LOOKS.length];
   const x0 = 0.15, y0 = 0.15, w = o.w - 0.3, d = o.d - 0.3, h = 96;
   poly(ctx, [[0, 0, 0], [o.w, 0, 0], [o.w, o.d, 0], [0, o.d, 0]], '#9AD77D', '#5FA34A66');
   // pool
