@@ -26,7 +26,7 @@ in the **Best Ported Daily Game** category.
    from any device.
 
 Tips: the 🧭 map shows every place in town; the Journal lists your goals; neighbours have little
-requests that pay well; the market buys what you gather; tap 🎲 to play **Paws & Properties**, and
+requests that pay well; the market buys what you gather; tap 🃏 to draw a **Paws & Properties** fate card, and
 open **Homes** to buy, trade and style houses.
 
 ## What's new for this hackathon
@@ -45,18 +45,39 @@ Everything in this folder was made during the hackathon:
 
 New in the game itself during the hackathon (so it's on the web too):
 
-- **Paws & Properties, a Monopoly-style game played in the town, with no board.** Tap 🎲 to roll and
-  stroll round the town's 40 places, then walk to where you landed (a 📍 marks it):
-  - Buy the home you land on, put it up for auction against the neighbours, or pay its owner rent.
-  - Lucky Leaf and Town Chest cards, ✦ 100 for passing GO, council and luxury taxes, and a Wishing
-    Fountain pot that the next visitor collects.
-  - The Ranger's office is the jail: roll doubles, pay ✦ 50 or use a free card to get out.
-  - Four bus lines and two utilities work like the railroads and utilities.
-  - Own a whole street to double its rent, then upgrade its homes evenly up to a Grand manor, from a
-    limited supply in the builder's yard. Sell upgrades back, mortgage, and trade or swap homes.
-  - AI neighbours with their own personalities buy, sell, bid against you and pay you rent. If one
-    can't pay, it sells upgrades, then mortgages, then goes bankrupt and everything it owns passes to
-    whoever it owes. If you can't pay, you get caught and spend time with the Ranger.
+- **Paws & Properties, a Monopoly-style property game played in the town, with no board.** Tap 🃏 to
+  draw a fate card. You get three a day and can unlock two more with coins. Every card is truly
+  random, not fixed by the date:
+  - **Bargains:** a home offered below its value, today only. Buy it from the card, or walk to it (a
+    🏷️ marks it).
+  - **Rent you must pay** to whichever neighbour owns the home you stayed at, plus premium tenants
+    and guests who pay you.
+  - **Surprise auctions** where you bid against the neighbours.
+  - **Surprises:** storms, burst pipes, inheritances, booms, slumps and the Wishing Fountain pot.
+  - **Zoning:** the council zones streets (for example "Quiet residential: no building past
+    Extension"). Inspectors later fine any home built higher, yours or a neighbour's. A building
+    permit covers one home.
+  - **Golden keys:** a bonus draw, a building permit, or a card that gets you out of the Ranger's
+    office.
+  - **Debt:** if you can't pay, the bank lends you the rest, up to ✦ 200 plus 30% of what your homes
+    are worth. Loans grow 5% each morning, and the bank takes up to half your purse to pay them
+    down. Past your limit, your upgrades are sold, then homes are mortgaged, then the bank takes
+    homes back, then the Ranger catches you.
+  - **Neighbours' debts:** a neighbour who can't pay your rent owes you, up to ✦ 300, and pays it
+    back from their earnings. Past that they go bankrupt, and everything they own passes to
+    whoever they owe.
+  - **Streets:** own a whole street to double its rent, then upgrade its homes evenly up to a Grand
+    manor, from a limited supply in the builder's yard. Sell upgrades back, mortgage, trade or swap.
+  - **Bus lines and utilities:** buy them, and neighbours who ride them pay you.
+  - **🏆 Leaderboards:** you against every neighbour across all towns. On Reddit there's also a
+    weekly board of the richest Redditors, which resets every Monday.
+- **Style your animal:** pick eyes (11 styles and 8 colours), brows, expression and cheeks, plus new
+  hair, tops (jacket, smart suit, sports top), jeans and hats (top hat, wizard hat, halo,
+  sunglasses, bandana, flower).
+- **Pop in to places:** tap a café, library or cinema and your animal walks in, has a drink, reads or
+  watches a film, then comes back out with the reward.
+- **A green prompt by every door:** walk up to a door and a green button offers to go in, go out,
+  do the day's activity, or take the bus.
 - **Make every home your own.** Each home keeps its own furniture. Choose a bed (canopy, bunk beds or
   a day cot), colours for the bedding, wood, sofa, armchair, rug and wardrobe, plus wallpaper, floors
   and carpets. A furniture shop sells 20 pieces. Repaint the homes you own and rename them from word
