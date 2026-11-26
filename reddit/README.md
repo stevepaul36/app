@@ -78,6 +78,15 @@ New in the game itself during the hackathon (so it's on the web too):
   - **Bus lines and utilities:** buy them, and neighbours who ride them pay you.
   - **🏆 Leaderboards:** you against every neighbour across all towns. On Reddit there's also a
     weekly board of the richest Redditors, which resets every Monday.
+- **🏦 The Willowvale Bank:** a savings jar that earns 2% each morning (up to ✦ 50), and loans
+  explained before you agree: how much you'd owe, what to pay each morning, how many days it takes
+  and the total you'd repay. Each morning your savings pay off a loan first. Tap the debt chip or
+  Paws & Properties → Bank.
+- **🌿 Habitat garden and Nature Journal:** put a lily pond, bird bath, bee hotel, nut feeder or log
+  pile outside your home and grow crops, and wildlife comes to visit: frogs, ducks, snails in the
+  rain, songbirds, bumblebees, butterflies, ladybirds, squirrels, hedgehogs, wild rabbits and owls
+  after dark. Walk up to a new visitor to add it to your Nature Journal (+✦ 20). The journal shows
+  what each one likes, and finding all 11 pays a ✦ 150 bonus.
 - **Style your animal:** pick eyes (11 styles and 8 colours), brows, expression and cheeks, plus new
   hair, tops (jacket, smart suit, sports top), jeans and hats (top hat, wizard hat, halo,
   sunglasses, bandana, flower).
